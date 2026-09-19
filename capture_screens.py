@@ -18,11 +18,8 @@ W, H = 66, 20
 def compose_chat(session, fields, width=W, height=H, timestamps=True):
     """The chat screen, assembled exactly as Deck._draw_chat assembles it."""
     compose_h = 2
-    body_h = height - 1 - 1 - 1 - 1 - compose_h - 1
-    out = [render.status_line(fields, width),
-           render.banner(fields.get("mode", ""), 1500,
-                         fields.get("state") == "INH", width),
-           render.rule(width)]
+    body_h = height - 1 - 1 - 1 - compose_h - 1
+    out = [render.status_line(fields, width), render.rule(width)]
     out += render.transcript_lines(session.entries, width, body_h, timestamps)
     out.append(render.rule(width))
     clines, _ = render.compose_lines(
@@ -81,7 +78,7 @@ def tuning_screen(width=W, height=H):
         "  AFC on    squelch on  (5)   RSID on    TXID on",
     ]
     lines = [render.status_line({**FIELDS, "call": "TUNING"}, width),
-             render.banner(FIELDS.get("mode", ""), 1500, False, width)]
+             render.rule(width)]
     for r in rows:
         lines.append([(r[:width - 1], "bright")])
     while len(lines) < height - 4:

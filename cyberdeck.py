@@ -124,21 +124,18 @@ class Deck:
 
     def _draw_chat(self, h, w):
         compose_h = 2
-        # status, banner, rule, rule, compose, hints
-        body_h = h - 1 - 1 - 1 - 1 - compose_h - 1
+        body_h = h - 1 - 1 - 1 - compose_h - 1   # status, rule, rule, compose, hints
 
         self._put(0, 0, render.status_line(self.status_fields(), w), w)
-        self._put(1, 0, render.banner(self.fldigi.modem(), self.fldigi.carrier(),
-                                      self.session.inhibited, w), w)
-        self._put(2, 0, render.rule(w), w)
+        self._put(1, 0, render.rule(w), w)
 
         lines = render.transcript_lines(
             self.session.entries, w, body_h,
             timestamps=self.cfg["TIMESTAMPS"] == "yes", scroll=self.scroll)
         for i, line in enumerate(lines):
-            self._put(3 + i, 0, line, w)
+            self._put(2 + i, 0, line, w)
 
-        rule_row = 3 + body_h
+        rule_row = 2 + body_h
         self._put(rule_row, 0, render.rule(w), w)
 
         clines, (crow, ccol) = render.compose_lines(
@@ -156,8 +153,7 @@ class Deck:
         f = self.fldigi
         self._put(0, 0, render.status_line(
             {**self.status_fields(), "call": "TUNING"}, w), w)
-        self._put(1, 0, render.banner(f.modem(), f.carrier(),
-                                      self.session.inhibited, w), w)
+        self._put(1, 0, render.rule(w), w)
 
         q = f.quality()
         bar_w = max(10, w - 22)
@@ -422,10 +418,8 @@ class Deck:
         if m == "radio":
             hz = menus.BAND_FREQUENCIES.get(key)
             if hz:
-                f.set_frequency(hz)
+                self._set_vfo(hz, label=render.frequency(hz))
                 self._set_rig_mode()
-                self.session.note(f"VFO set to {render.frequency(hz)} "
-                                  f"{f.rig_mode()}")
                 self._close_menu()
             return True
 
@@ -444,6 +438,33 @@ class Deck:
             return True
 
         return True
+
+    def _set_vfo(self, hz, label=None):
+        """Command the radio's VFO and check it actually went there.
+
+        fldigi keeps its own frequency and refreshes it from the rig, so a
+        command the radio ignores shows up as the deck's number snapping back
+        a moment later — which reads as the deck fighting the radio when it is
+        really the radio declining.
+
+        This asks once and reports the result. It deliberately does NOT
+        re-assert: a loop that re-sends whenever the readback disagrees cannot
+        tell a rejected command from the operator turning the knob, so it
+        would fight a deliberate manual tune and never let go. One command,
+        one answer, and the truth on screen.
+        """
+        hz = int(hz)
+        self.fldigi.set_frequency(hz)
+        time.sleep(0.35)          # let the command reach the rig and read back
+        got = int(self.fldigi.frequency() or 0)
+        where = label or render.frequency(hz)
+        if abs(got - hz) <= 5:
+            self.session.note(f"VFO {render.frequency(got)}"
+                              + (f"  {self.fldigi.rig_mode()}" if label else ""))
+            return True
+        self.session.note(f"VFO {where} refused — radio stayed on "
+                          f"{render.frequency(got)}")
+        return False
 
     def _search(self, fn, direction):
         """Run fldigi's signal search and say what happened.
@@ -520,13 +541,13 @@ class Deck:
         elif ch == ord("x"):
             f.set_txid(not f.txid())
         elif ch == ord(","):
-            f.set_frequency(f.frequency() - 100)
+            self._set_vfo(f.frequency() - 100)
         elif ch == ord("."):
-            f.set_frequency(f.frequency() + 100)
+            self._set_vfo(f.frequency() + 100)
         elif ch == ord("<"):
-            f.set_frequency(f.frequency() - 1000)
+            self._set_vfo(f.frequency() - 1000)
         elif ch == ord(">"):
-            f.set_frequency(f.frequency() + 1000)
+            self._set_vfo(f.frequency() + 1000)
         elif ch == 17:
             return False
         return True

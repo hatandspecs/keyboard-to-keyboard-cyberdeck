@@ -3,7 +3,6 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ KD3CCO  14.070.589  PKTUSB  BPSK63  1500Hz  S/N 18     RX  2114Z │
-│ BPSK63 @ 1500 Hz                                  TRANSMIT ARMED │
 │──────────────────────────────────────────────────────────────────│
 │ 2109Z RX      KD3CCO de W3TM  good copy, 599 here in State       │
 │               College. rig is an FTX-1 running 20 watts into a   │
@@ -12,6 +11,7 @@
 │               running fldigi headless behind a terminal i wrote. │
 │ 2113Z RX      that is excellent. what modes does it do?          │
 │ 2114Z --      mode changed to BPSK63                             │
+│                                                                  │
 │                                                                  │
 │                                                                  │
 │                                                                  │
@@ -30,7 +30,7 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │ TUNING  14.070.589  PKTUSB  BPSK63  1500Hz  S/N 18     RX  2114Z │
-│ BPSK63 @ 1500 Hz                                  TRANSMIT ARMED │
+│──────────────────────────────────────────────────────────────────│
 │  rig      14.070.589  PKTUSB                                     │
 │  carrier  1500 Hz        width  63 Hz                            │
 │  S/N      18 dB                                                  │

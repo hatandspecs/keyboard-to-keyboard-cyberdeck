@@ -1,10 +1,2 @@
-1. it is no longer possible to see the menu item text with the highliting. maybe an underline or box would be better, or modulating the font to black for contrast in the highlighted field
-2. i'd like it to be obvious on the screen if transmit is inhibited or enabled somewhere.
-3. when i selected the menu item f1 menu radio, 14.070 USB it switched the ftx1 mode to USB from Data-U and did not change the vfo
-4. i'd like the digital mode to be displayed clearly on the screen in addition to the inhibit, as well.
-5. I do see decoded garbage (noise) with sqeltch off not particuarly tuned to anything
-6. none of the buttons on the f2 tuning screen move the VFO of the radio
-7 when my rig is tuned to 14.070.589 the rig on the cyberdec f2 tune screen says 14.07059. I'd like it to have full digits of frequency precision XX.XXX.XXX that the radio has.
-8. when i was on the f2 tuning screen, the cyberdeck switched my rig back to USB from DATA-USB
-9. I don't know when tuning from the ftx1 vfo knob where i should be putting a signal. my guess is the curser should be to the left of the rf energy on the waterfall? this needs to be explained to me in the tutorial.
-10. it would be nice if the cyberdeck/fldigi had an auto mode that could switch the digitial mode to whatever it was hearing.
+1. Set the band once. F1 → 3 → 1 for 14.070. Then take your hand off the VFO knob.
+this did not actually change the radio vfo. the radio vfo is still on 14.071.885, same as it was before I selected this menu item

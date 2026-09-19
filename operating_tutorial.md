@@ -492,17 +492,21 @@ The status row is **a filled bar — black text on the scheme's color**. If it
 ever renders as one solid block of color with no readable text, that is a
 contrast fault in the color pair, not an empty bar.
 
-**The second row** carries the two things that should never need hunting for:
-the **mode** in use with its carrier offset, and whether the radio can be
-keyed.
+`INH` in the state field is the transmit inhibit. If you press `Ctrl-T` and
+nothing happens, that is the first place to look.
+
+**When the deck commands the VFO**, it reads the frequency back and says what
+happened:
 
 ```
- BPSK31 @ 1500 Hz                        ** TRANSMIT INHIBITED **
- BPSK31 @ 1500 Hz                                  TRANSMIT ARMED
+VFO 14.070.000  PKTUSB
+VFO 14.070.000 refused — radio stayed on 14.071.885
 ```
 
-`** TRANSMIT INHIBITED **` is drawn in reverse video. If you press `Ctrl-T` and
-nothing happens, this row is the first place to look.
+The second line means the radio declined the command. The deck asks once and
+reports; it does not re-send. A retry loop cannot tell a refused command from
+you turning the knob, so it would fight a deliberate manual tune and never let
+go.
 
 The bottom row lists the active key bindings, shedding entries as the width
 shrinks.

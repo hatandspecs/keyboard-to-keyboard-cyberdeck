@@ -142,26 +142,6 @@ def mode_bandwidth(name, reported=0):
     return "\u2014"
 
 
-def banner(mode, carrier, inhibited, width):
-    """The row under the status line: what mode, and whether we can transmit.
-
-    Transmit state earns a row of its own rather than a three-letter field.
-    Whether the radio can be keyed is the one thing that should never have to
-    be hunted for, and the mode in use is what a second operator asks about
-    first.
-    """
-    left = f" {mode}"
-    if carrier:
-        left += f" @ {carrier} Hz"
-    right = "** TRANSMIT INHIBITED **" if inhibited else "TRANSMIT ARMED"
-    pad = width - len(left) - len(right) - 1
-    if pad < 1:
-        right = "** INHIBITED **" if inhibited else "ARMED"
-        pad = max(1, width - len(left) - len(right) - 1)
-    kind = "reverse" if inhibited else "bright"
-    return [(left, "bright"), (" " * pad, "dim"), (right, kind), (" ", "dim")]
-
-
 def status_line(fields, width):
     """The top line: one row, always visible, reverse video.
 
