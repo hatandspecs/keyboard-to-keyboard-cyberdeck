@@ -60,6 +60,9 @@ class Deck:
         # over. Cleared with Ctrl-I, or F1 6 i.
         if self.fldigi.connected:
             self._set_rig_mode()
+            if settings["RSID_ON_START"] == "yes" and not self.fldigi.rsid():
+                self.fldigi.set_rsid(True)
+                self.session.note("RSID on — will follow other stations' modes")
 
         if settings["INHIBIT_ON_START"] == "yes":
             self.session.inhibit(True)
@@ -92,7 +95,7 @@ class Deck:
             "call": self.cfg["CALLSIGN"] or "NO CALL",
             # Three decimals is how a frequency is read aloud and written
             # in a log: 14.070, not 14.07.
-            "freq": f"{freq/1e6:.3f}" if freq else "",
+            "freq": render.frequency(freq),
             "sideband": f.rig_mode() or "",
             "mode": f.modem(),
             "carrier": f"{f.carrier()}Hz",
@@ -121,18 +124,21 @@ class Deck:
 
     def _draw_chat(self, h, w):
         compose_h = 2
-        body_h = h - 1 - 1 - 1 - compose_h - 1   # status, rule, rule, compose, hints
+        # status, banner, rule, rule, compose, hints
+        body_h = h - 1 - 1 - 1 - 1 - compose_h - 1
 
         self._put(0, 0, render.status_line(self.status_fields(), w), w)
-        self._put(1, 0, render.rule(w), w)
+        self._put(1, 0, render.banner(self.fldigi.modem(), self.fldigi.carrier(),
+                                      self.session.inhibited, w), w)
+        self._put(2, 0, render.rule(w), w)
 
         lines = render.transcript_lines(
             self.session.entries, w, body_h,
             timestamps=self.cfg["TIMESTAMPS"] == "yes", scroll=self.scroll)
         for i, line in enumerate(lines):
-            self._put(2 + i, 0, line, w)
+            self._put(3 + i, 0, line, w)
 
-        rule_row = 2 + body_h
+        rule_row = 3 + body_h
         self._put(rule_row, 0, render.rule(w), w)
 
         clines, (crow, ccol) = render.compose_lines(
@@ -150,14 +156,16 @@ class Deck:
         f = self.fldigi
         self._put(0, 0, render.status_line(
             {**self.status_fields(), "call": "TUNING"}, w), w)
-        self._put(1, 0, render.rule(w), w)
+        self._put(1, 0, render.banner(f.modem(), f.carrier(),
+                                      self.session.inhibited, w), w)
 
         q = f.quality()
         bar_w = max(10, w - 22)
         filled = int(bar_w * min(max(q, 0), 100) / 100)
         rows = [
-            f"  rig      {f.frequency()/1e6:.5f}  {f.rig_mode()}",
-            f"  carrier  {f.carrier()} Hz        bandwidth  {f.bandwidth()} Hz",
+            f"  rig      {render.frequency(f.frequency())}  {f.rig_mode()}",
+            f"  carrier  {f.carrier()} Hz        width  "
+            f"{render.mode_bandwidth(f.modem(), f.bandwidth())}",
             f"  S/N      {(f.signal_to_noise() or '').strip()}",
             f"  IMD      {(f.imd() or '').strip()}",
             "",
@@ -200,7 +208,7 @@ class Deck:
         if m == "station":
             return menus.station_menu(self.cfg)
         if m == "mode":
-            return menus.mode_menu(f.modem())
+            return menus.mode_menu(f.modem(), auto=f.rsid())
         if m == "modes_all":
             menu, self.menu_page, _, self._page_keys = menus.paged_menu(
                 "ALL MODES", menus.keyboard_modes(f.modem_names()),
@@ -267,6 +275,19 @@ class Deck:
         elif ch == 9:                        # Ctrl-I: inhibit toggle
             self.session.inhibit(not self.session.inhibited)
             self.fldigi.receive_only(self.session.inhibited)
+        # Tuning from the conversation screen, where the decode is visible.
+        # The F2 screen shows the carrier but hides the transcript, so tuning
+        # there is done blind: you can watch the number change but not whether
+        # it produced readable text. Moving the carrier is only meaningful
+        # against what comes out, so the same keys work here.
+        elif ch == curses.KEY_LEFT:
+            self.fldigi.nudge_carrier(-10)
+        elif ch == curses.KEY_RIGHT:
+            self.fldigi.nudge_carrier(10)
+        elif ch == curses.KEY_UP:
+            self._search(self.fldigi.search_up, "up")
+        elif ch == curses.KEY_DOWN:
+            self._search(self.fldigi.search_down, "down")
         elif ch == curses.KEY_PPAGE:
             self.scroll += 5
         elif ch == curses.KEY_NPAGE:
@@ -345,6 +366,13 @@ class Deck:
             return True
 
         if m == "mode":
+            if key == "a":
+                on = not f.rsid()
+                f.set_rsid(on)
+                self.session.note(
+                    "AUTO on — will follow other stations' mode identifiers"
+                    if on else "AUTO off — mode stays where you put it")
+                self._close_menu(); return True
             if key == "m":
                 self._open_menu("modes_all"); return True
             for k, name in menus.MODE_TIER1:
@@ -396,7 +424,8 @@ class Deck:
             if hz:
                 f.set_frequency(hz)
                 self._set_rig_mode()
-                self.session.note(f"VFO set to {hz/1e6:.3f} {f.rig_mode()}")
+                self.session.note(f"VFO set to {render.frequency(hz)} "
+                                  f"{f.rig_mode()}")
                 self._close_menu()
             return True
 
@@ -416,6 +445,24 @@ class Deck:
 
         return True
 
+    def _search(self, fn, direction):
+        """Run fldigi's signal search and say what happened.
+
+        The search either lands the carrier on a signal or leaves it where it
+        was, and the difference is invisible on a screen with no waterfall —
+        which reads as a dead key when the band is quiet. Report the move.
+        """
+        f = self.fldigi
+        before = f.carrier()
+        fn()
+        time.sleep(0.4)          # fldigi needs a moment to settle on a signal
+        after = f.carrier()
+        if after != before:
+            self.session.note(f"search {direction}: carrier {before} -> {after} Hz")
+        else:
+            self.session.note(f"search {direction}: nothing found above the "
+                              f"squelch; still {after} Hz")
+
     def _set_rig_mode(self):
         """Put the radio into the sideband digital work needs.
 
@@ -428,12 +475,18 @@ class Deck:
         want = (self.cfg.get("RIG_MODE") or "").strip()
         if not want:
             return
+        current = self.fldigi.rig_mode()
+        if current == want:
+            return
         available = self.fldigi.rig_modes()
         if available and want not in available:
-            self.session.note(f"rig will not take mode {want}; left as "
-                              f"{self.fldigi.rig_mode()}")
+            self.session.note(f"rig will not take mode {want}; left as {current}")
             return
         self.fldigi.set_rig_mode(want)
+        # Say so. Silently changing the radio's mode out from under the
+        # operator is how a deck ends up transmitting through the speech
+        # processor, or reverts a deliberate choice with no trace.
+        self.session.note(f"rig mode {current or '?'} -> {want}")
 
     def _set_mode(self, name):
         self.fldigi.set_modem(name)
@@ -455,9 +508,9 @@ class Deck:
         elif ch == curses.KEY_RIGHT:
             f.nudge_carrier(10)
         elif ch == curses.KEY_UP:
-            f.search_up()
+            self._search(f.search_up, "up")
         elif ch == curses.KEY_DOWN:
-            f.search_down()
+            self._search(f.search_down, "down")
         elif ch == ord("a"):
             f.set_afc(not f.afc())
         elif ch == ord("s"):

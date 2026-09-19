@@ -11,7 +11,7 @@ Every key in this document was read out of the deck's source, not remembered.
 2. [The over: the one idea that matters](#2-the-over-the-one-idea-that-matters)
 3. [Before the first session: protecting the radio](#3-before-the-first-session-protecting-the-radio)
 4. [Session one — listen only](#4-session-one--listen-only)
-5. [Tuning without a waterfall](#5-tuning-without-a-waterfall)
+5. [Tuning, from the beginning](#5-tuning-from-the-beginning)
 6. [The language: abbreviations and prosigns](#6-the-language-abbreviations-and-prosigns)
 7. [Session two — answering a CQ](#7-session-two--answering-a-cq)
 8. [Session three — calling CQ yourself](#8-session-three--calling-cq-yourself)
@@ -158,43 +158,117 @@ conversations; every convention in section 6 will appear within ten minutes.
 
 ---
 
-## 5. Tuning without a waterfall
+## 5. Tuning, from the beginning
 
-A conventional fldigi screen shows a waterfall and you click on a signal. This
-deck has an 800×480 panel and a text terminal, so it does the same job with
-keys. Press **`F2`** for the tuning screen.
+This is the part with no equivalent in voice operating, so it is worth building
+up slowly. Nothing here is difficult once the picture is right, and almost
+everyone gets it wrong the same way first.
 
-Two different things are being tuned, and confusing them is the usual beginner's
-problem:
+### What your radio actually gives the computer
 
-| | What moves | Key |
-|---|---|---|
-| **The radio's VFO** | The whole receiver window | `,` `.` by 100 Hz · `<` `>` by 1 kHz |
-| **The audio carrier** | Where inside that window the modem listens | `←` `→` by 10 Hz |
+Your FTX-1 is not sending fldigi a frequency. It is sending **audio** — the
+same audio a loudspeaker would make.
 
-A BPSK31 signal is only about 31 Hz wide. Inside the radio's ~3 kHz passband
-there is room for dozens of them side by side. Normally you leave the VFO parked
-on 14.070 and move the **carrier** to pick out one signal among many.
+In upper sideband, the radio takes a slice of radio spectrum about 3 kHz wide,
+starting at the frequency on its display, and shifts it down to audio. So:
 
-**The efficient way to find signals:** `↑` and `↓` run fldigi's own search,
-which hunts for the next detectable signal above or below the current carrier
-and lands on it. Use those first; use `←` `→` only to fine-tune afterwards.
+| On the air | Comes out as audio at |
+|---|---|
+| 14.070.000 — exactly your dial | 0 Hz (inaudible) |
+| 14.071.000 | 1000 Hz |
+| 14.071.500 | 1500 Hz |
+| 14.072.800 | 2800 Hz |
 
-Then let the software hold it:
+**The dial frequency is the bottom edge of the window, not the middle.**
+Everything you can hear is *above* it. That single fact explains most of what
+follows.
 
-- **`a` — AFC.** Automatic frequency control. Leave this **on**; it follows a
-  drifting signal so you do not have to chase it.
-- **`s` — Squelch.** On for normal operating, off for the diagnostic in
-  section 4.
-- **`r` — RSID.** When another station sends a mode identifier, fldigi reads it
-  and switches modes to match. Very useful, because it rescues you when someone
-  answers your CQ in a mode you were not expecting.
-- **`x` — TXID.** Sends *our* identifier ahead of our overs, so their software
-  can do the same for us. Courteous; leave it on.
+### What fldigi does with that audio
 
-`F2` or `Esc` returns to the conversation.
+fldigi listens at **one spot** inside that 3 kHz of audio. That spot is the
+**carrier**, and it is shown on the `F2` screen and in the banner.
 
----
+Carrier 1500 Hz means: *decode whatever is at 1500 Hz in the audio*, which is
+whatever is transmitting at dial + 1500 Hz on the air.
+
+A BPSK31 signal is **31 Hz wide**. The audio window is 3000 Hz wide. So there
+is room for dozens of separate conversations side by side inside one dial
+setting, and fldigi picks one by moving its carrier.
+
+### The two knobs, and why they are different
+
+| | What it moves | Key | Does the radio respond? |
+|---|---|---|---|
+| **VFO** | The whole 3 kHz window, up and down the band | `,` `.` 100 Hz · `<` `>` 1 kHz | Yes — the dial changes |
+| **Carrier** | Where *inside* that window fldigi listens | `←` `→` 10 Hz · `↑` `↓` search | **No — nothing happens on the radio** |
+
+**Moving the carrier does nothing visible on the radio.** The dial does not
+change, the waterfall does not shift, no light comes on. The only place that
+change appears is the deck's `carrier` field. This is correct and it is not a
+fault — it is a change inside the computer, not inside the radio.
+
+Nearly all tuning is carrier tuning. You set the VFO once for the band and then
+leave it alone.
+
+### Answering your question about the waterfall
+
+Yes — **the dial marker belongs to the left of the signal.** With the carrier
+parked at 1500 Hz, a signal you want should sit about **1.5 kHz to the right**
+of your dial frequency on the radio's display.
+
+If you centre the radio's marker on the signal, you have put that signal at 0 Hz
+audio, at the very bottom edge of the window, and fldigi will not hear it at
+all.
+
+But **do not tune this way.** Your waterfall's narrowest span is 5 kHz. Across
+a few hundred pixels that is tens of hertz per pixel, and a BPSK31 signal is
+31 Hz wide — one pixel, maybe two. You cannot land on it by eye, and you do not
+have to.
+
+### How to actually tune, every time
+
+1. **Set the band once.** `F1` → `3` → `1` for 14.070. Then take your hand off
+   the VFO knob.
+2. **Turn squelch off** (`F1` → `2` → `s`) and confirm the screen fills with
+   garbage. That is your proof audio is arriving. Turn it back on.
+3. **Stay on the conversation screen.** The tuning keys work here, and this is
+   where you can see whether tuning is working — the transcript is the only
+   real test. A carrier number that looks right while nothing decodes is not
+   tuned.
+4. **Press `↑` or `↓`.** fldigi searches the audio for the next real signal and
+   moves its carrier onto it, to the hertz. The deck reports what happened:
+
+   ```
+   search up: carrier 1500 -> 1832 Hz
+   search up: nothing found above the squelch; still 1832 Hz
+   ```
+
+   The second message means the band is quiet, or the squelch is set higher
+   than the signals present. It does not mean the key failed.
+5. **Nudge with `←` `→`** if the decode is imperfect — 10 Hz at a time, watching
+   the text improve or degrade as you go. Characters turning from noise into
+   words is the only confirmation that matters.
+6. **Leave AFC on** (`F2` → `a`). It tracks a drifting signal so you do not
+   have to.
+
+**`F2` is for reading, not for tuning.** It shows carrier, width, S/N, IMD and
+signal quality in one place, which is useful when you want to know *how good*
+a decode is. But it hides the transcript, so tuning there is done blind. Tune
+on the conversation screen; visit `F2` to check the numbers.
+
+If searching finds nothing repeatedly, the problem is upstream of tuning:
+either there is genuinely no activity, or the squelch is too high — `F1` → `2`
+→ `-` lowers it. Check by turning squelch off and looking for the noise
+garbage again.
+
+### Where the VFO knob is still the right tool
+
+* Changing bands.
+* Activity you can see on the radio's waterfall that is **outside** your
+  current window — below your dial, or more than ~3 kHz above it. Move the dial
+  so it falls inside, then search.
+
+That is the whole of it. Set the band, search, nudge, talk.
 
 ## 6. The language: abbreviations and prosigns
 
@@ -331,6 +405,7 @@ list of everything fldigi supports, paged.
 
 | Key | Mode | When |
 |---|---|---|
+| `a` | **AUTO (RSID)** | Not a mode — switches to whatever the other station identifies as. Leave it on |
 | `1` | **BPSK31** | **Start here.** The default for conversation. Narrow, efficient, and where the people are |
 | `2` | BPSK63 | Twice the speed, needs a better signal. Good on a strong path |
 | `3` | QPSK31 | BPSK31 with error correction. Better in noise, worse when the path is unstable |
@@ -346,8 +421,29 @@ list of everything fldigi supports, paged.
 The practical rule: **BPSK31 unless you have a reason**. If the path is too
 noisy for it, try Olivia. If you have a strong signal and want speed, BPSK63.
 
-Leave **RSID** on (section 5) and the deck will follow other operators into
-whatever mode they choose, which saves guessing.
+### Automatic mode switching
+
+There is no mode that listens to a signal and works out what it is from first
+principles — nothing on the air does blind modulation classification.
+
+What exists is **RSID** (RxID), and it is close enough to be worth relying on.
+A station's software sends a short tone burst ahead of its transmission that
+names the mode it is about to use. With RSID on, fldigi hears that burst and
+**switches modes automatically** to match, then decodes.
+
+The deck turns RSID **on at startup** (`RSID_ON_START` in `cyberdeck.conf`),
+and it is the practical answer to "what mode is that?" — if the other station
+sends an identifier, you do not have to know.
+
+Its limits, stated plainly:
+
+* The other station must be **sending** RSID. Many do; not all.
+* It identifies the mode, not the frequency — the carrier still has to be near
+  the signal, so `↑`/`↓` search still matters.
+* Turn on **TXID** (`F1` → `2` → `x`) so you extend the same courtesy. It sends
+  one identifier before each of your overs.
+
+Leave both on unless you have a reason not to.
 
 ---
 
@@ -384,10 +480,29 @@ narrower, so a narrow font keeps callsign, state and clock.
 | **sideband** | USB or LSB as the radio reports it |
 | **mode** | The current modem — BPSK31 and so on |
 | **carrier** | Audio offset in Hz: where inside the passband the modem is listening |
-| **snr** | Signal-to-noise of what is being decoded |
-| **imd** | Intermodulation distortion of the *received* signal. Worse than −20 dB means that station is overdriving |
+| **two readouts** | **Mode-dependent, and they label themselves.** Under PSK they are `S/N 6 dB` and `IMD ---`. Under RTTY the first becomes `45 /170` — baud rate and shift in Hz — and the second becomes the S/N. Olivia reports neither and they go blank. Read the label, not the position |
 | **state** | RX or TX |
 | **clock** | **UTC**, marked `Z`. Always UTC — it is the convention for logging, and it is what the other operator's log will say |
+
+Frequencies read at the radio's own resolution — `14.070.589`, not `14.071` —
+so the deck's number can be compared against the radio's display digit for
+digit.
+
+The status row is **a filled bar — black text on the scheme's color**. If it
+ever renders as one solid block of color with no readable text, that is a
+contrast fault in the color pair, not an empty bar.
+
+**The second row** carries the two things that should never need hunting for:
+the **mode** in use with its carrier offset, and whether the radio can be
+keyed.
+
+```
+ BPSK31 @ 1500 Hz                        ** TRANSMIT INHIBITED **
+ BPSK31 @ 1500 Hz                                  TRANSMIT ARMED
+```
+
+`** TRANSMIT INHIBITED **` is drawn in reverse video. If you press `Ctrl-T` and
+nothing happens, this row is the first place to look.
 
 The bottom row lists the active key bindings, shedding entries as the width
 shrinks.
@@ -410,6 +525,8 @@ shrinks.
 | `Ctrl-I` | Transmit inhibit on/off — **`Tab` does this too**, see below |
 | `Ctrl-L` | Redraw the screen |
 | `Ctrl-Q` | Quit |
+| `←` `→` | Carrier ∓10 Hz — **tune while watching the decode** |
+| `↑` `↓` | Search for the next signal up or down |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Enter` | Newline — **does not send** |
 | `Backspace` | Delete from the compose buffer |
@@ -418,7 +535,7 @@ shrinks.
 
 | Key | Submenu | Contents |
 |---|---|---|
-| `1` | Mode | The eleven modes above, `m` for all |
+| `1` | Mode | `a` AUTO (RSID) · the eleven modes above · `m` for all |
 | `2` | Tuning | `a` AFC · `s` squelch · `r` RSID · `x` TXID · `+`/`-` squelch level · `c` park carrier |
 | `3` | Radio | `1`–`6` band frequencies |
 | `4` | Display | `1` Matrix · `2` Deckard · `3` Hal · `4` Tron · `t` timestamps |
@@ -445,14 +562,25 @@ and guessing.
 
 ### Tuning screen (`F2`)
 
-| Key | Action |
-|---|---|
-| `←` `→` | Carrier ∓10 Hz |
-| `↑` `↓` | **Search for the next signal** up or down |
-| `,` `.` | VFO ∓100 Hz |
-| `<` `>` | VFO ∓1 kHz |
-| `a` `s` `r` `x` | AFC · squelch · RSID · TXID |
-| `F2` or `Esc` | Back to the conversation |
+| Key | Action | Does the radio move? |
+|---|---|---|
+| `←` `→` | Carrier ∓10 Hz | **No** |
+| `↑` `↓` | **Search for the next signal** up or down | **No** |
+| `,` `.` | VFO ∓100 Hz | Yes |
+| `<` `>` | VFO ∓1 kHz | Yes |
+| `a` `s` `r` `x` | AFC · squelch · RSID · TXID | No |
+| `F2` or `Esc` | Back to the conversation | — |
+
+**The third column matters and it surprises people.** `←` `→` `↑` `↓` move
+fldigi's **carrier** — where inside the received audio it listens. The radio is
+not told and does not respond: the dial stays put, the waterfall does not
+shift, nothing happens on the front panel. The only place that change appears
+is the deck's own `carrier` field.
+
+That is not a fault. It is how the deck tunes: the radio holds one dial
+frequency, and fldigi walks around inside the passband it provides.
+
+Only `,` `.` `<` `>` command the radio itself.
 
 ---
 

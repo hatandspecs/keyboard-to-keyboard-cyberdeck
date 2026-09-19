@@ -60,7 +60,9 @@ def apply(scheme_key):
     try:
         curses.init_pair(PAIR_BRIGHT, scheme["ansi"], curses.COLOR_BLACK)
         curses.init_pair(PAIR_DIM, scheme["ansi"], curses.COLOR_BLACK)
-        curses.init_pair(PAIR_REVERSE, scheme["ansi"], curses.COLOR_BLACK)
+        # Black ON the hue, defined outright rather than asking the terminal
+        # to swap a normal pair: see attr().
+        curses.init_pair(PAIR_REVERSE, curses.COLOR_BLACK, scheme["ansi"])
     except curses.error:
         pass
     return scheme
@@ -69,7 +71,13 @@ def apply(scheme_key):
 def attr(kind):
     """Map a render kind to a curses attribute."""
     if kind == "reverse":
-        return curses.color_pair(PAIR_REVERSE) | curses.A_REVERSE | curses.A_BOLD
+        # No A_REVERSE and no A_BOLD. The pair is already black-on-hue, and
+        # asking for both was what made the status bar unreadable: with
+        # A_REVERSE the console swaps foreground and background, then applies
+        # A_BOLD's intensity to what is now the background, leaving text the
+        # same hue as the bar it sits on. A filled bar needs black text in it,
+        # so define that directly and let no attribute negotiate it away.
+        return curses.color_pair(PAIR_REVERSE)
     if kind == "dim":
         return curses.color_pair(PAIR_DIM) | curses.A_DIM
     if kind == "note":

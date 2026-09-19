@@ -18,8 +18,11 @@ W, H = 66, 20
 def compose_chat(session, fields, width=W, height=H, timestamps=True):
     """The chat screen, assembled exactly as Deck._draw_chat assembles it."""
     compose_h = 2
-    body_h = height - 1 - 1 - 1 - compose_h - 1
-    out = [render.status_line(fields, width), render.rule(width)]
+    body_h = height - 1 - 1 - 1 - 1 - compose_h - 1
+    out = [render.status_line(fields, width),
+           render.banner(fields.get("mode", ""), 1500,
+                         fields.get("state") == "INH", width),
+           render.rule(width)]
     out += render.transcript_lines(session.entries, width, body_h, timestamps)
     out.append(render.rule(width))
     clines, _ = render.compose_lines(
@@ -57,7 +60,7 @@ def scripted_session():
     return s
 
 
-FIELDS = dict(call="KD3CCO", freq="14.070", sideband="USB", mode="BPSK63",
+FIELDS = dict(call="KD3CCO", freq="14.070.589", sideband="PKTUSB", mode="BPSK63",
               carrier="1500Hz", snr="S/N 18", imd="IMD -24",
               state="RX", clock="2114Z")
 
@@ -67,16 +70,18 @@ def tuning_screen(width=W, height=H):
     q, bar_w = 62, max(10, width - 22)
     filled = int(bar_w * q / 100)
     rows = [
-        "  rig      14.07015  USB",
-        "  carrier  1500 Hz        bandwidth  31 Hz",
+        f"  rig      {render.frequency(14070589)}  PKTUSB",
+        f"  carrier  1500 Hz        width  "
+        f"{render.mode_bandwidth('BPSK63', 0)}",
         "  S/N      18 dB",
         "  IMD      -24 dB",
         "",
         f"  quality  {'█' * filled}{'░' * (bar_w - filled)}  {q}",
         "",
-        "  AFC on    squelch on  (5)   RSID on",
+        "  AFC on    squelch on  (5)   RSID on    TXID on",
     ]
-    lines = [render.status_line({**FIELDS, "call": "TUNING"}, width), render.rule(width)]
+    lines = [render.status_line({**FIELDS, "call": "TUNING"}, width),
+             render.banner(FIELDS.get("mode", ""), 1500, False, width)]
     for r in rows:
         lines.append([(r[:width - 1], "bright")])
     while len(lines) < height - 4:
@@ -85,7 +90,7 @@ def tuning_screen(width=W, height=H):
     lines.append(render.rule(width))
     lines.append([("  ← →  carrier ±10 Hz      ↑ ↓  search signal", "dim")])
     lines.append([("  , .  VFO ±100 Hz         < >  VFO ±1 kHz", "dim")])
-    lines.append([("  a AFC   s squelch   r RSID   F2/Esc back to chat", "dim")])
+    lines.append([("  a AFC  s squelch  r RSID  x TXID   F2/Esc back", "dim")])
     return lines
 
 
@@ -103,7 +108,7 @@ if __name__ == "__main__":
 
     print("## The menu — F1\n")
     print("```")
-    print(frame(menus.render(menus.ROOT, W, H)))
+    print(frame(menus.render(menus.ROOT, W, H, selected=2)))
     print("```\n")
 
     print("## The mode picker — F3\n")

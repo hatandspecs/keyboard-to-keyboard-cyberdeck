@@ -134,8 +134,17 @@ def station_menu(settings):
     }
 
 
-def mode_menu(current, extra=None):
-    items = list(MODE_TIER1)
+def mode_menu(current, extra=None, auto=False):
+    """The mode picker.
+
+    AUTO sits at the top because it is what a newcomer wants and what an
+    experienced operator leaves on. It is not a modem: it is RSID, which reads
+    the identifier other stations send ahead of a transmission and switches to
+    whatever they are using. Listing it beside the modems is honest about what
+    it does for you, even though it is a different kind of thing.
+    """
+    items = [("a", f"AUTO (RSID)  {'ON' if auto else 'off'}")]
+    items += list(MODE_TIER1)
     if extra:
         items = items + extra
     items = [(k, (f"{n}  <" if n == current else n)) for k, n in items]
@@ -172,6 +181,17 @@ def selectable(menu):
     return [i for i, (key, _) in enumerate(menu["items"]) if key.strip()]
 
 
+def _mark(is_selected):
+    """Marker and text style for a menu row.
+
+    Reverse video was the obvious choice and it was unreadable on the panel:
+    the selected row's text disappeared into its own highlight. A leading
+    marker plus a step from dim to bright carries the same information without
+    depending on how a particular console renders an attribute.
+    """
+    return ("\u25b8 ", "bright") if is_selected else ("  ", "dim")
+
+
 def render(menu, width, height, selected=None):
     """A menu as rendered lines: list of (text, kind) segments.
 
@@ -189,17 +209,18 @@ def render(menu, width, height, selected=None):
         for i in range(half):
             left = items[i]
             right = items[i + half] if i + half < len(items) else None
-            lk = "reverse" if selected == i else "dim"
-            segs = [("  ", "dim"), (f"{left[0]} ", "bright"),
+            lm, lk = _mark(selected == i)
+            segs = [(lm, "bright"), (f"{left[0]} ", "bright"),
                     (left[1][:col_w - 4].ljust(col_w - 2), lk)]
             if right:
-                rk = "reverse" if selected == i + half else "dim"
-                segs += [(f"{right[0]} ", "bright"), (right[1][:col_w - 4], rk)]
+                rm, rk = _mark(selected == i + half)
+                segs += [(rm, "bright"), (f"{right[0]} ", "bright"),
+                         (right[1][:col_w - 4], rk)]
             lines.append(segs)
     else:
         for i, (key, label) in enumerate(items):
-            kind = "reverse" if selected == i else "dim"
-            lines.append([("   ", "dim"), (f"{key}  ", "bright"),
+            mark, kind = _mark(selected == i)
+            lines.append([(mark, "bright"), (f"{key}  ", "bright"),
                           (label[:width - 8], kind)])
 
     while len(lines) < height - 2:

@@ -84,6 +84,84 @@ def transcript_lines(entries, width, height, timestamps=True, scroll=0):
     return window + [[("", "bright")]] * (height - len(window))
 
 
+def frequency(hz):
+    """A VFO reading at the radio's own resolution: 14.070.589
+
+    Megahertz, kilohertz, hertz, grouped with dots. Digital work is done in
+    tens of hertz inside a 31 Hz-wide signal, so rounding to three decimals
+    throws away the part of the number that matters when comparing the deck's
+    reading against the radio's display.
+    """
+    try:
+        hz = int(round(float(hz)))
+    except (TypeError, ValueError):
+        return ""
+    if hz <= 0:
+        return ""
+    mhz, rest = divmod(hz, 1_000_000)
+    khz, rest = divmod(rest, 1_000)
+    return f"{mhz}.{khz:03d}.{rest:03d}"
+
+
+# Nominal bandwidths for modes whose name defines the number, used when
+# fldigi reports 0. It reports a figure only where bandwidth is a settable
+# parameter of the modem — Hell, for instance — and 0 for everything fixed,
+# which is most of what gets used. Displaying that 0 says BPSK31 is zero hertz
+# wide, which is worse than saying nothing.
+_NOMINAL_BW = {
+    "BPSK31": 31, "QPSK31": 31, "PSK31": 31,
+    "BPSK63": 63, "QPSK63": 63, "PSK63": 63,
+    "BPSK125": 125, "PSK125": 125,
+}
+
+
+def mode_bandwidth(name, reported=0):
+    """Signal bandwidth in Hz as a string, or an em dash when unknown.
+
+    Only figures that are definitional are asserted: the PSK family from its
+    symbol rate, and Olivia and Contestia from the name itself, where the
+    second number IS the bandwidth. Anything else falls back to whatever
+    fldigi reports, and to nothing at all when it reports zero.
+    """
+    try:
+        reported = int(reported)
+    except (TypeError, ValueError):
+        reported = 0
+    if reported > 0:
+        return f"{reported} Hz"
+
+    name = (name or "").upper()
+    if name in _NOMINAL_BW:
+        return f"{_NOMINAL_BW[name]} Hz"
+
+    # OLIVIA-8/250, CONTESTIA-8/500: tones/bandwidth.
+    if "/" in name and name.split("-")[0] in ("OLIVIA", "CONTESTIA"):
+        tail = name.rsplit("/", 1)[-1]
+        if tail.isdigit():
+            return f"{tail} Hz"
+    return "\u2014"
+
+
+def banner(mode, carrier, inhibited, width):
+    """The row under the status line: what mode, and whether we can transmit.
+
+    Transmit state earns a row of its own rather than a three-letter field.
+    Whether the radio can be keyed is the one thing that should never have to
+    be hunted for, and the mode in use is what a second operator asks about
+    first.
+    """
+    left = f" {mode}"
+    if carrier:
+        left += f" @ {carrier} Hz"
+    right = "** TRANSMIT INHIBITED **" if inhibited else "TRANSMIT ARMED"
+    pad = width - len(left) - len(right) - 1
+    if pad < 1:
+        right = "** INHIBITED **" if inhibited else "ARMED"
+        pad = max(1, width - len(left) - len(right) - 1)
+    kind = "reverse" if inhibited else "bright"
+    return [(left, "bright"), (" " * pad, "dim"), (right, kind), (" ", "dim")]
+
+
 def status_line(fields, width):
     """The top line: one row, always visible, reverse video.
 
@@ -164,6 +242,10 @@ def plain(segments):
 # and 50 at the largest one, so the line has to shed bindings rather than be
 # truncated mid-word — a hint that reads "^C abor" is worse than no hint.
 _HINT_TIERS = (
+    " F1 menu  F2 tune  F3 mode  \u2190\u2192 carrier  \u2191\u2193 search"
+    "  ^T over  ^K hand  ^C abort",
+    " F1 menu  F2 tune  F3 mode  \u2190\u2192\u2191\u2193 tune  ^T over"
+    "  ^K hand  ^C abort",
     " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand  ^C abort",
     " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand",
     " F2 tune  F3 mode  F4 color  ^T over  ^K hand",

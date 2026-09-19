@@ -88,7 +88,7 @@ if __name__ == "__main__":
         made.append(draw(chat, key, f"{OUT}/conversation-{key}.png"))
 
     made.append(draw(cap.tuning_screen(), "matrix", f"{OUT}/tuning.png"))
-    made.append(draw(menus.render(menus.ROOT, COLS, ROWS), "matrix", f"{OUT}/menu.png"))
+    made.append(draw(menus.render(menus.ROOT, COLS, ROWS, selected=2), "matrix", f"{OUT}/menu.png"))
     made.append(draw(menus.render(menus.mode_menu("BPSK63"), COLS, ROWS),
                      "matrix", f"{OUT}/mode-picker.png"))
 

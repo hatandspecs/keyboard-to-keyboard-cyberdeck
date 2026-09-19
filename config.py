@@ -29,8 +29,12 @@ SCHEMA = {
     "TX_TIMEOUT":      (180, int, "seconds before an over is aborted; 0 disables"),
     "TIMESTAMPS":      ("yes", str, "yes | no"),
     "INHIBIT_ON_START": ("yes", str, "yes | no — start with transmit inhibited"),
-    "RIG_MODE":        ("USB", str, "rig mode set at startup and on band change; "
-                                    "USB, or PKTUSB for the radio's data mode"),
+    "RIG_MODE":        ("PKTUSB", str, "rig mode set at startup and on band "
+                                       "change; PKTUSB is the radio's data "
+                                       "mode, USB is plain sideband, blank "
+                                       "leaves the radio alone"),
+    "RSID_ON_START":   ("yes", str, "yes | no — follow other stations' mode "
+                                    "identifiers automatically"),
 }
 
 COLORS = ("matrix", "deckard", "hal", "tron")
