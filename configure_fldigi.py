@@ -72,6 +72,48 @@ def show(text):
             print(f"  {key:18} {val!r}")
 
 
+def pick_audio(pattern="USB Audio"):
+    """Choose the PortAudio device this machine should use for the radio.
+
+    Prefer the direct hardware device (``hw:``): it reaches the codec without a
+    sound server resampling in the middle, which is what a modem wants. Fall
+    back to a sound-server device only when no hardware device matched at all.
+
+    The name still cannot be seeded once and reused, because the ``hw:`` index
+    is assigned in enumeration order and the deck may number the radio
+    differently than the build machine does. Run this on each machine.
+
+    A device that is *open elsewhere* reports zero input channels rather than
+    an error, so a matching hardware device with no input is treated as busy
+    and refused. Silently falling through to the sound-server device would
+    write a working-looking configuration that decodes nothing.
+    """
+    try:
+        import sounddevice as sd
+    except ImportError:
+        return None, "the sounddevice module is not installed"
+
+    matches = [d for d in sd.query_devices() if pattern.lower() in d["name"].lower()]
+    if not matches:
+        return None, f"no audio device whose name contains {pattern!r}"
+
+    hw = [d for d in matches if "hw:" in d["name"]]
+    busy = [d for d in hw if d["max_input_channels"] == 0]
+    if busy and not [d for d in hw if d["max_input_channels"] > 0]:
+        names = ", ".join(repr(d["name"]) for d in busy)
+        return None, (f"{names} reports no input channel, which means another "
+                      "program holds the capture side — stop fldigi "
+                      "(./dev-fldigi.sh stop) and try again")
+
+    usable = [d for d in matches if d["max_input_channels"] > 0]
+    if not usable:
+        names = ", ".join(repr(d["name"]) for d in matches)
+        return None, (f"devices matched ({names}) but none reports an input "
+                      "channel — another program may hold the capture side")
+    chosen = ([d for d in usable if "hw:" in d["name"]] or usable)[0]
+    return chosen["name"], None
+
+
 def list_audio():
     try:
         import sounddevice  # noqa
@@ -104,6 +146,9 @@ def main():
                     help="point rig control at rigctld on localhost:4532")
     ap.add_argument("--no-rig", action="store_true", help="disable rig control entirely")
     ap.add_argument("--audio", metavar="NAME", help="PortAudio device for input and output")
+    ap.add_argument("--auto-audio", metavar="PATTERN", nargs="?", const="USB Audio",
+                    help="pick the audio device on this machine by name pattern "
+                         "(default 'USB Audio'); use on the deck itself")
     ap.add_argument("--call", help="set MYCALL")
     args = ap.parse_args()
 
@@ -112,6 +157,14 @@ def main():
 
     path = path_for(args.config_dir)
     text = io_read(path)
+
+    if args.auto_audio:
+        name, why = pick_audio(args.auto_audio)
+        if name is None:
+            print(f"could not choose an audio device: {why}", file=sys.stderr)
+            return 1
+        print(f"  chose {name!r}")
+        args.audio = name
 
     if args.show or not any((args.rigctld, args.no_rig, args.audio, args.call)):
         print(f"{path}:"); show(text); return 0

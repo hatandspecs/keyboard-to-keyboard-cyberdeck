@@ -13,6 +13,22 @@ CONFIG_DIR="${HERE}/fldigi-config"
 DISPLAY_NUM="${CYBERDECK_DISPLAY:-:99}"
 PORT="${CYBERDECK_XMLRPC_PORT:-7362}"
 
+stop_all() {
+  pkill -f "fldigi --config-dir ${CONFIG_DIR}" 2>/dev/null || true
+  pkill -f "Xvfb ${DISPLAY_NUM}" 2>/dev/null || true
+}
+
+# "stop" is not just tidiness: an open capture device reports zero input
+# channels rather than an error, so audio enumeration (configure_fldigi.py
+# --list-audio / --auto-audio) sees the radio as capture-less while fldigi
+# holds it.
+if [[ "${1:-}" == "stop" ]]; then
+  stop_all
+  sleep 1
+  echo "fldigi and Xvfb ${DISPLAY_NUM} stopped."
+  exit 0
+fi
+
 if [[ ! -d "$CONFIG_DIR" ]]; then
   if [[ -d "$HOME/.fldigi" ]]; then
     echo "Seeding ${CONFIG_DIR} from ~/.fldigi (fldigi will not start on an empty one)."
@@ -23,8 +39,7 @@ if [[ ! -d "$CONFIG_DIR" ]]; then
   fi
 fi
 
-pkill -f "fldigi --config-dir ${CONFIG_DIR}" 2>/dev/null || true
-pkill -f "Xvfb ${DISPLAY_NUM}" 2>/dev/null || true
+stop_all
 sleep 1
 
 Xvfb "$DISPLAY_NUM" -screen 0 1024x768x16 >/dev/null 2>&1 &

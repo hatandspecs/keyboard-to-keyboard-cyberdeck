@@ -3,14 +3,20 @@
 Blank SD card to a working terminal, in order. Every command is meant to be
 run as written.
 
-**Before starting, read this once:** `build_deck_image.sh build` has never been
-run end to end. It was written against a machine with no loop devices, no sudo
-and no network. The generated units and scripts are all tested, and the
-mount-and-write path follows the approach proven in the iGate project — but
-expect to hit something. Phase 6 covers recovery.
+**Before starting, read this once:** `build_deck_image.sh build` and `flash`
+have been run end to end once, on 2026-09-19, and the resulting card verifies
+(Phase 2, step 4). Nothing has been *booted* yet — every phase from 3 onward is
+written from the scripts rather than from a working deck, so expect to hit
+something. Phase 6 covers recovery.
 
-**Two known risks, both flagged at the point they bite:** the DSI panel overlay
-(Phase 0, step 4) and fldigi's audio device on the Pi (Phase 4, step 3).
+**The known risk, flagged at the point it bites:** fldigi's audio device on the
+Pi (Phase 4, step 3). The DSI panel overlay was the other one; Waveshare's
+documentation has since confirmed the shipped default is correct (Phase 0,
+step 4).
+
+Phase 0 step 2 has been run against a real FTX-1 on the laptop — the outputs
+shown there are the ones observed, not reconstructed. Everything from Phase 1
+onward is written from the scripts rather than from a completed run.
 
 ---
 
@@ -51,40 +57,136 @@ the keyboard is factory reset — rescan and update `deck.conf` if that happens.
 Plug the **FTX-1** into the laptop first. This step decides what the card is
 seeded with, and fldigi cannot be configured on the deck without a screen.
 
+The FTX-1 enumerates as **three** separate USB devices:
+
+```
+$ lsusb
+Bus 001 Device 010: ID 10c4:ea70 Silicon Labs CP2105 Dual UART Bridge
+Bus 001 Device 011: ID 0d8c:0016 C-Media Electronics, Inc. USB Audio Device
+Bus 001 Device 012: ID 26aa:0030 Yaesu Musen YAESU HRI USB I/F
+```
+
+| Device | Appears as | Carries |
+|---|---|---|
+| CP2105 dual UART | `/dev/ttyUSB0`, `/dev/ttyUSB1` | CAT — frequency and mode |
+| Yaesu HRI USB I/F | `/dev/ttyACM0` | PTT |
+| C-Media `0d8c:0016` | ALSA card 1, `USB Audio Device` | transmit and receive audio |
+
+The audio interface is a generic C-Media codec, so it is named **`USB Audio
+Device`** rather than anything mentioning Yaesu. That is the string to look for.
+
 ```bash
 cd ~/git_repos/keyboard-to-keyboard-cyberdeck
 ./dev-fldigi.sh                             # Xvfb + fldigi, seeded from ~/.fldigi
 python3 configure_fldigi.py --show          # what is set now
 ```
 
-Find the radio's codec as PortAudio names it:
+On a fresh configuration `--show` prints only the identity fields — no audio or
+rig keys yet:
+
+```
+fldigi-config/fldigi_def.xml:
+  MYCALL             'KD3CCO'
+  MYNAME             'Don Natale'
+  MYQTH              'State College'
+```
+
+Find the radio's codec as PortAudio names it. **Stop fldigi first** — see the
+warning below:
 
 ```bash
 pip install sounddevice                     # only needed for the listing
+./dev-fldigi.sh stop
 python3 configure_fldigi.py --list-audio
 ```
+
+```
+  [4] USB Audio Device: - (hw:1,0)  in=2 out=2
+  [14] USB Audio Device Analog Stereo  in=4 out=2
+```
+
+Two entries for one radio. `[4]` is the **direct hardware device**; `[14]` is
+the same codec reached through the desktop's sound server. Take the hardware
+device: it reaches the codec without a sound server resampling in the middle,
+which is what a modem wants. `--auto-audio` applies that preference itself.
+
+> ⚠️ **Run the listing with fldigi stopped.** A device that is already open
+> reports **zero input channels** rather than an error:
+>
+> ```
+> card 1: Device [USB Audio Device], device 0: USB Audio [USB Audio]
+>   Subdevices: 0/1                          ← 0 free: held by fldigi
+> ```
+> ```
+>   [4] USB Audio Device: - (hw:1,0)  in=0 out=2      ← looks capture-less
+> ```
+>
+> `--auto-audio` refuses rather than quietly falling through to the sound-server
+> device, which would write a configuration that looks correct and decodes
+> nothing. A healthy listing shows `Subdevices: 1/1` and `in=2`.
 
 Then set both things that matter:
 
 ```bash
-python3 configure_fldigi.py --rigctld --audio "<the FTX-1 codec name>"
+python3 configure_fldigi.py --rigctld --auto-audio
 python3 configure_fldigi.py --show          # confirm
 ```
 
-Expect to see:
+```
+chose 'USB Audio Device: - (hw:1,0)'
+fldigi-config/fldigi_def.xml  (previous kept as fldigi_def.xml.bak)
+  set CHKUSEHAMLIBIS=1
+  set HAMRIGMODEL=2
+  set HAMRIGDEVICE=localhost:4532
+  set PORTINDEVICE='USB Audio Device: - (hw:1,0)'
+  set PORTOUTDEVICE='USB Audio Device: - (hw:1,0)'
+  set AUDIOIO=1 (PortAudio)
+```
+
+`--show` afterwards:
 
 ```
-CHKUSEHAMLIBIS     '1'
-HAMRIGMODEL        '2'
-HAMRIGDEVICE       'localhost:4532'
-PORTINDEVICE       '<the codec>'
+  AUDIOIO            '1'
+  PORTINDEVICE       'USB Audio Device: - (hw:1,0)'
+  PORTOUTDEVICE      'USB Audio Device: - (hw:1,0)'
+  CHKUSEHAMLIBIS     '1'
+  HAMRIGMODEL        '2'
+  HAMRIGDEVICE       'localhost:4532'
+  HAMLIBPTTONDATA    '1'
 ```
+
+Restart fldigi and confirm it came up against the radio rather than against
+nothing:
+
+```bash
+./dev-fldigi.sh
+python3 -c "
+from fldigi_client import Fldigi
+f = Fldigi()
+print('connected:', f.connected, '|', f.version())
+print('modem:', f.modem(), '| rig frequency:', f.frequency())"
+```
+
+```
+connected: True | fldigi 4.2.13
+modem: CW | rig frequency: 146850000.0
+```
+
+A **non-zero frequency that matches the radio's display** is the proof that the
+whole chain works: fldigi → rigctld → CAT → FTX-1. `0.0` means rig control is
+not connected, and no amount of audio configuration will fix it.
 
 **Why `--rigctld` and not hamlib directly.** The FTX-1 presents CAT on one
 serial port and PTT on another; fldigi's hamlib configuration has room for one
 port. `rigctld` bridges both and fldigi connects to it over loopback as *Hamlib
-NET rigctl*. Pointing fldigi straight at the CAT port means it and the deck's
+NET rigctl* — that is what `HAMRIGMODEL 2` and `HAMRIGDEVICE localhost:4532`
+mean. Pointing fldigi straight at the CAT port means it and the deck's
 `rigctld` service fight over the same device.
+
+**The `hw:` index does not travel.** `hw:1,0` is card 1 *on this laptop*, where
+card 0 is the built-in `HDA Intel PCH`. The Pi has no built-in capture device,
+so the radio is likely card 0 there and the seeded name will be wrong. Phase 4
+step 3 re-runs the choice on the deck itself.
 
 The previous configuration is kept as `fldigi-config/fldigi_def.xml.bak`.
 
@@ -103,19 +205,61 @@ password on every login later.
 these credentials in recoverable form — Raspberry Pi OS has no disk encryption
 and the card pulls out with a fingernail.
 
-### 4. Set the panel overlay ⚠️
+### 4. Check the panel overlay
 
-`deck.conf` ships with `DECK_PANEL_OVERLAY = vc4-kms-dsi-7inch`, which is the
-**official 7-inch panel**. A Waveshare 5" DSI almost certainly wants something
-else; recent kernels use a form like:
+`deck.conf` ships with:
 
 ```
-DECK_PANEL_OVERLAY = vc4-kms-dsi-waveshare-panel,5_0_inch
+DECK_PANEL_OVERLAY = vc4-kms-dsi-7inch
 ```
 
-Check the panel's own documentation. **A wrong overlay means a blank screen and
-nothing else can be tested**, so it is worth five minutes now rather than an
-hour of SSH debugging later.
+**This is correct for the Waveshare 5" DSI LCD and needs no change.** The name
+is misleading: the overlay is named for the official Raspberry Pi 7" panel, but
+Waveshare's 800×480 DSI panels are compatible with that panel's DSI timing and
+touch arrangement, so the same overlay drives them. Waveshare's own wiki
+instructs exactly this line for the 5" display, and describes it generically as
+"the 800×480 resolution DSI LCD display" overlay.
+
+There is no `5_0_inch` parameter under `vc4-kms-dsi-waveshare-panel`. That
+overlay covers the Waveshare panels that are *not* 800×480 — 2.8", 4.0", 7.9",
+8.8" and so on. Ours is, so it uses the official-panel overlay instead.
+
+The build writes two lines to `config.txt`:
+
+```
+dtoverlay=vc4-kms-v3d          # added only if not already present
+dtoverlay=vc4-kms-dsi-7inch
+```
+
+The KMS driver line must come first — the panel overlay depends on it. It is
+already enabled in a stock Raspberry Pi OS image; the build asserts it anyway,
+because a `config.txt` where it has been commented out produces a blank panel
+and no other symptom.
+
+**The `,dsi0` variant does not apply here.** Waveshare documents
+`dtoverlay=vc4-kms-dsi-7inch,dsi0` for the second DSI interface, which only the
+Pi 5 and CM4 have. The 3A+ has one 15-pin DSI connector, so the plain form is
+right.
+
+**Hardware:** an FFC cable from the panel to the Pi's 15-pin DSI connector. The
+panel draws about **1.2 W** from that connector — worth remembering when the
+FTX-1 is also on the single USB port and something enumerates intermittently.
+
+Two settings this deck does not need, recorded in case they come up:
+
+* **Rotation** is not required — the panel is natively 800×480 landscape, which
+  is the orientation the terminal is designed around. On a Lite image rotation
+  is a `cmdline.txt` edit, not a `config.txt` one:
+  `video=DSI-1:800x480M@60,rotate=90`.
+* **Touch** is unused; this deck is driven entirely from the keyboard. It can
+  be switched off with `disable_touchscreen=1` in `config.txt` if the Goodix
+  controller ever misbehaves.
+
+**Backlight** is adjustable at runtime, which matters for operating at night:
+
+```bash
+echo 100 | sudo tee /sys/class/backlight/*/brightness    # 0–255
+```
 
 ---
 
@@ -149,21 +293,194 @@ It ends with the path to `deck-build/cyberdeck.img`.
 
 ## Phase 2 — flash the card
 
+### 1. Identify the card
+
 ```bash
-lsblk
+lsblk -o NAME,SIZE,FSTYPE,LABEL,MOUNTPOINT,TRAN
 ```
 
-Identify the card by size. **Read it twice.** The next command overwrites the
-device completely.
+Identify the card by **size and label together**, not by device name. Device
+names are assigned in the order things were plugged in and change between
+sessions; `/dev/sdb` on Monday is not `/dev/sdb` on Tuesday.
+
+Card readers show up under two different naming schemes:
+
+| Reader | Device | Partitions |
+|---|---|---|
+| Built-in SD slot | `/dev/mmcblk0` | `mmcblk0p1`, `mmcblk0p2` |
+| USB adapter | `/dev/sdb`, `/dev/sdc`, … | `sdb1`, `sdb2` |
+
+A new card usually shows one FAT32 partition. A card already carrying Pi OS
+shows two, labelled `bootfs` and `rootfs`.
+
+**Read it twice.** The flash overwrites the device completely and there is no
+undo. Confirm the root filesystem is somewhere else entirely before going on:
 
 ```bash
-./build_deck_image.sh flash /dev/sdX
+findmnt -n -o SOURCE /        # must NOT be the device you are about to flash
+```
+
+> **Check the label, not just the size.** A real example from this build: the
+> intended device came up as
+>
+> ```
+> mmcblk0p1  116.5G  exfat  ZOOM_H2E  /run/media/natale/ZOOM_H2E
+> ```
+>
+> — a card belonging to an audio recorder, sitting in the same slot. It was
+> empty and was flashed deliberately, but a card that size holding recordings
+> would have lost them silently: the image is about 2 GB, so the rest of the
+> card is not erased, merely unreachable, and nothing would look wrong until
+> the recorder was next used.
+>
+> Before flashing any card that is not blank:
+>
+> ```bash
+> ls -la /run/media/$USER/<LABEL>/
+> du -sh /run/media/$USER/<LABEL>/
+> ```
+
+### 2. Unmount it
+
+The desktop mounts removable cards automatically, so a card that was just
+inserted is almost certainly mounted. The script refuses to write to it:
+
+```
+error: /dev/mmcblk0 has mounted partitions; unmount them first
+```
+
+That refusal is a guard, not a fault. Unmount **each partition** — the
+partition (`mmcblk0p1`), never the whole device (`mmcblk0`):
+
+```bash
+udisksctl unmount -b /dev/mmcblk0p1
+```
+
+For a card with two partitions, or any card whose layout is unknown, unmount
+everything on the device in one pass:
+
+```bash
+DEV=/dev/mmcblk0
+findmnt -rno SOURCE | grep -E "^${DEV}(p?[0-9]+)?$" | sort -u \
+  | xargs -r -n1 udisksctl unmount -b
+```
+
+Setting `DEV` once is deliberate: the device name is then typed exactly once in
+this phase, and the same variable can be reused for the flash itself. The
+regexp matches both naming schemes — `mmcblk0p1` and `sdb1` — and anchors at
+both ends so a device named similarly is not caught by accident. It prints
+nothing and exits cleanly when nothing is mounted.
+
+`udisksctl` is the right tool here rather than `sudo umount`: it goes through
+the same desktop mount service that mounted the card, so the desktop does not
+simply remount it a moment later.
+
+Confirm nothing is mounted before continuing:
+
+```bash
+lsblk -o NAME,SIZE,LABEL,MOUNTPOINT "$DEV"
+```
+
+The `MOUNTPOINT` column must be empty on every row.
+
+If unmounting fails with *target is busy*, something still has the card open —
+a file manager window, or a shell sitting in a directory on it:
+
+```bash
+lsof +D /run/media/$USER/<LABEL> 2>/dev/null
+```
+
+### 3. Write it
+
+```bash
+./build_deck_image.sh flash "$DEV"
 sync
 ```
 
-`/dev/sdX` is not a real device — substitute what `lsblk` showed. The script
-asks you to type the path a second time to confirm, and refuses a device with
-mounted partitions.
+Substitute what `lsblk` actually showed — or reuse `$DEV` from the step above,
+if it is still set in the same shell. The script asks you to type the path a
+second time to confirm — that is the moment to compare it against the size and
+label you read, not before.
+
+Expect it to look idle. `dd` reports no progress, and `sync` at the end is
+where the buffered writes reach the card, so that step can sit for a minute or
+more after the copy appears finished. **Do not pull the card until `sync`
+returns.**
+
+A card much larger than the ~2 GB image is fine. Raspberry Pi OS expands the
+root filesystem to fill the card on first boot; `df -h /` over SSH in Phase 3
+confirms it did.
+
+### 4. Verify the card before booting
+
+Everything below is checkable while the card is still in the laptop, which is
+far cheaper than diagnosing it on a Pi with no HDMI and no keyboard. The card
+re-mounts by label after the flash:
+
+```bash
+udisksctl mount -b /dev/mmcblk0p1     # bootfs
+udisksctl mount -b /dev/mmcblk0p2     # rootfs
+B=/run/media/$USER/bootfs
+R=/run/media/$USER/rootfs
+```
+
+**Boot settings:**
+
+```bash
+grep -n "dtoverlay\|^\[" "$B/config.txt"
+cat "$B/cmdline.txt"
+ls "$B"/ssh "$B"/userconf.txt
+```
+
+Expect `dtoverlay=vc4-kms-dsi-7inch` to appear **after the last `[all]`**, not
+under `[cm4]`, `[cm5]` or `[pi5]` — a section filter above it would silently
+exclude a 3A+. `dtoverlay=vc4-kms-v3d` must also be present and uncommented.
+
+In `cmdline.txt`, expect `console=tty3` (not `tty1`), the quiet-boot options,
+and the stock `resize` token left intact — that token plus `auto_initramfs=1`
+in `config.txt` is what expands the root filesystem on first boot.
+
+`ssh` and `userconf.txt` are what make the deck reachable before the panel
+works. If either is missing, stop: there is no way in.
+
+**Payload and services:**
+
+```bash
+ls "$R/opt/cyberdeck/" | head
+ls "$R/etc/systemd/system/" | grep cyberdeck
+ls "$R/etc/systemd/system/multi-user.target.wants/" | grep cyberdeck
+ls "$R/etc/systemd/system/timers.target.wants/" | grep cyberdeck
+```
+
+Expect **seven unit files** — six services and one timer:
+
+```
+cyberdeck-btpair.service    cyberdeck-rigctld.service
+cyberdeck-btpair.timer      cyberdeck-ui.service
+cyberdeck-firstboot.service cyberdeck-xvfb.service
+cyberdeck-fldigi.service
+```
+
+All six services appear in `multi-user.target.wants`; the timer appears in
+`timers.target.wants`. A `.timer` is enabled into the timers target, not the
+multi-user one, so looking for it in the wrong `.wants` makes it seem missing
+when it is fine.
+
+`cyberdeck-ui` is only enabled when `DECK_AUTOSTART = yes`. Its absence from
+`multi-user.target.wants` means the terminal will not start on its own — that
+is a setting, not a fault.
+
+`systemctl enable` cannot run against an offline image, so these are plain
+symlinks created by the build. A missing symlink means a service that exists
+and never starts.
+
+Then unmount both before pulling the card:
+
+```bash
+udisksctl unmount -b /dev/mmcblk0p2
+udisksctl unmount -b /dev/mmcblk0p1
+sync
+```
 
 ---
 
@@ -213,9 +530,30 @@ sudo systemctl start cyberdeck-btpair
 
 ```bash
 ls -l /dev/ttyUSB* /dev/ttyACM*     # CAT and PTT
+lsusb                               # all three FTX-1 interfaces
 arecord -l                          # the FTX-1's codec and its card number
 systemctl status cyberdeck-rigctld --no-pager
 ```
+
+Expect the same three devices the laptop saw in Phase 0 step 2 — `10c4:ea70`,
+`0d8c:0016`, `26aa:0030` — and:
+
+```
+/dev/ttyUSB0  /dev/ttyUSB1     CP2105, CAT
+/dev/ttyACM0                   Yaesu HRI USB I/F, PTT
+```
+
+**`arecord -l` is the line that matters.** The Pi has no built-in capture
+device, so the FTX-1 is expected at **card 0** here where it was card 1 on the
+laptop:
+
+```
+card 0: Device [USB Audio Device], device 0: USB Audio [USB Audio]
+  Subdevices: 0/1                    ← 0 is correct here: cyberdeck-fldigi holds it
+```
+
+If fewer than three USB devices appear, suspect power before software: a 3A+
+feeding a DSI panel and a radio interface from one port has little headroom.
 
 ### 2. Is fldigi answering?
 
@@ -229,22 +567,62 @@ print('modem :', f.modem(), '| carrier', f.carrier(), 'Hz')
 print('rig   :', f.frequency(), f.rig_mode())"
 ```
 
+Expect something like the laptop produced in Phase 0 step 2:
+
+```
+connected: True | fldigi 4.2.13
+modem : CW | carrier 1000 Hz
+rig   : 146850000.0 FM
+```
+
 A frequency of `0.0` means rig control is not working — check
-`cyberdeck-rigctld` and that fldigi is set to `localhost:4532`.
+`cyberdeck-rigctld` and that fldigi is set to `localhost:4532`. A frequency
+that does **not** match the radio's own display means `rigctld` is talking to
+the wrong serial port; the CP2105 presents two, and only one carries CAT.
 
 ### 3. Audio device ⚠️
 
-If `arecord -l` gives the FTX-1 a **different card number than the laptop did**,
-the seeded configuration names the wrong device and the deck will decode
-nothing while looking perfectly healthy.
+The seeded configuration names `hw:1,0`, which was the radio **on the laptop**.
+The `hw:` index is assigned in enumeration order, and the Pi numbers the same
+codec differently — almost certainly `hw:0,0`. A wrong index does not raise an
+error: fldigi opens whatever is at that name, or nothing, and the deck looks
+perfectly healthy while decoding silence.
 
 ```bash
 cd /opt/cyberdeck
 python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config --show
-python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config \
-  --audio "<the name on this machine>"
-sudo systemctl restart cyberdeck-fldigi
 ```
+
+If `PORTINDEVICE` is still `'USB Audio Device: - (hw:1,0)'` and `arecord -l`
+put the radio on card 0, re-choose it on this machine:
+
+```bash
+sudo systemctl stop cyberdeck-fldigi        # it holds the capture device
+python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config --auto-audio
+sudo systemctl start cyberdeck-fldigi
+```
+
+Expect `chose 'USB Audio Device: - (hw:0,0)'`. Stopping fldigi first is
+required, not tidiness — while it holds the device the listing reports zero
+input channels and `--auto-audio` refuses rather than guess.
+
+If `sounddevice` is not installed on the deck, name the device explicitly
+instead, building it from what `arecord -l` reported:
+
+```bash
+python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config \
+  --audio "USB Audio Device: - (hw:0,0)"
+```
+
+**Confirm the audio actually opened.** A restarted fldigi that failed to open
+its device still answers XML-RPC:
+
+```bash
+grep -i "audio\|portaudio\|error" /opt/cyberdeck/fldigi-config/fldigi.log | tail -20
+arecord -l        # Subdevices: 0/1 means fldigi has it open — correct
+```
+
+`Subdevices: 1/1` with fldigi running means it did **not** open the device.
 
 If the name is hard to determine, run fldigi's own dialog over SSH — it runs on
 the Pi and displays on the laptop:
@@ -299,15 +677,33 @@ only the customisation repeats.
 
 ### Blank panel, but SSH works
 
-Almost certainly the overlay (Phase 0, step 4).
+Check the overlay lines survived the build, in this order:
 
 ```bash
 grep dtoverlay /boot/firmware/config.txt
-sudo nano /boot/firmware/config.txt      # correct it
-sudo reboot
 ```
 
-Check the terminal itself is running with `systemctl status cyberdeck-ui`.
+Both must be present and neither commented out:
+
+```
+dtoverlay=vc4-kms-v3d
+dtoverlay=vc4-kms-dsi-7inch
+```
+
+If they are both there, the overlay is not the problem — it is the documented
+configuration for this panel (Phase 0, step 4). Look at the physical layer
+instead: the FFC cable's orientation and seating in the 15-pin DSI connector,
+which is easy to get backwards and gives exactly this symptom. Then check the
+terminal is actually running:
+
+```bash
+systemctl status cyberdeck-ui
+ls /sys/class/backlight/            # a panel the kernel recognised appears here
+```
+
+A backlight entry with a blank screen means the panel is driven and the
+terminal is not. Nothing under `/sys/class/backlight` means the panel was never
+brought up — cable or overlay.
 
 ### The terminal is not running
 
@@ -339,11 +735,12 @@ from first principles:
 
 | | |
 |---|---|
-| `build_deck_image.sh build` | Written, never run end to end |
-| The 5" DSI panel on a Pi 3A+ | Never attached; overlay and power source unconfirmed |
+| `build_deck_image.sh build` | **Run end to end, 2026-09-19.** Produced a card whose boot settings, payload and unit symlinks all verify (Phase 2, step 4). Never booted |
+| The 5" DSI panel on a Pi 3A+ | Never attached. The overlay is confirmed from Waveshare's documentation, not from a boot |
 | Bluetooth pairing at first boot | The script is syntax-checked, never run against a real keyboard |
 | Terminus console fonts at 12×24 | Never rendered on the panel |
 | fldigi on a 3A+'s 512 MB | Runs comfortably on a laptop; untested with Xvfb on that board |
+| The FTX-1's `hw:` index on the Pi | Predicted as `hw:0,0`; confirmed only as `hw:1,0` on the laptop |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
 over model, the colour schemes — is covered by 113 tests against a live fldigi.

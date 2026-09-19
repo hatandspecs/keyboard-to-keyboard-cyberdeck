@@ -433,13 +433,79 @@ EOF
     n=$((n + 1))
   done
 
-  # The radio stays rfkill-blocked until a country is set.
+  # Raspberry Pi OS ships the WiFi radio rfkill-blocked and keeps it blocked
+  # until a regulatory domain is set. That has to happen before NetworkManager
+  # comes up, because first boot needs the network to install packages — and a
+  # deck with no network installs no fldigi and no bluez, which presents as
+  # "no connection to fldigi" plus a keyboard that never pairs.
+  #
+  # Set it three ways so no single mechanism's absence on a given OS release
+  # leaves the deck offline. This mirrors the iGate build, where the same
+  # approach is proven on this board.
   local country="${CFG[DECK_WIFI_COUNTRY]}"
-  echo "REGDOMAIN=${country}" | sudo tee "${ROOT_MNT}/etc/default/crda" >/dev/null 2>&1 || true
+
+  # 1. Kernel module parameter — applied as the driver loads, before userspace.
+  sudo mkdir -p "${ROOT_MNT}/etc/modprobe.d"
   printf 'options cfg80211 ieee80211_regdom=%s\n' "$country" \
-    | sudo tee "${ROOT_MNT}/etc/modprobe.d/cfg80211.conf" >/dev/null
+    | sudo tee "${ROOT_MNT}/etc/modprobe.d/cfg80211-regdom.conf" >/dev/null
+
+  # 2. Legacy CRDA default, still read on older releases.
+  echo "REGDOMAIN=${country}" | sudo tee "${ROOT_MNT}/etc/default/crda" >/dev/null 2>&1 || true
   sudo sed -i 's/^country=.*//' "${BOOT_MNT}/wpa_supplicant.conf" 2>/dev/null || true
-  note "regulatory domain ${country}"
+
+  # 3. An early oneshot that unblocks the radios and records the country,
+  #    ordered ahead of NetworkManager. Mechanisms 1 and 2 set the domain but
+  #    neither clears the soft block; without this the radio stays down.
+  tmp="$(mktemp)"
+  cat > "$tmp" <<EOF
+[Unit]
+Description=Unblock the radios and set the WiFi regulatory domain
+Before=NetworkManager.service wpa_supplicant.service bluetooth.service
+After=local-fs.target
+ConditionPathExists=!/var/lib/cyberdeck-wifi-country-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cyberdeck-wifi-country.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  sudo install -m 644 "$tmp" "${ROOT_MNT}/etc/systemd/system/cyberdeck-wifi-country.service"
+
+  cat > "$tmp" <<EOF
+#!/usr/bin/env bash
+# Unblocks the WiFi and Bluetooth radios and records the regulatory domain.
+# Runs once, before NetworkManager, so first boot has a network to install
+# over. Bluetooth is unblocked here too: the deck's only keyboard is Bluetooth.
+set -uo pipefail
+COUNTRY="${country}"
+
+command -v rfkill >/dev/null && rfkill unblock wifi bluetooth
+command -v iw >/dev/null && iw reg set "\$COUNTRY"
+command -v raspi-config >/dev/null && raspi-config nonint do_wifi_country "\$COUNTRY"
+
+# systemd-rfkill replays a persisted block on boot, which undoes the unblock
+# above on the next start unless the stored state is cleared too.
+for f in /var/lib/systemd/rfkill/*:wlan /var/lib/systemd/rfkill/*:bluetooth; do
+  [[ -e "\$f" ]] && echo 0 > "\$f"
+done
+
+mkdir -p /var/lib
+touch /var/lib/cyberdeck-wifi-country-done
+exit 0
+EOF
+  sudo install -D -m 755 "$tmp" "${ROOT_MNT}/usr/local/sbin/cyberdeck-wifi-country.sh"
+  rm -f "$tmp"
+
+  # configure_wifi runs before the units are installed, so the wants directory
+  # is whatever the stock image has. Create it rather than assume it.
+  sudo mkdir -p "${ROOT_MNT}/etc/systemd/system/multi-user.target.wants"
+  sudo ln -sf /etc/systemd/system/cyberdeck-wifi-country.service \
+    "${ROOT_MNT}/etc/systemd/system/multi-user.target.wants/cyberdeck-wifi-country.service"
+
+  note "regulatory domain ${country}, radios unblocked before NetworkManager"
 }
 
 install_project() {
@@ -480,9 +546,28 @@ configure_boot() {
   local cfg="${BOOT_MNT}/config.txt" cmd="${BOOT_MNT}/cmdline.txt"
 
   if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" ]]; then
-    printf '\n# Cyberdeck: the DSI panel.\ndtoverlay=%s\n' "${CFG[DECK_PANEL_OVERLAY]}" \
+    # config.txt is divided into conditional sections ([cm4], [pi5], [all]...)
+    # and a bare append inherits whichever section happens to be last in the
+    # stock file. Today that is [all]; if an image ever ended with [pi5] the
+    # overlay would silently not apply to a 3A+. Open [all] explicitly, once,
+    # and write everything below it.
+    printf '\n[all]\n' | sudo tee -a "$cfg" >/dev/null
+
+    # The panel overlay needs the KMS driver loaded first. Raspberry Pi OS
+    # ships vc4-kms-v3d enabled, but a config.txt where it has been commented
+    # out gives a blank panel and no other symptom, so assert it rather than
+    # assume it. Waveshare's instructions list both lines for this reason.
+    if sudo grep -qE '^[[:space:]]*dtoverlay=vc4-kms-v3d' "$cfg"; then
+      note "dtoverlay=vc4-kms-v3d already present"
+    else
+      printf '# Cyberdeck: KMS driver, required by the panel overlay below.\ndtoverlay=vc4-kms-v3d\n' \
+        | sudo tee -a "$cfg" >/dev/null
+      note "dtoverlay=vc4-kms-v3d added"
+    fi
+
+    printf '# Cyberdeck: the DSI panel.\ndtoverlay=%s\n' "${CFG[DECK_PANEL_OVERLAY]}" \
       | sudo tee -a "$cfg" >/dev/null
-    note "dtoverlay=${CFG[DECK_PANEL_OVERLAY]}"
+    note "dtoverlay=${CFG[DECK_PANEL_OVERLAY]} (under [all])"
   fi
 
   if [[ "${CFG[DECK_HIDE_BOOT_MESSAGES]:-yes}" == yes && -f "$cmd" ]]; then
@@ -521,13 +606,15 @@ install_services() {
   sudo mkdir -p "$sysd" "$wants" "${sysd}/timers.target.wants"
 
   local u tmp; tmp="$(mktemp)"
+  # install -m, not cp: the temp file is mktemp's 0600, and a plain cp carries
+  # that mode onto the unit. systemd reads it either way, but unit files with
+  # mixed permissions invite a later "why is this one different".
   for u in xvfb fldigi rigctld ui btpair; do
     emit_unit "$u" "$user" "$dir" > "$tmp"
-    sudo cp "$tmp" "${sysd}/cyberdeck-${u}.service"
-    sudo chmod 644 "${sysd}/cyberdeck-${u}.service"
+    sudo install -m 644 "$tmp" "${sysd}/cyberdeck-${u}.service"
   done
   emit_unit btpair-timer "$user" "$dir" > "$tmp"
-  sudo cp "$tmp" "${sysd}/cyberdeck-btpair.timer"
+  sudo install -m 644 "$tmp" "${sysd}/cyberdeck-btpair.timer"
   emit_bt_script > "$tmp"
   sudo install -D -m 755 "$tmp" "${ROOT_MNT}/usr/local/sbin/cyberdeck-bt-pair.sh"
   rm -f "$tmp"
@@ -612,7 +699,7 @@ install_firstboot() {
   emit_firstboot "$user" "$dir" > "$tmp"
   sudo install -D -m 755 "$tmp" "${ROOT_MNT}/usr/local/sbin/cyberdeck-firstboot.sh"
   emit_firstboot_unit > "$tmp"
-  sudo cp "$tmp" "${ROOT_MNT}/etc/systemd/system/cyberdeck-firstboot.service"
+  sudo install -m 644 "$tmp" "${ROOT_MNT}/etc/systemd/system/cyberdeck-firstboot.service"
   sudo ln -sf /etc/systemd/system/cyberdeck-firstboot.service \
     "${ROOT_MNT}/etc/systemd/system/multi-user.target.wants/cyberdeck-firstboot.service"
   rm -f "$tmp"
