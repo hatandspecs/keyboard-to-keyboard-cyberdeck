@@ -224,10 +224,30 @@ class Fldigi:
         self._call("main.set_squelch_level", float(level))
 
     def rsid(self):
+        """Act on a Reed-Solomon Identifier received from another station.
+
+        RSID is the closest fldigi has to automatic mode detection: a station
+        sends a short identifier burst ahead of its over encoding the mode and
+        the audio frequency, and a receiver with this on switches to match. It
+        is not blind detection — nothing is deduced from the signal itself, so
+        a station that does not send one is not followed.
+        """
         return bool(self._call("main.get_rsid", default=False))
 
     def set_rsid(self, on):
         self._call("main.set_rsid", bool(on))
+
+    def txid(self):
+        """Send an identifier ahead of our own overs, so others can follow us.
+
+        Separate from rsid in fldigi, and worth having on for the same reason
+        one leaves RSID on: a deck that relies on other people's identifiers
+        while sending none is taking without giving.
+        """
+        return bool(self._call("main.get_txid", default=False))
+
+    def set_txid(self, on):
+        self._call("main.set_txid", bool(on))
 
     # -- readouts ---------------------------------------------------------
 

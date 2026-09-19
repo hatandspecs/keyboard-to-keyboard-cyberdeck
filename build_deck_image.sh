@@ -288,7 +288,9 @@ cmd_units() {
   emit_unit btpair       "$user" "$dir" > "$out/cyberdeck-btpair.service"
   emit_unit btpair-timer "$user" "$dir" > "$out/cyberdeck-btpair.timer"
   emit_bt_script > "$out/cyberdeck-bt-pair.sh"
-  chmod +x "$out/cyberdeck-bt-pair.sh"
+  emit_firstboot "$user" "$dir" > "$out/cyberdeck-firstboot.sh"
+  emit_firstboot_unit > "$out/cyberdeck-firstboot.service"
+  chmod +x "$out/cyberdeck-bt-pair.sh" "$out/cyberdeck-firstboot.sh"
   note "wrote $out:"
   ls -1 "$out" | sed 's/^/     /'
 }
@@ -322,14 +324,319 @@ fetch_image() {
   note "$(du -h "$IMAGE_OUT" | cut -f1)"
 }
 
+LOOP_DEV=""; BOOT_MNT=""; ROOT_MNT=""
+
+cleanup() {
+  local had_e=""
+  [[ $- == *e* ]] && had_e=yes
+  set +e
+  [[ -n "$ROOT_MNT" ]] && sudo umount "$ROOT_MNT" 2>/dev/null
+  [[ -n "$BOOT_MNT" ]] && sudo umount "$BOOT_MNT" 2>/dev/null
+  [[ -n "$LOOP_DEV" ]] && sudo losetup -d "$LOOP_DEV" 2>/dev/null
+  [[ -n "$ROOT_MNT" ]] && rmdir "$ROOT_MNT" 2>/dev/null
+  [[ -n "$BOOT_MNT" ]] && rmdir "$BOOT_MNT" 2>/dev/null
+  LOOP_DEV=""; BOOT_MNT=""; ROOT_MNT=""
+  [[ -n "$had_e" ]] && set -e
+  return 0
+}
+
+mount_image() {
+  step "Mounting the image"
+  LOOP_DEV="$(sudo losetup --find --show --partscan "$IMAGE_OUT")" || die "losetup failed"
+  note "loop device: $LOOP_DEV"
+
+  # losetup returns once the kernel has read the partition table, but udev
+  # creates the /dev/loopNpM nodes afterwards. Testing for them immediately is
+  # a race; losing it reports a perfectly good image as not a Pi image.
+  command -v udevadm >/dev/null && sudo udevadm settle --timeout=10 2>/dev/null
+  local i
+  for i in $(seq 1 20); do
+    [[ -e "${LOOP_DEV}p1" && -e "${LOOP_DEV}p2" ]] && break
+    if (( i == 8 )); then
+      sudo partx -a "$LOOP_DEV" 2>/dev/null || sudo partprobe "$LOOP_DEV" 2>/dev/null || true
+    fi
+    sleep 0.25
+  done
+  [[ -e "${LOOP_DEV}p1" && -e "${LOOP_DEV}p2" ]] \
+    || die "expected two partitions on $LOOP_DEV — is this a Raspberry Pi OS image?"
+
+  BOOT_MNT="$(mktemp -d)"; ROOT_MNT="$(mktemp -d)"
+  sudo mount "${LOOP_DEV}p1" "$BOOT_MNT" || die "cannot mount the boot partition"
+  sudo mount "${LOOP_DEV}p2" "$ROOT_MNT" || die "cannot mount the root partition"
+}
+
+expand_tilde() { [[ "${1:-}" == "~"* ]] && echo "${HOME}${1:1}" || echo "${1:-}"; }
+
+configure_access() {
+  step "Account, hostname and SSH"
+  [[ "${CFG[DECK_SSH]:-yes}" == yes ]] && sudo touch "${BOOT_MNT}/ssh"
+
+  local hash
+  hash="$(openssl passwd -6 "${CFG[DECK_USER_PASSWORD]}")" || die "password hashing failed"
+  echo "${CFG[DECK_USER]}:${hash}" | sudo tee "${BOOT_MNT}/userconf.txt" >/dev/null
+  sudo chmod 600 "${BOOT_MNT}/userconf.txt"
+
+  # Nothing may be written under /home at build time: Raspberry Pi OS processes
+  # userconf.txt with "usermod -m -d /home/<name>", which refuses to run if the
+  # directory already exists. The key is staged elsewhere and moved on first boot.
+  local pubkey; pubkey="$(expand_tilde "${CFG[DECK_SSH_PUBKEY]:-}")"
+  if [[ -n "$pubkey" && -f "$pubkey" ]]; then
+    sudo mkdir -p "${ROOT_MNT}/etc/cyberdeck"
+    sudo cp "$pubkey" "${ROOT_MNT}/etc/cyberdeck/authorized_keys"
+    sudo chmod 644 "${ROOT_MNT}/etc/cyberdeck/authorized_keys"
+    note "SSH key staged"
+  fi
+
+  echo "${CFG[DECK_HOSTNAME]}" | sudo tee "${ROOT_MNT}/etc/hostname" >/dev/null
+  sudo sed -i "s/^127\.0\.1\.1.*/127.0.1.1\t${CFG[DECK_HOSTNAME]}/" "${ROOT_MNT}/etc/hosts"
+  note "${CFG[DECK_USER]}@${CFG[DECK_HOSTNAME]}.local"
+}
+
+configure_wifi() {
+  step "WiFi"
+  local nm_dir="${ROOT_MNT}/etc/NetworkManager/system-connections"
+  sudo mkdir -p "$nm_dir"
+  local n=1 ssid psk prio tmp
+  while [[ -n "${CFG[DECK_WIFI_SSID_$n]:-}" ]]; do
+    ssid="${CFG[DECK_WIFI_SSID_$n]}"; psk="${CFG[DECK_WIFI_PSK_$n]:-}"
+    prio=$((100 - n))
+    tmp="$(mktemp)"
+    cat > "$tmp" <<EOF
+[connection]
+id=${ssid}
+type=wifi
+autoconnect=true
+autoconnect-priority=${prio}
+
+[wifi]
+mode=infrastructure
+ssid=${ssid}
+cloned-mac-address=permanent
+
+[wifi-security]
+key-mgmt=wpa-psk
+psk=${psk}
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
+EOF
+    # NetworkManager silently ignores a profile that is group- or world-readable,
+    # which looks exactly like a wrong password.
+    sudo cp "$tmp" "${nm_dir}/${ssid}.nmconnection"
+    sudo chmod 600 "${nm_dir}/${ssid}.nmconnection"
+    sudo chown 0:0 "${nm_dir}/${ssid}.nmconnection"
+    rm -f "$tmp"
+    note "network ${n}: ${ssid}"
+    n=$((n + 1))
+  done
+
+  # The radio stays rfkill-blocked until a country is set.
+  local country="${CFG[DECK_WIFI_COUNTRY]}"
+  echo "REGDOMAIN=${country}" | sudo tee "${ROOT_MNT}/etc/default/crda" >/dev/null 2>&1 || true
+  printf 'options cfg80211 ieee80211_regdom=%s\n' "$country" \
+    | sudo tee "${ROOT_MNT}/etc/modprobe.d/cfg80211.conf" >/dev/null
+  sudo sed -i 's/^country=.*//' "${BOOT_MNT}/wpa_supplicant.conf" 2>/dev/null || true
+  note "regulatory domain ${country}"
+}
+
+install_project() {
+  step "Installing the terminal"
+  local dest="${ROOT_MNT}/opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
+  sudo mkdir -p "$dest"
+  sudo rsync -a \
+    --exclude '.git/' --exclude '__pycache__/' --exclude 'deck-build/' \
+    --exclude 'deck.secrets' --exclude 'docs/' --exclude 'fldigi-config/' \
+    "${SCRIPT_DIR}/" "${dest}/"
+
+  # The station's own settings. cyberdeck.conf is gitignored, so fall back to
+  # the example rather than shipping a card with no configuration at all.
+  if [[ -f "${SCRIPT_DIR}/cyberdeck.conf" ]]; then
+    sudo cp "${SCRIPT_DIR}/cyberdeck.conf" "${dest}/cyberdeck.conf"
+    note "cyberdeck.conf installed"
+  else
+    sudo cp "${SCRIPT_DIR}/cyberdeck.conf.example" "${dest}/cyberdeck.conf"
+    note "no cyberdeck.conf here; installed the example — set CALLSIGN on the deck"
+  fi
+
+  # A seeded fldigi configuration. fldigi crashes on an empty one, with an
+  # assertion failure during first-run setup, so the card cannot be left to
+  # generate its own.
+  local seed=""
+  [[ -d "${SCRIPT_DIR}/fldigi-config" ]] && seed="${SCRIPT_DIR}/fldigi-config"
+  [[ -z "$seed" && -d "$HOME/.fldigi" ]] && seed="$HOME/.fldigi"
+  [[ -n "$seed" ]] || die "no fldigi configuration to seed from. Run ./dev-fldigi.sh once, or run fldigi on a desktop."
+  sudo rsync -a --exclude 'fldigi.log' "${seed}/" "${dest}/fldigi-config/"
+  note "fldigi config seeded from ${seed}"
+
+  sudo mkdir -p "${dest}/run"
+  note "installed to /opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
+}
+
+configure_boot() {
+  step "Boot settings"
+  local cfg="${BOOT_MNT}/config.txt" cmd="${BOOT_MNT}/cmdline.txt"
+
+  if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" ]]; then
+    printf '\n# Cyberdeck: the DSI panel.\ndtoverlay=%s\n' "${CFG[DECK_PANEL_OVERLAY]}" \
+      | sudo tee -a "$cfg" >/dev/null
+    note "dtoverlay=${CFG[DECK_PANEL_OVERLAY]}"
+  fi
+
+  if [[ "${CFG[DECK_HIDE_BOOT_MESSAGES]:-yes}" == yes && -f "$cmd" ]]; then
+    # A blank screen until the terminal appears, rather than a wall of kernel
+    # messages followed by a login prompt nobody will ever type into.
+    local line; line="$(sudo cat "$cmd")"
+    line="${line//console=tty1/console=tty3}"
+    for opt in quiet loglevel=0 logo.nologo vt.global_cursor_default=0; do
+      [[ "$line" == *"$opt"* ]] || line="${line} ${opt}"
+    done
+    echo "$line" | sudo tee "$cmd" >/dev/null
+    note "quiet boot, no cursor, kernel messages moved to tty3"
+  fi
+}
+
+harden_card() {
+  step "Reducing writes to the card"
+  local dir="/opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
+  local size="${CFG[DECK_RUN_TMPFS_SIZE]:-32M}"
+  if ! sudo grep -q "${dir}/run" "${ROOT_MNT}/etc/fstab" 2>/dev/null; then
+    printf 'tmpfs %s/run tmpfs defaults,noatime,nosuid,nodev,size=%s,mode=0755 0 0\n' \
+      "$dir" "$size" | sudo tee -a "${ROOT_MNT}/etc/fstab" >/dev/null
+    note "run/ on a ${size} tmpfs"
+  fi
+  sudo mkdir -p "${ROOT_MNT}/etc/systemd/journald.conf.d"
+  printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=16M\n' \
+    | sudo tee "${ROOT_MNT}/etc/systemd/journald.conf.d/volatile.conf" >/dev/null
+  note "journal in RAM"
+}
+
+install_services() {
+  step "systemd units"
+  local user="${CFG[DECK_USER]}" dir="/opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
+  local sysd="${ROOT_MNT}/etc/systemd/system"
+  local wants="${sysd}/multi-user.target.wants"
+  sudo mkdir -p "$sysd" "$wants" "${sysd}/timers.target.wants"
+
+  local u tmp; tmp="$(mktemp)"
+  for u in xvfb fldigi rigctld ui btpair; do
+    emit_unit "$u" "$user" "$dir" > "$tmp"
+    sudo cp "$tmp" "${sysd}/cyberdeck-${u}.service"
+    sudo chmod 644 "${sysd}/cyberdeck-${u}.service"
+  done
+  emit_unit btpair-timer "$user" "$dir" > "$tmp"
+  sudo cp "$tmp" "${sysd}/cyberdeck-btpair.timer"
+  emit_bt_script > "$tmp"
+  sudo install -D -m 755 "$tmp" "${ROOT_MNT}/usr/local/sbin/cyberdeck-bt-pair.sh"
+  rm -f "$tmp"
+
+  # Enabled by symlink: systemctl enable cannot run against an offline image.
+  local s
+  for s in cyberdeck-xvfb cyberdeck-fldigi cyberdeck-rigctld cyberdeck-btpair; do
+    sudo ln -sf "/etc/systemd/system/${s}.service" "${wants}/${s}.service"
+  done
+  sudo ln -sf /etc/systemd/system/cyberdeck-btpair.timer \
+    "${sysd}/timers.target.wants/cyberdeck-btpair.timer"
+  if [[ "${CFG[DECK_AUTOSTART]:-yes}" == yes ]]; then
+    sudo ln -sf /etc/systemd/system/cyberdeck-ui.service "${wants}/cyberdeck-ui.service"
+    # The terminal owns tty1, so the login prompt must not also claim it.
+    sudo ln -sf /dev/null "${sysd}/getty@tty1.service"
+    note "terminal starts on tty1 at boot; getty on tty1 masked"
+  else
+    note "terminal installed but not enabled (DECK_AUTOSTART is not yes)"
+  fi
+  install_firstboot "$user" "$dir"
+}
+
+emit_firstboot() {  # user dir
+  local user="$1" dir="$2"
+  cat <<EOF
+#!/usr/bin/env bash
+# Runs once: installs what the terminal needs and moves the SSH key into place.
+set -uo pipefail
+echo "Cyberdeck first-boot setup..."
+export DEBIAN_FRONTEND=noninteractive
+
+for i in \$(seq 1 30); do
+  getent hosts deb.debian.org >/dev/null 2>&1 && break
+  echo "  waiting for DNS (\$i/30)..."; sleep 10
+done
+
+apt-get update -y || exit 1
+apt-get install -y --no-install-recommends \\
+  fldigi xvfb libhamlib-utils python3 console-setup fonts-terminus \\
+  kbd bluez alsa-utils || exit 1
+
+HOME_DIR="\$(getent passwd ${user} | cut -d: -f6)"
+if [[ -f /etc/cyberdeck/authorized_keys && -n "\$HOME_DIR" ]]; then
+  mkdir -p "\$HOME_DIR/.ssh"
+  cp /etc/cyberdeck/authorized_keys "\$HOME_DIR/.ssh/authorized_keys"
+  chmod 700 "\$HOME_DIR/.ssh"; chmod 600 "\$HOME_DIR/.ssh/authorized_keys"
+  chown -R ${user}:${user} "\$HOME_DIR/.ssh"
+fi
+[[ -n "\$HOME_DIR" && ! -e "\$HOME_DIR/$(basename "$dir")" ]] && \\
+  ln -s "$dir" "\$HOME_DIR/$(basename "$dir")" && \\
+  chown -h ${user}:${user} "\$HOME_DIR/$(basename "$dir")"
+
+chown -R ${user}:${user} "$dir"
+touch /var/lib/cyberdeck-firstboot-done
+systemctl start cyberdeck-xvfb cyberdeck-fldigi cyberdeck-ui 2>/dev/null || true
+echo "Setup complete."
+EOF
+}
+
+emit_firstboot_unit() {
+  cat <<'EOF'
+[Unit]
+Description=First-boot setup for the cyberdeck
+After=network-online.target userconf.service
+Wants=network-online.target
+ConditionPathExists=!/var/lib/cyberdeck-firstboot-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/cyberdeck-firstboot.sh
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+install_firstboot() {
+  local user="$1" dir="$2" tmp; tmp="$(mktemp)"
+  emit_firstboot "$user" "$dir" > "$tmp"
+  sudo install -D -m 755 "$tmp" "${ROOT_MNT}/usr/local/sbin/cyberdeck-firstboot.sh"
+  emit_firstboot_unit > "$tmp"
+  sudo cp "$tmp" "${ROOT_MNT}/etc/systemd/system/cyberdeck-firstboot.service"
+  sudo ln -sf /etc/systemd/system/cyberdeck-firstboot.service \
+    "${ROOT_MNT}/etc/systemd/system/multi-user.target.wants/cyberdeck-firstboot.service"
+  rm -f "$tmp"
+  note "first-boot installer staged"
+}
+
 cmd_build() {
   validate
   require_tools
   fetch_image
-  step "Customising the image"
-  note "NOT YET IMPLEMENTED: loop-mount and write."
-  note "The steps are listed in README.md under 'What the build does'."
-  die "build is incomplete; use 'check' and 'units' meanwhile"
+  trap cleanup EXIT INT TERM
+  mount_image
+  configure_access
+  configure_wifi
+  install_project
+  configure_boot
+  harden_card
+  install_services
+  sync
+  cleanup
+  trap - EXIT INT TERM
+  step "Done"
+  note "$IMAGE_OUT"
+  note "flash it with: $0 flash /dev/sdX   (check lsblk first)"
 }
 
 cmd_flash() {

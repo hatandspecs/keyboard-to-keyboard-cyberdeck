@@ -151,7 +151,8 @@ class Deck:
             f"  quality  {'█' * filled}{'░' * (bar_w - filled)}  {q:.0f}",
             "",
             f"  AFC {'on ' if f.afc() else 'off'}   squelch {'on ' if f.squelch() else 'off'}"
-            f" ({f.squelch_level():.0f})   RSID {'on' if f.rsid() else 'off'}",
+            f" ({f.squelch_level():.0f})   RSID {'on ' if f.rsid() else 'off'}"
+            f"   TXID {'on' if f.txid() else 'off'}",
         ]
         for i, text in enumerate(rows):
             if 2 + i < h - 4:
@@ -160,7 +161,7 @@ class Deck:
         self._put(h - 4, 0, render.rule(w), w)
         self._put(h - 3, 0, [("  ← →  carrier ±10 Hz      ↑ ↓  search signal"[:w - 1], "dim")], w)
         self._put(h - 2, 0, [("  , .  VFO ±100 Hz         < >  VFO ±1 kHz"[:w - 1], "dim")], w)
-        self._put(h - 1, 0, [("  a AFC   s squelch   r RSID   F2/Esc back to chat"[:w - 1], "dim")], w)
+        self._put(h - 1, 0, [("  a AFC  s squelch  r RSID  x TXID   F2/Esc back"[:w - 1], "dim")], w)
 
     def _current_menu(self, w, h):
         f, m = self.fldigi, self.menu
@@ -326,6 +327,8 @@ class Deck:
                 f.set_squelch(not f.squelch())
             elif key == "r":
                 f.set_rsid(not f.rsid())
+            elif key == "x":
+                f.set_txid(not f.txid())
             elif key == "+":
                 f.set_squelch_level(min(100.0, f.squelch_level() + 5))
             elif key == "-":
@@ -389,6 +392,8 @@ class Deck:
             f.set_squelch(not f.squelch())
         elif ch == ord("r"):
             f.set_rsid(not f.rsid())
+        elif ch == ord("x"):
+            f.set_txid(not f.txid())
         elif ch == ord(","):
             f.set_frequency(f.frequency() - 100)
         elif ch == ord("."):

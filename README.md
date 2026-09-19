@@ -5,34 +5,26 @@ purpose-built terminal is the only thing on the screen. No window manager, no
 mouse, no pointer, nothing to click — the feel of a dedicated 1980s packet
 terminal over modern digital modes.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ KD3CCO  14.070  USB  BPSK63  1500Hz  S/N 18  IMD -24   RX  2114Z │
-│──────────────────────────────────────────────────────────────────│
-│ 2109Z RX      KD3CCO de W3TM  good copy, 599 here in State       │
-│               College. rig is an FTX-1 running 20 watts into a   │
-│               vertical.                                          │
-│ 2111Z KD3CCO  W3TM de KD3CCO  copy 100 percent. this is a pi 3a+ │
-│               running fldigi headless behind a terminal i wrote. │
-│ 2113Z RX      that is excellent. what modes does it do?          │
-│ 2114Z --      mode changed to BPSK63                             │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ W3TM de KD3CCO  all the fldigi keyboard modes — psk, olivia,     │
-│ mfsk, rtty                                               [RX 71] │
-│ F1 menu  F2 tune  F3 mode  F4 colour  ^T over  ^K hand  ^C abort │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The conversation screen](docs/screens/conversation-matrix.png)
 
-Green on black is the Matrix scheme; `F4` cycles through Deckard (amber), Hal
-(red) and Tron (cyan). Full design rationale is in
-[design_doc.md](design_doc.md).
+Full design rationale is in [design_doc.md](design_doc.md).
+
+### Colour schemes
+
+One hue on black, cycled with `F4`. Monochrome means one hue, not one
+intensity: the dim variant carries the timestamps and the callsign column.
+
+| | |
+|---|---|
+| **Matrix** — `#00FF41` | **Deckard** — `#FFB000` |
+| ![Matrix](docs/screens/conversation-matrix.png) | ![Deckard](docs/screens/conversation-deckard.png) |
+| **Hal** — `#FF3B30` | **Tron** — `#00D9FF` |
+| ![Hal](docs/screens/conversation-hal.png) | ![Tron](docs/screens/conversation-tron.png) |
+
+Hal is the least legible of the four, because red has the lowest luminance of
+any saturated hue. That is inherent and it is also the point — it is the scheme
+for operating at night without wrecking dark adaptation. Tron is cyan-shifted
+deliberately: a true blue on black is close to unreadable as body text.
 
 ## What it does
 
@@ -49,30 +41,7 @@ waterfall display, image modes, or packet.
 
 ## Screens
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ TUNING  14.070  USB  BPSK63  1500Hz  S/N 18  IMD -24   RX  2114Z │
-│──────────────────────────────────────────────────────────────────│
-│  rig      14.07015  USB                                          │
-│  carrier  1500 Hz        bandwidth  31 Hz                        │
-│  S/N      18 dB                                                  │
-│  IMD      -24 dB                                                 │
-│                                                                  │
-│  quality  ███████████████████████████░░░░░░░░░░░░░░░░░  62       │
-│                                                                  │
-│  AFC on    squelch on  (5)   RSID on                             │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│  ← →  carrier ±10 Hz      ↑ ↓  search signal                     │
-│  , .  VFO ±100 Hz         < >  VFO ±1 kHz                        │
-│  a AFC   s squelch   r RSID   F2/Esc back to chat                │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The tuning screen, F2](docs/screens/tuning.png)
 
 `F2` toggles the whole screen rather than overlaying a panel: on 66 columns a
 tuning display worth reading and a conversation worth reading do not coexist.
@@ -81,55 +50,9 @@ The radio's own waterfall finds signals and sets the VFO. fldigi's carrier is
 parked at a fixed offset and AFC holds it — see §8 of the design document for
 why there is no software spectrum.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ MENU                                                             │
-│                                                                  │
-│   1  Mode                                                        │
-│   2  Tuning                                                      │
-│   3  Radio                                                       │
-│   4  Display                                                     │
-│   5  Station                                                     │
-│   6  System                                                      │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ Esc  back to the conversation                                    │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The menu, F1](docs/screens/menu.png)
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ MODE                                                             │
-│                                                                  │
-│   1  BPSK31                                                      │
-│   2  BPSK63  <                                                   │
-│   3  QPSK31                                                      │
-│   4  RTTY                                                        │
-│   5  OLIVIA-8/250                                                │
-│   6  OLIVIA-8/500                                                │
-│   7  MFSK16                                                      │
-│   8  THOR22                                                      │
-│   9  CONTESTIA                                                   │
-│   0  DOMEX8                                                      │
-│   h  FELDHELL                                                    │
-│   m  more modes ...                                              │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ Esc  back      < marks the mode in use                           │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The mode picker, F3](docs/screens/mode-picker.png)
 
 Eleven curated conversational modes with the current one marked `<`. `m` opens
 the full list — 97 conversational modems, paginated, single-key selection.
@@ -152,16 +75,19 @@ the full list — 97 conversational modems, paginated, single-key selection.
 
 ## How it is put together
 
-```
-tty1 (framebuffer)          cyberdeck.py  —  curses, no X
-                                  |
-                            XML-RPC 127.0.0.1:7362
-                                  |
-Xvfb :99, never displayed    fldigi  —  modem, AFC, squelch, DSP
-                                  |
-                        ALSA + hamlib NET rigctl
-                                  |
-                                radio
+```mermaid
+flowchart TD
+  subgraph console["tty1 — the framebuffer console"]
+    UI["cyberdeck.py<br/>curses, no X, no pointer"]
+  end
+  subgraph hidden["Xvfb :99 — never displayed"]
+    FL["fldigi<br/>modem, AFC, squelch, DSP"]
+  end
+  KB["Bluetooth keyboard"] --> UI
+  UI -- "XML-RPC 127.0.0.1:7362" --> FL
+  FL -- "ALSA plughw:1,0" --> RIG["FTX-1"]
+  FL -- "hamlib NET rigctl<br/>127.0.0.1:4532" --> RC["rigctld"]
+  RC -- "CAT /dev/ttyUSB0<br/>PTT /dev/ttyACM0" --> RIG
 ```
 
 | File | What it is |
@@ -174,6 +100,8 @@ Xvfb :99, never displayed    fldigi  —  modem, AFC, squelch, DSP
 | `colours.py` | The four schemes, console palette and ANSI fallback |
 | `config.py` | `cyberdeck.conf` — the station's own settings |
 | `build_deck_image.sh` | Builds and flashes the Pi's SD card |
+| `configure_fldigi.py` | Sets fldigi's audio and rig control without its GUI |
+| [`deploy_cyberdeck_instructions.md`](deploy_cyberdeck_instructions.md) | The full runbook, blank card to on the air |
 | `deck.conf` | How to build that card: hostname, panel, keyboard, radio |
 
 ## Running it on a laptop with the FTX-1
@@ -202,8 +130,20 @@ rigctl* on `localhost:4532`.
 rigctld -m 1035 -r /dev/ttyUSB0 -s 38400 -p /dev/ttyACM0 -P RIG -t 4532 &
 ```
 
-In fldigi: **Configure → Rig Control → Hamlib**, rig `Hamlib NET rigctl`,
-device `localhost:4532`. Set the sound card to the FTX-1's codec.
+Then point fldigi at it **without using its dialogs** — the deck has no pointer
+and often no screen, so everything that has to be right is set from the command
+line:
+
+```bash
+python3 configure_fldigi.py --show          # what is set now
+python3 configure_fldigi.py --list-audio    # PortAudio's device names
+python3 configure_fldigi.py --rigctld --audio "USB Audio Device" --call KD3CCO
+```
+
+`--rigctld` is the important one. The FTX-1 presents CAT and PTT on two separate
+serial ports and fldigi's hamlib configuration has room for one, which is why
+`rigctld` bridges both. Pointing fldigi straight at the CAT port instead means
+it and `rigctld` fight over the same device and one of them loses.
 
 **3. Start fldigi headless and the terminal.**
 
@@ -222,6 +162,10 @@ noise floor continuously and the transcript fills with random characters within
 seconds. `F2`, then `s`.
 
 ## Running it on a Raspberry Pi 3A+ with the FTX-1
+
+> The condensed version is below. For the step-by-step with recovery
+> procedures, follow
+> **[deploy_cyberdeck_instructions.md](deploy_cyberdeck_instructions.md)**.
 
 The deck proper: a 3A+, a 5" DSI panel, a Bluetooth keyboard, and the FTX-1 on
 the single USB port.
@@ -276,6 +220,7 @@ straight into a working terminal with no console session at any point:
 
 * WiFi profiles, the user account with a hashed password, SSH and your key.
 * The project into `/opt/cyberdeck`, with `cyberdeck.conf` alongside.
+* The Bluetooth pairing service, its retry timer, and the first-boot installer.
 * A **seeded fldigi configuration** — an empty one crashes.
 * `config.txt`: the DSI panel overlay.
 * `cmdline.txt`: quiet boot, no cursor, no login prompt — the screen stays
@@ -307,7 +252,9 @@ the real application, and read the screen back with a terminal emulator, so the
 tests assert on what the deck looks like rather than on functions in isolation.
 They need a running fldigi — start `./dev-fldigi.sh` first.
 
-Regenerate the screens in this file with `python3 capture_screens.py`.
+Regenerate the screenshots with `python3 capture_png.py`, which renders the
+screens at each scheme's own hex values. `capture_screens.py` produces the
+same screens as text, in `docs/screens.md`.
 
 ## Status
 
@@ -319,7 +266,9 @@ three cheap checks that gate them.
 
 * `main.rx_only` does not inhibit fldigi's `main.tune`; the transmit inhibit is
   enforced in the terminal instead.
-* `build_deck_image.sh build` is not finished — `check`, `units` and `flash`
-  work; the loop-mount and write step is not written yet.
+* `build_deck_image.sh build` is written but **has never been run end to end**.
+  It needs `sudo`, loop devices and a network, none of which were available
+  where it was developed. `check`, `units` and every generated artefact are
+  tested; the mount-and-write path is not.
 * The DSI panel has not been tested on a 3A+, and where it takes its power is
   unconfirmed. Both gate everything else.

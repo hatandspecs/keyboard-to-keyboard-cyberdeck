@@ -73,7 +73,8 @@ TUNING = {
     "items": [
         ("a", "AFC on/off"),
         ("s", "Squelch on/off"),
-        ("r", "RSID on/off"),
+        ("r", "RSID on/off   follow others' mode identifiers"),
+        ("x", "TXID on/off   send one before our overs"),
         ("+", "Squelch level up"),
         ("-", "Squelch level down"),
         ("c", "Park carrier at the configured offset"),

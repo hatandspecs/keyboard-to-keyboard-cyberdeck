@@ -1,0 +1,104 @@
+"""Render the deck's screens to PNG, in each colour scheme.
+
+The text comes from the same functions the application draws with, and the
+colours are the schemes' own hex values (design_doc.md §5.7) rather than a
+terminal emulator's approximation of them — so these show what the panel
+shows, including the true amber and the cyan-shifted Tron blue that the eight
+ANSI colours cannot express.
+
+Cell geometry follows the 12x24 console font on the 800x480 panel: 66x20
+characters. Rendered at 2x for legibility in documentation.
+
+    python3 capture_png.py            # all screens, all schemes
+"""
+import os
+from PIL import Image, ImageDraw, ImageFont
+
+import capture_screens as cap
+import colours
+import menus
+import render
+
+SCALE = 2
+CELL_W, CELL_H = 12 * SCALE, 24 * SCALE
+COLS, ROWS = 66, 20
+PAD = 8 * SCALE
+OUT = "docs/screens"
+
+FONT_CANDIDATES = [
+    "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Bold.ttf",
+    "/usr/share/fonts/adwaita-mono-fonts/AdwaitaMono-Bold.ttf",
+    "/usr/share/fonts/google-noto-vf/NotoSansMono[wght].ttf",
+]
+
+
+def _font(size):
+    for path in FONT_CANDIDATES:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+    return ImageFont.load_default()
+
+
+def _rgb(hexstr):
+    return tuple(int(hexstr[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def draw(lines, scheme_key, path, cols=COLS, rows=ROWS):
+    scheme = colours.SCHEMES[scheme_key]
+    bright, dim = _rgb(scheme["bright"]), _rgb(scheme["dim"])
+    black = (0, 0, 0)
+
+    w = cols * CELL_W + PAD * 2
+    h = rows * CELL_H + PAD * 2
+    img = Image.new("RGB", (w, h), black)
+    d = ImageDraw.Draw(img)
+    font = _font(int(CELL_H * 0.78))
+
+    for row, line in enumerate(lines[:rows]):
+        x = 0
+        for text, kind in line:
+            for ch in text:
+                if x >= cols:
+                    break
+                px, py = PAD + x * CELL_W, PAD + row * CELL_H
+                if kind == "reverse":
+                    d.rectangle([px, py, px + CELL_W, py + CELL_H], fill=bright)
+                    fg = black
+                elif kind in ("dim", "note"):
+                    fg = dim
+                else:
+                    fg = bright
+                if ch != " ":
+                    d.text((px, py + CELL_H * 0.08), ch, font=font, fill=fg)
+                x += 1
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    img.save(path)
+    return path
+
+
+if __name__ == "__main__":
+    session = cap.scripted_session()
+    chat = cap.compose_chat(session, cap.FIELDS)
+    made = []
+
+    for key in colours.ORDER:
+        made.append(draw(chat, key, f"{OUT}/conversation-{key}.png"))
+
+    made.append(draw(cap.tuning_screen(), "matrix", f"{OUT}/tuning.png"))
+    made.append(draw(menus.render(menus.ROOT, COLS, ROWS), "matrix", f"{OUT}/menu.png"))
+    made.append(draw(menus.render(menus.mode_menu("BPSK63"), COLS, ROWS),
+                     "matrix", f"{OUT}/mode-picker.png"))
+
+    names = menus.keyboard_modes([n for _, n in menus.MODE_TIER1] + [
+        "BPSK125", "BPSK250", "BPSK500", "QPSK63", "QPSK125", "QPSK250",
+        "OLIVIA-4/250", "OLIVIA-16/500", "OLIVIA-32/1K", "MFSK8", "MFSK32",
+        "MFSK64", "THOR16", "THOR25", "THOR50x1", "DOMEX4", "DOMEX5",
+        "DOMEX11", "DOMEX16", "DOMEX22", "CONTESTIA", "RTTY"])
+    menu, *_ = menus.paged_menu("ALL MODES", names, 0, COLS, ROWS)
+    made.append(draw(menus.render(menu, COLS, ROWS), "matrix", f"{OUT}/all-modes.png"))
+
+    for p in made:
+        print(f"  {p}  {os.path.getsize(p) // 1024} KB")

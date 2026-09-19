@@ -201,34 +201,11 @@ conversation typed at 30 words per minute.
 
 ### 5.1 Layout
 
-At the proposed 66×20 grid. This and the screens below are captured from
-the running code, not drawn by hand — regenerate them with
-`python3 capture_screens.py`:
+At the proposed 66×20 grid. These are rendered from the running code, not
+drawn by hand: `capture_screens.py` produces the text and `capture_png.py`
+renders it to PNG using each scheme's own colours.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ KD3CCO  14.070  USB  BPSK63  1500Hz  S/N 18  IMD -24   RX  2114Z │
-│──────────────────────────────────────────────────────────────────│
-│ 2109Z RX      KD3CCO de W3TM  good copy, 599 here in State       │
-│               College. rig is an FTX-1 running 20 watts into a   │
-│               vertical.                                          │
-│ 2111Z KD3CCO  W3TM de KD3CCO  copy 100 percent. this is a pi 3a+ │
-│               running fldigi headless behind a terminal i wrote. │
-│ 2113Z RX      that is excellent. what modes does it do?          │
-│ 2114Z --      mode changed to BPSK63                             │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ W3TM de KD3CCO  all the fldigi keyboard modes — psk, olivia,     │
-│ mfsk, rtty                                               [RX 71] │
-│ F1 menu  F2 tune  F3 mode  F4 colour  ^T over  ^K hand  ^C abort │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The conversation screen](docs/screens/conversation-matrix.png)
 
 `[RX 47]` is the buffer indicator described in section 5.4: 47 characters
 composed while receiving, not yet transmitted.
@@ -340,80 +317,11 @@ flowchart LR
 
 Menus are full-screen overlays with single-key selection, not nested pointers.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ MENU                                                             │
-│                                                                  │
-│   1  Mode                                                        │
-│   2  Tuning                                                      │
-│   3  Radio                                                       │
-│   4  Display                                                     │
-│   5  Station                                                     │
-│   6  System                                                      │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ Esc  back to the conversation                                    │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The menu, F1](docs/screens/menu.png)
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ MODE                                                             │
-│                                                                  │
-│   1  BPSK31                                                      │
-│   2  BPSK63  <                                                   │
-│   3  QPSK31                                                      │
-│   4  RTTY                                                        │
-│   5  OLIVIA-8/250                                                │
-│   6  OLIVIA-8/500                                                │
-│   7  MFSK16                                                      │
-│   8  THOR22                                                      │
-│   9  CONTESTIA                                                   │
-│   0  DOMEX8                                                      │
-│   h  FELDHELL                                                    │
-│   m  more modes ...                                              │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ Esc  back      < marks the mode in use                           │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The mode picker, F3](docs/screens/mode-picker.png)
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ ALL MODES  page 1/2                                              │
-│                                                                  │
-│  a BPSK31                       n OLIVIA-16/500                  │
-│  b BPSK63                       o OLIVIA-32/1K                   │
-│  c BPSK125                      p MFSK16                         │
-│  d BPSK250                      q MFSK8                          │
-│  e BPSK500                      r MFSK32                         │
-│  f QPSK31                       s MFSK64                         │
-│  g QPSK63                       t CONTESTIA                      │
-│  h QPSK125                      u THOR22                         │
-│  i QPSK250                      v THOR16                         │
-│  j RTTY                         w THOR25                         │
-│  k OLIVIA-8/250                 x THOR50x1                       │
-│  l OLIVIA-8/500                 y DOMEX8                         │
-│  m OLIVIA-4/250                 z DOMEX4                         │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│ Esc  back      PgUp/PgDn  more                                   │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The full modem list](docs/screens/all-modes.png)
 
 ### 5.7 Colour schemes
 
@@ -442,6 +350,16 @@ it luminance to work with.
 
 **Matrix is the proposed default** — green on black has the best contrast of the
 four and the longest history as a terminal phosphor.
+
+The same screen in each, rendered at the schemes' own hex values rather than a
+terminal emulator's approximation of them:
+
+| | |
+|---|---|
+| Matrix | Deckard |
+| ![Matrix](docs/screens/conversation-matrix.png) | ![Deckard](docs/screens/conversation-deckard.png) |
+| Hal | Tron |
+| ![Hal](docs/screens/conversation-hal.png) | ![Tron](docs/screens/conversation-tron.png) |
 
 Monochrome means one hue, not one intensity. Emphasis comes from the dim variant
 and from reverse video: the status line is reverse, own transmissions are full
@@ -512,9 +430,20 @@ on the radio's own display, confirmed by a number on the deck.
 
 Three fldigi facilities back it up when the offset technique is inconvenient:
 
-* **RSID** (`main.set_rsid`) detects a transmitted mode identifier and jumps to
-  that signal's mode *and* frequency automatically. On a quiet band this is the
-  whole problem solved without touching anything.
+* **RSID** (`main.set_rsid`) acts on a Reed-Solomon Identifier: a short burst a
+  station sends ahead of its over encoding the mode *and* the audio frequency.
+  With it on, the deck switches to match, which on a quiet band is the whole
+  problem solved without touching anything.
+
+  It is the nearest thing fldigi has to automatic mode detection, and the
+  distinction matters: **nothing is deduced from the signal itself**. A station
+  that sends no identifier is not followed, and a mode has to be found by hand
+  as before. fldigi has no blind mode recogniser.
+
+  **TXID** (`main.set_txid`) is the other half and a separate setting: it sends
+  an identifier ahead of the deck's own overs so that others can follow it.
+  Both are exposed on the tuning screen, `r` and `x`. Leaving RSID on while
+  TXID is off is taking without giving.
 * **`modem.search_up` / `search_down`** step to the next detected signal within
   the passband.
 * **`modem.get_quality`**, 0–100, gives a number to peak against — tuning by
@@ -532,30 +461,7 @@ panel. On 66 columns a tuning display worth reading and a conversation worth
 reading do not coexist, and tuning is a thing done deliberately between overs
 rather than while typing.
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ TUNING  14.070  USB  BPSK63  1500Hz  S/N 18  IMD -24   RX  2114Z │
-│──────────────────────────────────────────────────────────────────│
-│  rig      14.07015  USB                                          │
-│  carrier  1500 Hz        bandwidth  31 Hz                        │
-│  S/N      18 dB                                                  │
-│  IMD      -24 dB                                                 │
-│                                                                  │
-│  quality  ███████████████████████████░░░░░░░░░░░░░░░░░  62       │
-│                                                                  │
-│  AFC on    squelch on  (5)   RSID on                             │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│                                                                  │
-│──────────────────────────────────────────────────────────────────│
-│  ← →  carrier ±10 Hz      ↑ ↓  search signal                     │
-│  , .  VFO ±100 Hz         < >  VFO ±1 kHz                        │
-│  a AFC   s squelch   r RSID   F2/Esc back to chat                │
-└──────────────────────────────────────────────────────────────────┘
-```
+![The tuning screen, F2](docs/screens/tuning.png)
 
 The quality bar refreshes several times a second. Everything on this screen is a
 readout from fldigi or `rigctld`; nothing here is computed by the deck.
@@ -658,7 +564,7 @@ Each phase ends with something demonstrable.
 | 4 | The four colour schemes and the F1 menu tree — **done** |
 | 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot |
 | 6 | The tuning panel and RSID, evaluated on the air |
-| 7 | An image build script producing the card unattended, as the iGate has |
+| 7 | An image build script producing the card unattended, as the iGate has — **written, never run** |
 
 Phases 1 to 4 need no hardware beyond the Pi and the radio, and phases 1 to 3 can
 be developed on the laptop.
