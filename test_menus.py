@@ -12,7 +12,8 @@ GRIDS = [(66, 20), (80, 24), (50, 15), (100, 30)]
 
 print("-- every menu fits every grid --")
 for name, menu in [("root", menus.ROOT), ("display", menus.DISPLAY),
-                   ("tuning", menus.TUNING), ("radio", menus.RADIO),
+                   ("tuning", menus.tuning_menu(True, False, 5.0, True, True)),
+                   ("radio", menus.RADIO),
                    ("system", menus.SYSTEM),
                    ("station", menus.station_menu({"CALLSIGN": "KD3CCO", "NAME": "Don"})),
                    ("mode", menus.mode_menu("BPSK31"))]:

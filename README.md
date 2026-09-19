@@ -9,7 +9,7 @@ terminal over modern digital modes.
 
 Full design rationale is in [design_doc.md](design_doc.md).
 
-### Colour schemes
+### Color schemes
 
 One hue on black, cycled with `F4`. Monochrome means one hue, not one
 intensity: the dim variant carries the timestamps and the callsign column.
@@ -34,7 +34,7 @@ deliberately: a true blue on black is close to unreadable as body text.
   compose while receiving, `Ctrl-T` to start the over, `Ctrl-K` to hand back.
   `Enter` inserts a newline; it does not send.
 * Mode switching, carrier tuning and rig control from the keyboard.
-* Four monochrome colour schemes, switchable at runtime.
+* Four monochrome color schemes, switchable at runtime.
 
 It deliberately does **not** do contest logging, ADIF, weak-signal modes,
 waterfall display, image modes, or packet.
@@ -64,7 +64,7 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | `F1` | Menu |
 | `F2` | Toggle the chat and tuning screens |
 | `F3` | Mode picker |
-| `F4` | Cycle the colour scheme |
+| `F4` | Cycle the color scheme |
 | `Ctrl-T` | Start the over — send the buffer and key the rig |
 | `Ctrl-K` | Hand back — drop to receive when the buffer drains |
 | `Ctrl-C` | Abort transmit immediately |
@@ -97,7 +97,7 @@ flowchart TD
 | `session.py` | Transcript, compose buffer, the shape of an over |
 | `render.py` | Layout as pure functions, so it can be tested at any width |
 | `menus.py` | Menu structure and rendering |
-| `colours.py` | The four schemes, console palette and ANSI fallback |
+| `colors.py` | The four schemes, console palette and ANSI fallback |
 | `config.py` | `cyberdeck.conf` — the station's own settings |
 | `build_deck_image.sh` | Builds and flashes the Pi's SD card |
 | `configure_fldigi.py` | Sets fldigi's audio and rig control without its GUI |
@@ -215,7 +215,7 @@ lsblk                                    # find the card
 
 ### What the build does
 
-The card is customised offline on your laptop, not on the Pi, so it boots
+The card is customized offline on your laptop, not on the Pi, so it boots
 straight into a working terminal with no console session at any point:
 
 * WiFi profiles, the user account with a hashed password, SSH and your key.

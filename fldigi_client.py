@@ -258,16 +258,35 @@ class Fldigi:
         return self._call("main.get_status2", default="")
 
     # -- rig --------------------------------------------------------------
+    #
+    # fldigi exposes two rig families and they point in opposite directions:
+    #
+    #   rig.*   is how an EXTERNAL rig-control program (flrig) tells fldigi
+    #           what the radio is doing. rig.set_frequency updates fldigi's
+    #           own display and commands nothing.
+    #   main.*  goes the other way: main.set_frequency and main.set_rig_mode
+    #           command the radio through whatever rig control fldigi holds,
+    #           which here is rigctld over Hamlib NET.
+    #
+    # Reads work either way, which is what made this hard to spot: the deck
+    # showed the right frequency while none of its setters reached the radio.
 
     def frequency(self):
-        f = self._call("rig.get_frequency", default=0.0)
+        f = self._call("main.get_frequency", default=0.0)
         try:
             return float(f)
         except (TypeError, ValueError):
             return 0.0
 
     def set_frequency(self, hz):
-        return self._call("rig.set_frequency", float(hz), default=None)
+        return self._call("main.set_frequency", float(hz), default=None)
 
     def rig_mode(self):
-        return self._call("rig.get_mode", default="")
+        return self._call("main.get_rig_mode", default="")
+
+    def rig_modes(self):
+        """The mode names this rig accepts, as Hamlib reports them."""
+        return self._call("main.get_rig_modes", default=[]) or []
+
+    def set_rig_mode(self, name):
+        return self._call("main.set_rig_mode", str(name), default=None)

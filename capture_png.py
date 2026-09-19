@@ -1,10 +1,10 @@
-"""Render the deck's screens to PNG, in each colour scheme.
+"""Render the deck's screens to PNG, in each color scheme.
 
 The text comes from the same functions the application draws with, and the
-colours are the schemes' own hex values (design_doc.md §5.7) rather than a
+colors are the schemes' own hex values (design_doc.md §5.7) rather than a
 terminal emulator's approximation of them — so these show what the panel
 shows, including the true amber and the cyan-shifted Tron blue that the eight
-ANSI colours cannot express.
+ANSI colors cannot express.
 
 Cell geometry follows the 12x24 console font on the 800x480 panel: 66x20
 characters. Rendered at 2x for legibility in documentation.
@@ -15,7 +15,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 
 import capture_screens as cap
-import colours
+import colors
 import menus
 import render
 
@@ -47,7 +47,7 @@ def _rgb(hexstr):
 
 
 def draw(lines, scheme_key, path, cols=COLS, rows=ROWS):
-    scheme = colours.SCHEMES[scheme_key]
+    scheme = colors.SCHEMES[scheme_key]
     bright, dim = _rgb(scheme["bright"]), _rgb(scheme["dim"])
     black = (0, 0, 0)
 
@@ -84,7 +84,7 @@ if __name__ == "__main__":
     chat = cap.compose_chat(session, cap.FIELDS)
     made = []
 
-    for key in colours.ORDER:
+    for key in colors.ORDER:
         made.append(draw(chat, key, f"{OUT}/conversation-{key}.png"))
 
     made.append(draw(cap.tuning_screen(), "matrix", f"{OUT}/tuning.png"))

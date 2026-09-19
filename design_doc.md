@@ -38,7 +38,7 @@ In scope:
   DominoEX, Feld Hell.
 * Mode switching, carrier tuning, and rig frequency control from the keyboard.
 * A transcript of sent and received text, timestamped.
-* Four monochrome colour schemes, switchable at runtime.
+* Four monochrome color schemes, switchable at runtime.
 
 Out of scope for the first build, and worth stating so the design does not drift
 toward them: contest logging, ADIF export beyond a plain transcript, WSJT-X-class
@@ -75,7 +75,7 @@ same radio and board:
 | PTT | `/dev/ttyACM0` | separate port from CAT |
 | Audio codec | `plughw:1,0` (C-Media) | mono capture and playback |
 
-The two-serial-port arrangement is the awkward part. hamlib's rig initialisation
+The two-serial-port arrangement is the awkward part. hamlib's rig initialization
 takes one port, so PTT on a second port needs either hamlib's separate-PTT
 support or a `rigctld` instance bridging both, which is the approach already
 proven on this radio.
@@ -190,7 +190,7 @@ rather than used directly.
 Python 3 with `curses`, running on a Linux virtual console against the
 framebuffer. No X, no terminal emulator, no window manager. The console is where
 the retro look comes from for free: a fixed character grid, a hardware text
-cursor, and a sixteen-colour palette that can be redefined.
+cursor, and a sixteen-color palette that can be redefined.
 
 A single process with two threads: one polling fldigi, one reading the keyboard.
 Polling rather than pushing, because XML-RPC has no subscription mechanism —
@@ -203,7 +203,7 @@ conversation typed at 30 words per minute.
 
 At the proposed 66×20 grid. These are rendered from the running code, not
 drawn by hand: `capture_screens.py` produces the text and `capture_png.py`
-renders it to PNG using each scheme's own colours.
+renders it to PNG using each scheme's own colors.
 
 ![The conversation screen](docs/screens/conversation-matrix.png)
 
@@ -229,7 +229,7 @@ one field that changes appearance rather than only content — see section 9.
 
 Received text arrives character by character, so a line is rendered as it
 arrives rather than buffered until complete. Sent text is interleaved in the same
-column layout, distinguished by the callsign column rather than by colour, since
+column layout, distinguished by the callsign column rather than by color, since
 the display is monochrome.
 
 Timestamps in UTC without colons — `2114Z` — because it reads as a radio log and
@@ -280,7 +280,7 @@ work, where Enter-sends is reasonable because turnarounds are cheap.
 | `F1` | Menu |
 | `F2` | **Toggle chat screen / tuning screen** |
 | `F3` | Mode picker |
-| `F4` | Cycle colour scheme |
+| `F4` | Cycle color scheme |
 | `Ctrl-T` | Start the over |
 | `Ctrl-K` | Hand back — append `^r`, drop to receive when the buffer drains |
 | `Ctrl-C` | Abort transmit immediately |
@@ -309,7 +309,7 @@ flowchart LR
   M1 --> M1a["PSK / RTTY / Olivia<br/>MFSK / Contestia<br/>THOR / DominoEX / Hell"]
   M2 --> M2a["Default carrier, AFC,<br/>squelch level, RSID"]
   M3 --> M3a["Frequency entry<br/>Band presets, sideband"]
-  M4 --> M4a["Colour: Matrix / Deckard<br/>Hal / Tron<br/>Font size, timestamps, scrollback"]
+  M4 --> M4a["Color: Matrix / Deckard<br/>Hal / Tron<br/>Font size, timestamps, scrollback"]
   M5 --> M5a["Callsign, name, QTH, locator"]
   M6 --> M6a["Save transcript<br/>Recent QSOs"]
   M7 --> M7a["Restart fldigi<br/>Shutdown, reboot, about"]
@@ -323,7 +323,7 @@ Menus are full-screen overlays with single-key selection, not nested pointers.
 
 ![The full modem list](docs/screens/all-modes.png)
 
-### 5.7 Colour schemes
+### 5.7 Color schemes
 
 Four, each a single hue on black:
 
@@ -374,7 +374,7 @@ runtime is a matter of emitting four escape sequences rather than repainting.
 Verification is pending; see section 14.
 
 `F4` cycles Matrix → Deckard → Hal → Tron. The Display menu selects directly, and
-`COLOUR` in the configuration file sets the scheme at boot.
+`COLOR` in the configuration file sets the scheme at boot.
 
 ## 6. Modes
 
@@ -438,7 +438,7 @@ Three fldigi facilities back it up when the offset technique is inconvenient:
   It is the nearest thing fldigi has to automatic mode detection, and the
   distinction matters: **nothing is deduced from the signal itself**. A station
   that sends no identifier is not followed, and a mode has to be found by hand
-  as before. fldigi has no blind mode recogniser.
+  as before. fldigi has no blind mode recognizer.
 
   **TXID** (`main.set_txid`) is the other half and a separate setting: it sends
   an identifier ahead of the deck's own overs so that others can follow it.
@@ -524,7 +524,7 @@ LOCATOR = FN10cs
 
 DEFAULT_MODE = BPSK31
 DEFAULT_CARRIER = 1500
-COLOUR = matrix          # matrix | deckard | hal | tron
+COLOR = matrix          # matrix | deckard | hal | tron
 
 RIG_MODEL = 1035
 CAT_DEVICE = /dev/ttyUSB0
@@ -561,7 +561,7 @@ Each phase ends with something demonstrable.
 | 1 | fldigi headless under Xvfb, answering XML-RPC — **done on the laptop**, still to repeat on the 3A+ |
 | 2 | A Python client that prints received text and sends a typed line — **done** |
 | 3 | The curses layout with live status, transcript and compose — **done** |
-| 4 | The four colour schemes and the F1 menu tree — **done** |
+| 4 | The four color schemes and the F1 menu tree — **done** |
 | 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot |
 | 6 | The tuning panel and RSID, evaluated on the air |
 | 7 | An image build script producing the card unattended, as the iGate has — **written, never run** |
@@ -632,7 +632,7 @@ Separated deliberately, because the difference decides what can break late.
 | Display | 5" capacitive touch DSI, 800×480, at 12×24 giving a 66×20 grid | 3.3 |
 | Transmit model | Over-based: compose while receiving, `Ctrl-T` to start, `Ctrl-K` to hand back. `Enter` is a newline, not a send | 5.4 |
 | Tuning | The radio's own waterfall for RF; a parked audio carrier with AFC and RSID for the modem. No software spectrum | 8 |
-| Colour schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.7 |
+| Color schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.7 |
 | Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
 | Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
 | Rig control | `rigctld`, model 1035, reusing the iGate's proven FTX-1 configuration | 7 |
@@ -679,7 +679,7 @@ status line, a low-battery shutdown, and a case that holds a pack.
 
 **5. Is a local chat variant wanted?** On VHF simplex with a strong signal,
 turnarounds are cheap and Enter-sends-immediately is a reasonable way to work —
-closer to messaging than to an HF QSO. Worth a switchable behaviour, or does one
+closer to messaging than to an HF QSO. Worth a switchable behavior, or does one
 model for everything keep it honest?
 
 **6. Is 1500 Hz the right parking offset?** It is the common default and sits

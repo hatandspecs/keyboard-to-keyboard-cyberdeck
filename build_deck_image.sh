@@ -6,7 +6,7 @@
 #   ./build_deck_image.sh build           produce deck-build/cyberdeck.img
 #   ./build_deck_image.sh flash /dev/sdX  write that image to a card
 #
-# The card is customised offline on this machine, not on the Pi: the image is
+# The card is customized offline on this machine, not on the Pi: the image is
 # loop-mounted and written into, so the deck boots straight into a working
 # terminal with no console session at any point. Same approach as the iGate
 # project's build_pi_image.sh, which is where the loop-mount details were

@@ -1,0 +1,9 @@
+1. I want transmit to be inhibited by default on power on.
+2. I want the arrow keys to browse the menu (up and down to navigate up and down, enter and esc to go into a menu item and then back out of the menu item
+3. the vfo didn't change when i followed the tutorial to set the frequency to 3. Set the frequency. F1 → 3 (Radio) → 1 for 14.070 MHz, the 20 m PSK31 watering hole. Make sure the radio is in USB.
+4. i'd like the deck to set the mode of the radio appropriately.
+5. the tuning menu squelch key (s) doesn't seem to do anything.
+6. in the tuning view F2 the right and left arrows don't do anything, nor do the , and . keys
+7. my radio's waterfall width minimum is about 5kHz. it's a bit hard to see signals in it
+8. up and down arrows don't search in f2 tuning menu. <> also don't move the radio vfo
+9. 

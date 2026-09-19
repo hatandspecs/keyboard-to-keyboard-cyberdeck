@@ -311,7 +311,7 @@ Card readers show up under two different naming schemes:
 | USB adapter | `/dev/sdb`, `/dev/sdc`, … | `sdb1`, `sdb2` |
 
 A new card usually shows one FAT32 partition. A card already carrying Pi OS
-shows two, labelled `bootfs` and `rootfs`.
+shows two, labeled `bootfs` and `rootfs`.
 
 **Read it twice.** The flash overwrites the device completely and there is no
 undo. Confirm the root filesystem is somewhere else entirely before going on:
@@ -673,7 +673,7 @@ sudo losetup -d /dev/loopN
 ```
 
 Then rerun `./build_deck_image.sh build`. The downloaded image is cached, so
-only the customisation repeats.
+only the customization repeats.
 
 ### Blank panel, but SSH works
 
@@ -698,7 +698,7 @@ terminal is actually running:
 
 ```bash
 systemctl status cyberdeck-ui
-ls /sys/class/backlight/            # a panel the kernel recognised appears here
+ls /sys/class/backlight/            # a panel the kernel recognized appears here
 ```
 
 A backlight entry with a blank screen means the panel is driven and the
@@ -730,7 +730,7 @@ lives in `deck.conf`, `deck.secrets` and `cyberdeck.conf` on the laptop.
 
 ## What has not been tested
 
-Recorded honestly so that a failure here is recognised rather than debugged
+Recorded honestly so that a failure here is recognized rather than debugged
 from first principles:
 
 | | |
@@ -743,4 +743,4 @@ from first principles:
 | The FTX-1's `hw:` index on the Pi | Predicted as `hw:0,0`; confirmed only as `hw:1,0` on the laptop |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, the colour schemes — is covered by 113 tests against a live fldigi.
+over model, the color schemes — is covered by 113 tests against a live fldigi.

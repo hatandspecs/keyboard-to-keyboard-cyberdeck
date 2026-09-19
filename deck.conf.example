@@ -48,7 +48,7 @@ DECK_CAT_BAUD = 38400
 DECK_PTT_DEVICE = /dev/ttyACM0
 DECK_AUDIO_DEVICE = plughw:1,0
 
-# --- Behaviour ---
+# --- Behavior ---
 DECK_AUTOSTART = yes              # start the terminal on tty1 at boot
 DECK_SSH = yes                    # keep SSH, for updates and recovery
 DECK_RUN_TMPFS_SIZE = 32M

@@ -1,6 +1,6 @@
 """The conversation: transcript, compose buffer, and the shape of an over.
 
-Kept free of curses so the behaviour that matters can be tested without a
+Kept free of curses so the behavior that matters can be tested without a
 terminal. The interface in cyberdeck.py renders what is here and does nothing
 else with it.
 

@@ -6,14 +6,14 @@ being typed. No window manager, no pointer, nothing to click. fldigi does the
 modem work invisibly behind an XML-RPC connection (design_doc.md §4).
 
 Run it over SSH for development; on the deck it runs on tty1 against the
-framebuffer, where the colour schemes use the real palette.
+framebuffer, where the color schemes use the real palette.
 """
 
 import curses
 import sys
 import time
 
-import colours
+import colors
 import config as configmod
 import menus
 import render
@@ -28,7 +28,7 @@ class Deck:
     def __init__(self, stdscr, settings):
         self.scr = stdscr
         self.cfg = settings
-        self.scheme = settings["COLOUR"]
+        self.scheme = settings["COLOR"]
         self.screen = CHAT
         self.scroll = 0
         # Which menu is open, if any, and where in a paged list. A single
@@ -36,6 +36,7 @@ class Deck:
         # Esc from anywhere returns to the conversation.
         self.menu = None
         self.menu_page = 0
+        self.menu_sel = 0
         self._page_keys = {}
         self.status_note = ""
         self.fldigi = Fldigi(url=settings["FLDIGI_URL"])
@@ -52,6 +53,18 @@ class Deck:
                               f"at {self.fldigi.carrier()} Hz")
         else:
             self.session.note("no connection to fldigi — check it is running")
+
+        # Powering on into a transmit-capable state is the wrong default for a
+        # deck that lives in a bag: a stray Ctrl-T on a radio connected to an
+        # unknown antenna is worse than an extra keystroke before the first
+        # over. Cleared with Ctrl-I, or F1 6 i.
+        if self.fldigi.connected:
+            self._set_rig_mode()
+
+        if settings["INHIBIT_ON_START"] == "yes":
+            self.session.inhibit(True)
+            self.fldigi.receive_only(True)
+            self.session.note("transmit INHIBITED at startup — Ctrl-I to enable")
 
     # -- fldigi ------------------------------------------------------------
 
@@ -163,6 +176,14 @@ class Deck:
         self._put(h - 2, 0, [("  , .  VFO ±100 Hz         < >  VFO ±1 kHz"[:w - 1], "dim")], w)
         self._put(h - 1, 0, [("  a AFC  s squelch  r RSID  x TXID   F2/Esc back"[:w - 1], "dim")], w)
 
+    def _menu_for(self, which, w, h):
+        """The menu structure for a name, for navigation and hit-testing."""
+        saved, self.menu = self.menu, which
+        try:
+            return self._current_menu(w, h)
+        finally:
+            self.menu = saved
+
     def _current_menu(self, w, h):
         f, m = self.fldigi, self.menu
         if m == "root":
@@ -170,7 +191,8 @@ class Deck:
         if m == "display":
             return menus.DISPLAY
         if m == "tuning":
-            return menus.TUNING
+            return menus.tuning_menu(f.afc(), f.squelch(), f.squelch_level(),
+                                     f.rsid(), f.txid())
         if m == "radio":
             return menus.RADIO
         if m == "system":
@@ -187,7 +209,8 @@ class Deck:
         return menus.ROOT
 
     def _draw_menu(self, h, w):
-        for i, line in enumerate(menus.render(self._current_menu(w, h), w, h)):
+        menu = self._current_menu(w, h)
+        for i, line in enumerate(menus.render(menu, w, h, self.menu_sel)):
             self._put(i, 0, line, w)
         try:
             curses.curs_set(0)
@@ -201,7 +224,7 @@ class Deck:
                 break
             chunk = text[:width - x]
             try:
-                self.scr.addstr(row, x, chunk, colours.attr(kind))
+                self.scr.addstr(row, x, chunk, colors.attr(kind))
             except curses.error:
                 pass
             x += len(chunk)
@@ -226,9 +249,9 @@ class Deck:
         elif ch == curses.KEY_F2:
             self.screen = TUNE
         elif ch == curses.KEY_F4:
-            self.scheme = colours.cycle(self.scheme)
-            colours.apply(self.scheme)
-            self.session.note(f"colour: {colours.SCHEMES[self.scheme]['name']}")
+            self.scheme = colors.cycle(self.scheme)
+            colors.apply(self.scheme)
+            self.session.note(f"color: {colors.SCHEMES[self.scheme]['name']}")
         elif ch == 20:                       # Ctrl-T
             text = self.session.start_over()
             if text is not None:
@@ -261,6 +284,7 @@ class Deck:
     def _open_menu(self, which):
         self.menu = which
         self.menu_page = 0
+        self.menu_sel = self._first_selectable(which)
 
     def _close_menu(self):
         self.menu = None
@@ -269,9 +293,37 @@ class Deck:
         except curses.error:
             pass
 
+    def _first_selectable(self, which):
+        h, w = self.scr.getmaxyx()
+        menu = self._menu_for(which, w, h)
+        opts = menus.selectable(menu)
+        return opts[0] if opts else 0
+
     def _handle_menu(self, ch):
         f, m = self.fldigi, self.menu
         key = chr(ch) if 32 <= ch < 127 else ""
+
+        # Arrow-key navigation. The single-key shortcuts still work — this is
+        # an addition, not a replacement — but a menu you can walk with the
+        # arrows and confirm with Enter needs no memorised letters, which is
+        # what a deck used occasionally rather than daily wants.
+        h, w = self.scr.getmaxyx()
+        menu = self._menu_for(m, w, h)
+        opts = menus.selectable(menu)
+        if opts and ch in (curses.KEY_UP, curses.KEY_DOWN):
+            if self.menu_sel in opts:
+                at = opts.index(self.menu_sel)
+            else:
+                at = 0
+            at = (at + (1 if ch == curses.KEY_DOWN else -1)) % len(opts)
+            self.menu_sel = opts[at]
+            return True
+        if ch in (10, 13, curses.KEY_ENTER) and opts:
+            # Enter acts as though the selected row's own key was pressed, so
+            # both paths go through one dispatch and cannot drift apart.
+            sel = self.menu_sel if self.menu_sel in opts else opts[0]
+            key = menu["items"][sel][0]
+            ch = ord(key) if len(key) == 1 else ch
 
         if ch == 27:                                   # Esc
             self._close_menu() if m in ("root",) else self._open_menu("root")
@@ -311,8 +363,8 @@ class Deck:
             scheme = {"1": "matrix", "2": "deckard", "3": "hal", "4": "tron"}.get(key)
             if scheme:
                 self.scheme = scheme
-                colours.apply(scheme)
-                self.session.note(f"colour: {colours.SCHEMES[scheme]['name']}")
+                colors.apply(scheme)
+                self.session.note(f"color: {colors.SCHEMES[scheme]['name']}")
                 self._close_menu()
             elif key == "t":
                 self.cfg["TIMESTAMPS"] = "no" if self.cfg["TIMESTAMPS"] == "yes" else "yes"
@@ -343,7 +395,8 @@ class Deck:
             hz = menus.BAND_FREQUENCIES.get(key)
             if hz:
                 f.set_frequency(hz)
-                self.session.note(f"VFO set to {hz/1e6:.3f}")
+                self._set_rig_mode()
+                self.session.note(f"VFO set to {hz/1e6:.3f} {f.rig_mode()}")
                 self._close_menu()
             return True
 
@@ -362,6 +415,25 @@ class Deck:
             return True
 
         return True
+
+    def _set_rig_mode(self):
+        """Put the radio into the sideband digital work needs.
+
+        Digital modes are upper sideband on every band, including 40 and 80
+        where voice is lower — so this is not something to leave to the
+        operator's memory at the moment they change bands. PKTUSB is the
+        alternative when the radio's own data mode is wanted; which one is
+        right depends on how the FTX-1 is configured to route USB audio.
+        """
+        want = (self.cfg.get("RIG_MODE") or "").strip()
+        if not want:
+            return
+        available = self.fldigi.rig_modes()
+        if available and want not in available:
+            self.session.note(f"rig will not take mode {want}; left as "
+                              f"{self.fldigi.rig_mode()}")
+            return
+        self.fldigi.set_rig_mode(want)
 
     def _set_mode(self, name):
         self.fldigi.set_modem(name)
@@ -414,16 +486,47 @@ def main(stdscr, settings):
         curses.start_color()
     except curses.error:
         pass
-    colours.apply(settings["COLOUR"])
+    colors.apply(settings["COLOR"])
     stdscr.keypad(True)
     stdscr.timeout(settings["POLL_MS"])
 
+    # raw(), not the cbreak() curses.wrapper leaves us in. Under cbreak the
+    # terminal still interprets Ctrl-C as SIGINT, so it never reaches getch()
+    # and Python unwinds with KeyboardInterrupt — on the one key whose whole
+    # job is to stop a transmission. raw() delivers it as byte 3 instead.
+    curses.raw()
+
+    # Esc and the arrow keys both begin with the same byte, so ncurses waits
+    # ESCDELAY for the rest of a sequence before deciding it was a bare Esc.
+    # The default is a full second, which makes Esc feel broken. 100 ms is
+    # comfortably longer than the few milliseconds a Bluetooth keyboard needs
+    # to deliver the remaining bytes of an arrow key, and short enough that
+    # Esc is instant.
+    try:
+        curses.set_escdelay(100)
+    except (AttributeError, curses.error):
+        pass
+
     deck = Deck(stdscr, settings)
-    while True:
-        deck.poll()
-        deck.draw()
-        if not deck.handle(stdscr.getch()):
-            break
+    try:
+        while True:
+            deck.poll()
+            deck.draw()
+            if not deck.handle(stdscr.getch()):
+                break
+    finally:
+        # Whatever happens — clean exit, crash, or a signal that still gets
+        # through — do not leave the radio keyed. This runs before curses
+        # tears the screen down, and is allowed to fail silently: an exception
+        # here would mask the one that brought us here.
+        try:
+            deck.fldigi.abort()
+        except Exception:
+            pass
+        try:
+            curses.noraw()
+        except curses.error:
+            pass
 
 
 def run():

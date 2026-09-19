@@ -8,7 +8,7 @@ than assuming one.
 
 A rendered line is a list of (text, kind) segments. The kind names an
 appearance — "dim", "bright", "reverse" — and the curses layer decides what
-that means in the current colour scheme. Nothing here knows about colour.
+that means in the current color scheme. Nothing here knows about color.
 """
 
 import time
@@ -164,9 +164,9 @@ def plain(segments):
 # and 50 at the largest one, so the line has to shed bindings rather than be
 # truncated mid-word — a hint that reads "^C abor" is worse than no hint.
 _HINT_TIERS = (
-    " F1 menu  F2 tune  F3 mode  F4 colour  ^T over  ^K hand  ^C abort",
-    " F1 menu  F2 tune  F3 mode  F4 colour  ^T over  ^K hand",
-    " F2 tune  F3 mode  F4 colour  ^T over  ^K hand",
+    " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand  ^C abort",
+    " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand",
+    " F2 tune  F3 mode  F4 color  ^T over  ^K hand",
     " F2 tune  ^T over  ^K hand  ^C abort",
     " ^T over  ^K hand  ^C abort",
     " ^T/^K/^C",

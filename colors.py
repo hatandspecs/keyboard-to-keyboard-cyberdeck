@@ -3,7 +3,7 @@
 Each is one hue on black, with a dim variant for the timestamp and callsign
 columns. Monochrome means one hue, not one intensity.
 
-Two paths to the colour, because the deck and the development machine are not
+Two paths to the color, because the deck and the development machine are not
 the same thing:
 
 * **A Linux virtual console** takes `OSC P` escape sequences, which redefine
@@ -11,7 +11,7 @@ the same thing:
   green rather than the ANSI approximations of yellow and green, and it is why
   switching schemes costs four escape sequences rather than a repaint.
 * **Anything else** — a terminal emulator over SSH, which is where this gets
-  developed — falls back to the nearest of the eight ANSI colours. Deckard
+  developed — falls back to the nearest of the eight ANSI colors. Deckard
   becomes yellow and loses its amber, which is a development compromise and
   not what the panel will show.
 """
@@ -47,7 +47,7 @@ def _osc_palette(slot, rrggbb):
 
 
 def apply(scheme_key):
-    """Set up curses colour pairs for a scheme, redefining the console
+    """Set up curses color pairs for a scheme, redefining the console
     palette where that is possible. Returns the scheme dict."""
     scheme = SCHEMES[scheme_key]
     if on_linux_console():

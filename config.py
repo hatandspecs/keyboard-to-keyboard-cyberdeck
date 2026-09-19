@@ -20,7 +20,7 @@ SCHEMA = {
 
     "DEFAULT_MODE":    ("BPSK31", str, "modem selected at startup"),
     "DEFAULT_CARRIER": (1500, int, "audio carrier parked here, in Hz"),
-    "COLOUR":          ("matrix", str, "matrix | deckard | hal | tron"),
+    "COLOR":          ("matrix", str, "matrix | deckard | hal | tron"),
     "FONT":            ("12x24", str, "console font; sets the character grid"),
 
     "FLDIGI_URL":      ("http://127.0.0.1:7362/", str, "fldigi's XML-RPC address"),
@@ -28,13 +28,25 @@ SCHEMA = {
     "SCROLLBACK":      (2000, int, "transcript lines kept in memory"),
     "TX_TIMEOUT":      (180, int, "seconds before an over is aborted; 0 disables"),
     "TIMESTAMPS":      ("yes", str, "yes | no"),
+    "INHIBIT_ON_START": ("yes", str, "yes | no — start with transmit inhibited"),
+    "RIG_MODE":        ("USB", str, "rig mode set at startup and on band change; "
+                                    "USB, or PKTUSB for the radio's data mode"),
 }
 
-COLOURS = ("matrix", "deckard", "hal", "tron")
+COLORS = ("matrix", "deckard", "hal", "tron")
 
 
 class ConfigError(Exception):
     pass
+
+
+# Settings renamed since a config file may have been written. Accepting the
+# old spelling costs one lookup; refusing it would stop the terminal from
+# starting at all, since an unknown key is an error — and a deck that will not
+# boot because a file says COLOUR is a poor trade for consistency.
+ALIASES = {
+    "COLOUR": "COLOR",
+}
 
 
 def load(path=None):
@@ -56,6 +68,7 @@ def load(path=None):
                 raise ConfigError(f"{path}:{lineno}: expected KEY = value")
             key, _, value = line.partition("=")
             key, value = key.strip().upper(), value.strip()
+            key = ALIASES.get(key, key)
             if key not in SCHEMA:
                 unknown.append(f"{path}:{lineno}: unknown setting '{key}'")
                 continue
@@ -75,10 +88,10 @@ def load(path=None):
 
 
 def validate(values):
-    if values["COLOUR"].lower() not in COLOURS:
+    if values["COLOR"].lower() not in COLORS:
         raise ConfigError(
-            f"COLOUR = '{values['COLOUR']}' is not one of: {', '.join(COLOURS)}")
-    values["COLOUR"] = values["COLOUR"].lower()
+            f"COLOR = '{values['COLOR']}' is not one of: {', '.join(COLORS)}")
+    values["COLOR"] = values["COLOR"].lower()
 
     if not 100 <= values["DEFAULT_CARRIER"] <= 4000:
         raise ConfigError(

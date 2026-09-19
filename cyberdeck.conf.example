@@ -1,7 +1,7 @@
 # cyberdeck.conf — this station's settings.
 #
 # Copy to cyberdeck.conf and edit. Same form as the iGate project's files:
-# KEY = value, '#' starts a comment, blank lines ignored. An unrecognised key
+# KEY = value, '#' starts a comment, blank lines ignored. An unrecognized key
 # is refused rather than ignored, because a typo that is silently absorbed
 # becomes a setting that mysteriously does nothing.
 
@@ -19,7 +19,7 @@ DEFAULT_CARRIER = 1500
 
 # --- Display ---
 # matrix (green) | deckard (amber) | hal (red) | tron (cyan-blue)
-COLOUR = matrix
+COLOR = matrix
 # Console font, which sets the character grid on an 800x480 panel:
 #   8x16 -> 100x30 (too small to read on 5")   10x20 -> 80x24
 #   12x24 -> 66x20 (proposed default)          16x32 -> 50x15

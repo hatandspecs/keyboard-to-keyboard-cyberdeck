@@ -1,7 +1,7 @@
 """Full-screen menus, selected by a single key (design_doc.md §5.6).
 
 No pointer, no cursor to move, no nesting deeper than two: a menu is a list of
-labelled keys and pressing one does the thing. That is the fastest interface
+labeled keys and pressing one does the thing. That is the fastest interface
 on a keyboard and the only sane one on a console with no mouse.
 
 The structure is data and the rendering is a pure function, so both can be
@@ -53,34 +53,43 @@ ROOT = {
         ("5", "Station"),
         ("6", "System"),
     ],
-    "footer": "Esc  back to the conversation",
+    "footer": "Esc back to the conversation   ↑↓ move   Enter select",
 }
 
 DISPLAY = {
     "title": "DISPLAY",
     "items": [
-        ("1", "Colour: Matrix   green"),
-        ("2", "Colour: Deckard  amber"),
-        ("3", "Colour: Hal      red"),
-        ("4", "Colour: Tron     cyan"),
+        ("1", "Color: Matrix   green"),
+        ("2", "Color: Deckard  amber"),
+        ("3", "Color: Hal      red"),
+        ("4", "Color: Tron     cyan"),
         ("t", "Timestamps on/off"),
     ],
-    "footer": "Esc  back",
+    "footer": "Esc back   ↑↓ move   Enter select",
 }
 
-TUNING = {
-    "title": "TUNING DEFAULTS",
-    "items": [
-        ("a", "AFC on/off"),
-        ("s", "Squelch on/off"),
-        ("r", "RSID on/off   follow others' mode identifiers"),
-        ("x", "TXID on/off   send one before our overs"),
-        ("+", "Squelch level up"),
-        ("-", "Squelch level down"),
-        ("c", "Park carrier at the configured offset"),
-    ],
-    "footer": "Esc  back      F2 opens the live tuning screen",
-}
+def tuning_menu(afc, squelch, level, rsid, txid):
+    """Tuning options with their current state shown.
+
+    The static version of this menu gave no feedback: pressing `s` toggled
+    the squelch and the screen did not change, which reads as a dead key.
+    """
+    def onoff(v):
+        return "ON " if v else "off"
+
+    return {
+        "title": "TUNING",
+        "items": [
+            ("a", f"AFC         {onoff(afc)}"),
+            ("s", f"Squelch     {onoff(squelch)}"),
+            ("+", f"Squelch level up       ({level:.0f})"),
+            ("-", f"Squelch level down     ({level:.0f})"),
+            ("r", f"RSID        {onoff(rsid)}   follow others' identifiers"),
+            ("x", f"TXID        {onoff(txid)}   send one before our overs"),
+            ("c", "Park carrier at the configured offset"),
+        ],
+        "footer": "Esc back   ↑↓ move   Enter select   F2 live tuning",
+    }
 
 RADIO = {
     "title": "RADIO",
@@ -92,7 +101,7 @@ RADIO = {
         ("5", "21.070  15 m"),
         ("6", "28.120  10 m"),
     ],
-    "footer": "Esc  back      these set the rig's VFO through fldigi",
+    "footer": "Esc back   ↑↓ move   Enter select   sets VFO and mode",
 }
 
 BAND_FREQUENCIES = {
@@ -107,7 +116,7 @@ SYSTEM = {
         ("c", "Clear the transcript"),
         ("q", "Quit"),
     ],
-    "footer": "Esc  back",
+    "footer": "Esc back   ↑↓ move   Enter select",
 }
 
 
@@ -132,7 +141,7 @@ def mode_menu(current, extra=None):
     items = [(k, (f"{n}  <" if n == current else n)) for k, n in items]
     items.append(("m", "more modes ..."))
     return {"title": "MODE", "items": items,
-            "footer": "Esc  back      < marks the mode in use"}
+            "footer": "Esc back   ↑↓ move   Enter select   < marks the mode in use"}
 
 
 def paged_menu(title, names, page, width, height):
@@ -153,8 +162,22 @@ def paged_menu(title, names, page, width, height):
     }, page, pages, {PAGE_KEYS[i]: n for i, n in enumerate(chunk)}
 
 
-def render(menu, width, height):
-    """A menu as rendered lines: list of (text, kind) segments."""
+def selectable(menu):
+    """Indices of items that can actually be chosen.
+
+    The station menu lists read-only fields keyed with a space; arrow-key
+    navigation has to step over them rather than land on a row that does
+    nothing when Enter is pressed.
+    """
+    return [i for i, (key, _) in enumerate(menu["items"]) if key.strip()]
+
+
+def render(menu, width, height, selected=None):
+    """A menu as rendered lines: list of (text, kind) segments.
+
+    `selected` is an index into menu["items"]; that row is drawn in reverse
+    video so the arrow keys have something to point at.
+    """
     lines = [[(" " + menu["title"][:width - 2].ljust(width - 1), "reverse")],
              [("", "bright")]]
 
@@ -166,15 +189,18 @@ def render(menu, width, height):
         for i in range(half):
             left = items[i]
             right = items[i + half] if i + half < len(items) else None
+            lk = "reverse" if selected == i else "dim"
             segs = [("  ", "dim"), (f"{left[0]} ", "bright"),
-                    (left[1][:col_w - 4].ljust(col_w - 2), "dim")]
+                    (left[1][:col_w - 4].ljust(col_w - 2), lk)]
             if right:
-                segs += [(f"{right[0]} ", "bright"), (right[1][:col_w - 4], "dim")]
+                rk = "reverse" if selected == i + half else "dim"
+                segs += [(f"{right[0]} ", "bright"), (right[1][:col_w - 4], rk)]
             lines.append(segs)
     else:
-        for key, label in items:
+        for i, (key, label) in enumerate(items):
+            kind = "reverse" if selected == i else "dim"
             lines.append([("   ", "dim"), (f"{key}  ", "bright"),
-                          (label[:width - 8], "dim")])
+                          (label[:width - 8], kind)])
 
     while len(lines) < height - 2:
         lines.append([("", "bright")])

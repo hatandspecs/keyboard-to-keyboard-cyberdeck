@@ -1,4 +1,4 @@
-"""Behaviour of the over-based transmit model (design_doc.md §5.4)."""
+"""Behavior of the over-based transmit model (design_doc.md §5.4)."""
 import session
 from session import Session, RX, TX
 
