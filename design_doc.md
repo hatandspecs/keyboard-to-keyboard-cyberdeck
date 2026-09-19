@@ -1,0 +1,839 @@
+# Keyboard-to-Keyboard Cyberdeck — Design
+
+A self-contained HF/VHF text terminal: a repurposed Raspberry Pi 3A+, a screen, a
+Bluetooth keyboard, and a Yaesu FTX-1 on the Pi's single USB port. fldigi runs
+headless and does the modem work. A purpose-built terminal front end is the only
+thing on the screen.
+
+The target is the feel of a dedicated 1980s packet terminal — monochrome text on
+black, no window manager, no mouse, no pointer, nothing to click — over modern
+digital modes.
+
+**Status: phases 1–4 built and tested.** Eight modules and five test files,
+113 checks, all passing against a live fldigi. `test_screen.py` and
+`test_menu_nav.py` drive the real application through a pseudo-terminal and
+read the screen back with a terminal emulator, so the tests assert on what the
+deck looks like rather than on functions in isolation.
+
+Phases 5–7 remain, and all three need hardware: the panel, the Bluetooth
+keyboard, and an image build. Section 16 lists the checks that gate them. The architecture is settled and the
+riskiest assumption in it — fldigi running headless and answering XML-RPC — has
+been verified rather than assumed. Section 14 separates what has been tested from
+what has not. Section 15 records the decisions already made and the fourteen still
+open. Section 16 is where to start when this is picked back up.
+
+---
+
+## 1. Purpose
+
+One machine that does one thing: conversational keyboard-to-keyboard QSOs in
+fldigi's digital modes, driven entirely from a keyboard, on a screen that shows
+the conversation rather than a waterfall and forty widgets.
+
+## 2. Scope
+
+In scope:
+
+* Conversational text modes — PSK, RTTY, Olivia, MFSK, Contestia, THOR,
+  DominoEX, Feld Hell.
+* Mode switching, carrier tuning, and rig frequency control from the keyboard.
+* A transcript of sent and received text, timestamped.
+* Four monochrome colour schemes, switchable at runtime.
+
+Out of scope for the first build, and worth stating so the design does not drift
+toward them: contest logging, ADIF export beyond a plain transcript, WSJT-X-class
+weak-signal modes (different workflow entirely), waterfall display, image modes
+(wefax, MFSK image), APRS or packet (the other Pi does that), and networked
+operation of any kind beyond the radio.
+
+## 3. Hardware
+
+### 3.1 The Raspberry Pi 3A+ and its one USB port
+
+The 3A+ has a single USB-A port wired directly to the SoC's OTG controller, with
+no hub chip. This is established from the iGate project on the same board: the
+port is sensitive to non-compliant USB-A-to-C adapters, and a Digirig Lite was
+not detected on it at all, in either plug orientation, until a powered hub was
+added. The FTX-1, by contrast, enumerates on that port directly.
+
+That single port is therefore spent on the radio, and nothing else may need USB.
+This is why the keyboard is Bluetooth rather than USB, and why the display must
+attach by DSI, HDMI, or GPIO rather than USB.
+
+Other constraints of the board: 512 MB of RAM, no Ethernet, 2.4 GHz WiFi and
+Bluetooth 4.2 on board.
+
+### 3.2 The radio
+
+The FTX-1 presents three devices over one USB-C cable. The values below are not
+estimates; they are the working configuration from the iGate project on this
+same radio and board:
+
+| Function | Device | Setting |
+|---|---|---|
+| CAT | `/dev/ttyUSB0` (CP2105) | 38400 baud, hamlib rig model 1035 |
+| PTT | `/dev/ttyACM0` | separate port from CAT |
+| Audio codec | `plughw:1,0` (C-Media) | mono capture and playback |
+
+The two-serial-port arrangement is the awkward part. hamlib's rig initialisation
+takes one port, so PTT on a second port needs either hamlib's separate-PTT
+support or a `rigctld` instance bridging both, which is the approach already
+proven on this radio.
+
+### 3.3 Display
+
+**Decided: a 5" capacitive touch DSI panel, 800×480.** It attaches by DSI ribbon,
+so it costs neither the USB port nor HDMI.
+
+800×480 on a 5" diagonal is a 5:3 panel roughly 109 mm wide by 65 mm high, a pixel
+pitch of 0.136 mm and about 186 DPI. That density is the constraint the layout has
+to respect: the obvious 8×16 console font yields 100×30 characters at 1.09 mm per
+character cell, which is approximately 3-point type and not readable at any normal
+distance.
+
+The console font therefore sets the grid:
+
+| Console font | Grid | Cell width | Roughly |
+|---|---|---|---|
+| 8×16 | 100 × 30 | 1.09 mm | too small to read |
+| 10×20 | 80 × 24 | 1.36 mm | the classic VT100 grid; small but legible |
+| **12×24** | **66 × 20** | **1.63 mm** | **proposed default** |
+| 16×32 | 50 × 15 | 2.17 mm | very legible, very cramped |
+
+12×24 at 66×20 is the proposed default, with 10×20 and 16×32 offered in the
+Display menu. Terminus provides all three sizes as console fonts, applied with
+`setfont`. The layout in section 5 is written to adapt to the column count rather
+than assume one, so changing font at runtime reflows rather than breaks.
+
+Two consequences of this specific panel:
+
+* **The touchscreen is not used.** A Linux virtual console has no concept of
+  pointer input, and adding one would mean X, which the design exists to avoid.
+  The touch controller is left unconfigured. This is a deliberate non-use of
+  available hardware rather than an oversight; see question 2.
+* **Panel power and DSI support both need verifying before anything else is
+  built.** Panels in this family commonly draw 5 V from the 40-pin header rather
+  than over the ribbon, and DSI panel support on Raspberry Pi OS varies by panel
+  and kernel version. A panel that needs USB power would conflict with the radio
+  for the single port and would change the hardware plan entirely.
+
+### 3.4 Keyboard
+
+Bluetooth, paired once and reconnecting at boot. Two problems follow from a
+headless appliance with no pointer:
+
+* **Pairing** has no UI. Either the pairing is done once during the build and
+  baked into the image, or the terminal grows a pairing screen driving
+  `bluetoothctl`.
+* **Recovery** when Bluetooth fails has no path, because the one USB port holds
+  the radio. Unplugging the radio to plug in a keyboard is the fallback, and it
+  should be documented rather than discovered.
+
+### 3.5 Power
+
+Undecided; see question 4. A 3A+ with a DSI panel and Bluetooth draws
+appreciably more than the iGate build, and a portable deck implies a battery and
+a shutdown path that does not corrupt the card.
+
+## 4. Software architecture
+
+```mermaid
+flowchart TD
+  subgraph tty["Linux virtual console (framebuffer)"]
+    UI["cyberdeck TUI<br/>Python + curses"]
+  end
+  subgraph X["Xvfb :99 — never displayed"]
+    FL["fldigi 4.2.13<br/>modem, AFC, squelch, DSP"]
+  end
+  UI -- "XML-RPC 127.0.0.1:7362" --> FL
+  FL -- "ALSA plughw:1,0" --> RIG["FTX-1"]
+  FL -- "hamlib NET rigctl<br/>127.0.0.1:4532" --> RC["rigctld"]
+  RC -- "CAT /dev/ttyUSB0<br/>PTT /dev/ttyACM0" --> RIG
+  KB["Bluetooth keyboard"] --> UI
+```
+
+### 4.1 Why fldigi runs under Xvfb
+
+fldigi is an FLTK application with no headless mode. It is also thirty years of
+well-tested modem work that nothing else replicates. Running it against a virtual
+X server costs a few tens of megabytes and gives the whole modem library, its
+AFC, its squelch, and its RSID.
+
+The alternative — reimplementing PSK31 and Olivia — is not a first-build
+proposition.
+
+### 4.2 The XML-RPC boundary
+
+fldigi exposes 176 XML-RPC methods on `127.0.0.1:7362`. The terminal needs
+roughly twenty of them. The full list below was read from fldigi 4.2.13 with
+`fldigi --xmlrpc-list`, not from documentation:
+
+| Purpose | Methods |
+|---|---|
+| Mode | `modem.get_names`, `modem.set_by_name`, `modem.get_name` |
+| Carrier and tuning | `modem.get_carrier`, `modem.set_carrier`, `modem.inc_carrier`, `modem.search_up`, `modem.search_down`, `modem.get_quality`, `modem.get_bandwidth` |
+| AFC and squelch | `main.get_afc`, `main.set_afc`, `main.get_squelch`, `main.set_squelch`, `main.get_squelch_level`, `main.set_squelch_level` |
+| Received text | `text.get_rx_length`, `text.get_rx(start, length)`, `text.clear_rx` |
+| Transmitted text | `text.add_tx`, `text.add_tx_queu`, `text.clear_tx` |
+| Transmit control | `main.tx`, `main.rx`, `main.abort`, `main.get_trx_state`, `main.rx_only` |
+| Status readouts | `main.get_status1` (S/N), `main.get_status2` (IMD) |
+| Rig | `rig.get_frequency`, `rig.set_frequency`, `rig.get_mode`, `rig.get_modes` |
+| Lifecycle | `fldigi.name_version`, `fldigi.terminate` |
+
+`text.get_rx` returns base64 (XML-RPC type `6`), so received text is decoded
+rather than used directly.
+
+`main.rx_only` is the transmit inhibit for section 9.
+
+### 4.3 The terminal front end
+
+Python 3 with `curses`, running on a Linux virtual console against the
+framebuffer. No X, no terminal emulator, no window manager. The console is where
+the retro look comes from for free: a fixed character grid, a hardware text
+cursor, and a sixteen-colour palette that can be redefined.
+
+A single process with two threads: one polling fldigi, one reading the keyboard.
+Polling rather than pushing, because XML-RPC has no subscription mechanism —
+`text.get_rx_length` is cheap, and a poll every 200 ms is imperceptible in a
+conversation typed at 30 words per minute.
+
+## 5. The interface
+
+### 5.1 Layout
+
+At the proposed 66×20 grid. This and the screens below are captured from
+the running code, not drawn by hand — regenerate them with
+`python3 capture_screens.py`:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ KD3CCO  14.070  USB  BPSK63  1500Hz  S/N 18  IMD -24   RX  2114Z │
+│──────────────────────────────────────────────────────────────────│
+│ 2109Z RX      KD3CCO de W3TM  good copy, 599 here in State       │
+│               College. rig is an FTX-1 running 20 watts into a   │
+│               vertical.                                          │
+│ 2111Z KD3CCO  W3TM de KD3CCO  copy 100 percent. this is a pi 3a+ │
+│               running fldigi headless behind a terminal i wrote. │
+│ 2113Z RX      that is excellent. what modes does it do?          │
+│ 2114Z --      mode changed to BPSK63                             │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│──────────────────────────────────────────────────────────────────│
+│ W3TM de KD3CCO  all the fldigi keyboard modes — psk, olivia,     │
+│ mfsk, rtty                                               [RX 71] │
+│ F1 menu  F2 tune  F3 mode  F4 colour  ^T over  ^K hand  ^C abort │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+`[RX 47]` is the buffer indicator described in section 5.4: 47 characters
+composed while receiving, not yet transmitted.
+
+Three regions, fixed:
+
+1. **Status line**, one row, always visible.
+2. **Transcript**, everything between, scrolling upward.
+3. **Compose**, one to three rows at the bottom with the cursor in it.
+
+### 5.2 Status line fields
+
+Left to right: own callsign, rig frequency, modem name, audio carrier, S/N,
+transmit state, UTC.
+
+Sideband and IMD are cut to fit 66 columns; both are available in the tuning
+screen, which has room. At 80 or 100 columns they return. Transmit state is the
+one field that changes appearance rather than only content — see section 9.
+
+### 5.3 Transcript
+
+Received text arrives character by character, so a line is rendered as it
+arrives rather than buffered until complete. Sent text is interleaved in the same
+column layout, distinguished by the callsign column rather than by colour, since
+the display is monochrome.
+
+Timestamps in UTC without colons — `2114Z` — because it reads as a radio log and
+saves two columns.
+
+Scrollback is bounded in lines, held in memory, with `PgUp`/`PgDn` to review and
+any keypress in the compose line returning to the live tail.
+
+### 5.4 Compose, and how an over works
+
+**Decided: the over-based model, which is both fldigi's norm and the on-air
+norm.** It is not line-and-Enter, and the reasoning is worth recording because
+line-and-Enter is the intuitive guess.
+
+HF digital is half-duplex with long overs. One station transmits a paragraph and
+hands back; the other cannot type meanwhile, and every turnaround costs seconds of
+transmitter and receiver settling. Sending a line at a time would key the rig
+dozens of times per QSO to no purpose. The convention across PSK, RTTY, Olivia,
+MFSK and the rest is identical — there is no per-mode default to inherit.
+
+The cycle:
+
+| Step | Key | What happens |
+|---|---|---|
+| Compose while receiving | — | Text accumulates in the buffer. Nothing is transmitted. `Enter` inserts a newline; it does not send |
+| Start the over | `Ctrl-T` | `text.add_tx` sends the buffer to fldigi, `main.tx` keys the rig. Typing continues to go out live, character by character |
+| Hand back | `Ctrl-K` | Appends fldigi's inline `^r` control, which drops to receive once the buffer has drained rather than cutting it off |
+| Abort | `Ctrl-C` | `main.abort`, immediately |
+
+The live-typing half of step 2 is the thing that makes this keyboard-to-keyboard
+rather than messaging: the other operator watches the text appear as it is typed,
+corrections included.
+
+**Latency varies by mode even though the mechanism does not.** PSK31 and RTTY put
+characters on the air essentially as typed. Olivia and MFSK interleave across
+several seconds, so text arrives at the far end in lumps regardless. The status
+line shows transmit state; it cannot show how far behind the far end is.
+
+The compose region carries a buffer indicator — `[RX 47]` while receiving with 47
+characters composed, `[TX]` while the buffer is going out — so the state is never
+ambiguous. Question 5 asks whether a local-only chat variant is wanted for VHF
+work, where Enter-sends is reasonable because turnarounds are cheap.
+
+### 5.5 Key bindings
+
+| Key | Action |
+|---|---|
+| `F1` | Menu |
+| `F2` | **Toggle chat screen / tuning screen** |
+| `F3` | Mode picker |
+| `F4` | Cycle colour scheme |
+| `Ctrl-T` | Start the over |
+| `Ctrl-K` | Hand back — append `^r`, drop to receive when the buffer drains |
+| `Ctrl-C` | Abort transmit immediately |
+| `PgUp` / `PgDn` | Scroll the transcript |
+| `Ctrl-L` | Redraw |
+| `Esc` | Close any panel; from the tuning screen, back to chat |
+
+`F2` is a full-screen mode toggle rather than an overlay, for the reason in
+section 8: on a 66-column panel a tuning display worth reading does not fit
+alongside a conversation worth reading.
+
+Function keys beyond `F4` are unassigned and are the natural home for macros
+(question 8).
+
+### 5.6 Menu tree
+
+```mermaid
+flowchart LR
+  F1["F1"] --> M1["Mode"]
+  F1 --> M2["Tuning defaults"]
+  F1 --> M3["Radio"]
+  F1 --> M4["Display"]
+  F1 --> M5["Station"]
+  F1 --> M6["Log"]
+  F1 --> M7["System"]
+  M1 --> M1a["PSK / RTTY / Olivia<br/>MFSK / Contestia<br/>THOR / DominoEX / Hell"]
+  M2 --> M2a["Default carrier, AFC,<br/>squelch level, RSID"]
+  M3 --> M3a["Frequency entry<br/>Band presets, sideband"]
+  M4 --> M4a["Colour: Matrix / Deckard<br/>Hal / Tron<br/>Font size, timestamps, scrollback"]
+  M5 --> M5a["Callsign, name, QTH, locator"]
+  M6 --> M6a["Save transcript<br/>Recent QSOs"]
+  M7 --> M7a["Restart fldigi<br/>Shutdown, reboot, about"]
+```
+
+Menus are full-screen overlays with single-key selection, not nested pointers.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ MENU                                                             │
+│                                                                  │
+│   1  Mode                                                        │
+│   2  Tuning                                                      │
+│   3  Radio                                                       │
+│   4  Display                                                     │
+│   5  Station                                                     │
+│   6  System                                                      │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│──────────────────────────────────────────────────────────────────│
+│ Esc  back to the conversation                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ MODE                                                             │
+│                                                                  │
+│   1  BPSK31                                                      │
+│   2  BPSK63  <                                                   │
+│   3  QPSK31                                                      │
+│   4  RTTY                                                        │
+│   5  OLIVIA-8/250                                                │
+│   6  OLIVIA-8/500                                                │
+│   7  MFSK16                                                      │
+│   8  THOR22                                                      │
+│   9  CONTESTIA                                                   │
+│   0  DOMEX8                                                      │
+│   h  FELDHELL                                                    │
+│   m  more modes ...                                              │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│──────────────────────────────────────────────────────────────────│
+│ Esc  back      < marks the mode in use                           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ALL MODES  page 1/2                                              │
+│                                                                  │
+│  a BPSK31                       n OLIVIA-16/500                  │
+│  b BPSK63                       o OLIVIA-32/1K                   │
+│  c BPSK125                      p MFSK16                         │
+│  d BPSK250                      q MFSK8                          │
+│  e BPSK500                      r MFSK32                         │
+│  f QPSK31                       s MFSK64                         │
+│  g QPSK63                       t CONTESTIA                      │
+│  h QPSK125                      u THOR22                         │
+│  i QPSK250                      v THOR16                         │
+│  j RTTY                         w THOR25                         │
+│  k OLIVIA-8/250                 x THOR50x1                       │
+│  l OLIVIA-8/500                 y DOMEX8                         │
+│  m OLIVIA-4/250                 z DOMEX4                         │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│──────────────────────────────────────────────────────────────────│
+│ Esc  back      PgUp/PgDn  more                                   │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 5.7 Colour schemes
+
+Four, each a single hue on black:
+
+| Scheme | Hue | Bright | Dim | Evokes |
+|---|---|---|---|---|
+| **Matrix** | green | `#00FF41` | `#00A62A` | the digital rain; a more saturated green than P1 phosphor |
+| **Deckard** | amber | `#FFB000` | `#B27B00` | P3 phosphor, the Esper and the VDUs around it |
+| **Hal** | red | `#FF3B30` | `#A62018` | the 9000-series eye; also the night-vision scheme |
+| **Tron** | cyan-blue | `#00D9FF` | `#0089A8` | the Grid |
+
+Two of these carry a legibility caveat worth recording rather than discovering.
+
+**Hal is the least legible of the four.** Red has the lowest luminance of any
+saturated hue, so red-on-black has the poorest contrast here even at full
+brightness. That is inherent to the choice and is also the point — it is the
+scheme for operating at night without wrecking dark adaptation. It is not the one
+to default to.
+
+**Tron is cyan-shifted deliberately.** A true blue on black (`#0000FF`) is close
+to unreadable as body text: the eye has few blue-sensitive cones near the fovea
+and the shorter wavelength focuses differently from the rest of the image, so
+blue text on black shimmers. Pulling it toward cyan keeps the Tron look and gives
+it luminance to work with.
+
+**Matrix is the proposed default** — green on black has the best contrast of the
+four and the longest history as a terminal phosphor.
+
+Monochrome means one hue, not one intensity. Emphasis comes from the dim variant
+and from reverse video: the status line is reverse, own transmissions are full
+brightness, received text is full brightness, timestamps and the callsign column
+are dim, and menu selection is reverse.
+
+Each scheme redefines two Linux console palette entries — one bright, one dim —
+with `OSC P` escape sequences (`\033]P<index><rrggbb>`), leaving black as
+background. This is what allows a true amber and a true Matrix green rather than
+the ANSI approximations of yellow and green, and it is why switching schemes at
+runtime is a matter of emitting four escape sequences rather than repainting.
+Verification is pending; see section 14.
+
+`F4` cycles Matrix → Deckard → Hal → Tron. The Display menu selects directly, and
+`COLOUR` in the configuration file sets the scheme at boot.
+
+## 6. Modes
+
+fldigi 4.2.13 reports 169 modems, of which 64 are conversational. Offering all 64
+in a menu makes the menu the problem. The proposal is a curated first tier with
+the rest reachable under "more":
+
+| Tier | Modems | Rationale |
+|---|---|---|
+| First | BPSK31, BPSK63, QPSK31, RTTY, Olivia 8/250, Olivia 8/500, MFSK16, THOR22, Contestia, DominoEX (DOMEX8), Feld Hell | Covers ordinary HF keyboard work |
+| More | The remaining 54, grouped by family | Complete, and never in the way |
+
+Mode changes take effect immediately via `modem.set_by_name` and are recorded in
+the transcript as a marker line, since a mode change mid-QSO is part of the
+conversation.
+
+## 7. Rig control
+
+`rigctld` runs as a separate service on `127.0.0.1:4532` with rig model 1035, CAT
+on `/dev/ttyUSB0` at 38400, and PTT on `/dev/ttyACM0`. fldigi connects to it as
+hamlib "NET rigctl" rather than opening the serial ports itself.
+
+This reuses a configuration already proven on this radio, keeps the two-port PTT
+arrangement in one place, and means the terminal can read frequency through
+fldigi rather than opening a second connection to the radio.
+
+## 8. Tuning
+
+Two different things get tuned, and conflating them is what made this look like
+the hardest problem in the design. It is not.
+
+**1. Where the receiver's passband sits — the radio's job.** The FTX-1 has its
+own spectrum scope and waterfall, and it is a better instrument for this than
+anything an 800×480 panel could render from a 512 MB Pi. Finding a PSK signal in
+a band segment, seeing how crowded 14.070 is, spotting the station calling
+slightly off — all of that happens on the radio's display, using the radio's
+controls, where it has always happened.
+
+**2. Which signal inside the passband fldigi decodes — the deck's job.** fldigi
+demodulates one narrow signal at one audio frequency within the 3 kHz passband.
+The radio's waterfall shows RF and cannot set that audio carrier.
+
+The operating technique that connects the two, and makes the second one nearly
+free:
+
+> Park fldigi's carrier at a fixed audio offset — 1500 Hz — and leave it there.
+> Use the radio's waterfall and VFO to bring the wanted signal to that offset.
+> AFC holds it once it is close.
+
+This is ordinary practice with narrow filters, it needs no software spectrum on
+the deck, and it turns tuning into a task with one control: the VFO knob, watched
+on the radio's own display, confirmed by a number on the deck.
+
+Three fldigi facilities back it up when the offset technique is inconvenient:
+
+* **RSID** (`main.set_rsid`) detects a transmitted mode identifier and jumps to
+  that signal's mode *and* frequency automatically. On a quiet band this is the
+  whole problem solved without touching anything.
+* **`modem.search_up` / `search_down`** step to the next detected signal within
+  the passband.
+* **`modem.get_quality`**, 0–100, gives a number to peak against — tuning by
+  meter rather than by eye.
+
+**No software spectrum is built.** fldigi's XML-RPC does not expose its FFT, so
+rendering one would mean reading the audio separately, which would mean sharing
+the ALSA capture device with fldigi through `dsnoop`. That complexity buys a
+worse version of a display the radio already has.
+
+### 8.1 The tuning screen
+
+`F2` toggles the whole screen between chat and tuning, rather than overlaying a
+panel. On 66 columns a tuning display worth reading and a conversation worth
+reading do not coexist, and tuning is a thing done deliberately between overs
+rather than while typing.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ TUNING  14.070  USB  BPSK63  1500Hz  S/N 18  IMD -24   RX  2114Z │
+│──────────────────────────────────────────────────────────────────│
+│  rig      14.07015  USB                                          │
+│  carrier  1500 Hz        bandwidth  31 Hz                        │
+│  S/N      18 dB                                                  │
+│  IMD      -24 dB                                                 │
+│                                                                  │
+│  quality  ███████████████████████████░░░░░░░░░░░░░░░░░  62       │
+│                                                                  │
+│  AFC on    squelch on  (5)   RSID on                             │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│                                                                  │
+│──────────────────────────────────────────────────────────────────│
+│  ← →  carrier ±10 Hz      ↑ ↓  search signal                     │
+│  , .  VFO ±100 Hz         < >  VFO ±1 kHz                        │
+│  a AFC   s squelch   r RSID   F2/Esc back to chat                │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+The quality bar refreshes several times a second. Everything on this screen is a
+readout from fldigi or `rigctld`; nothing here is computed by the deck.
+
+Received text continues to accumulate in the transcript while the tuning screen
+is up, and the transcript is intact on return.
+
+## 9. Transmit safety
+
+A keyboard-driven transmitter with no pointer needs its transmit state to be
+unmistakable and its stop path to be immediate.
+
+* **State is visible without reading.** On transmit, the status line inverts
+  across the full width. A dim screen with one bright bar is legible from across
+  a room.
+* **`Ctrl-C` aborts** via `main.abort`, at any time, from any panel, including
+  while a menu is open.
+* **A transmit time-out.** If transmit has been active longer than a configured
+  limit, the terminal calls `main.abort` and records it. The radio's own
+  time-out timer is the backstop, not the primary.
+* **Inhibit, enforced locally.** The terminal refuses to key at all while
+  inhibited: `start_over` returns without calling fldigi. fldigi's own
+  `main.rx_only` is set as well, but is not relied on — it was observed not to
+  stop `main.tune`, which keyed for ten consecutive samples with the inhibit
+  set. A safety property that depends on another process behaving as
+  documented is not a safety property.
+* **Startup is receive-only** until the rig reports a frequency, so a
+  misconfigured rig cannot be keyed blind.
+
+## 10. Boot and service model
+
+Three systemd units, mirroring the iGate's structure:
+
+| Unit | Does |
+|---|---|
+| `cyberdeck-fldigi.service` | Xvfb, then fldigi against it, with a seeded config directory |
+| `cyberdeck-rigctld.service` | `rigctld` for the FTX-1 |
+| `cyberdeck-ui.service` | The terminal on `tty1`, `Restart=always` |
+
+The terminal starts on `tty1` with no login, no getty, and no console messages —
+`quiet loglevel=0 vt.global_cursor_default=0` on the kernel command line, so the
+boot is blank and the terminal simply appears.
+
+An SD card treated as the iGate's is: runtime state in RAM, journal volatile,
+swap in compressed RAM. The iGate's experience adds one lesson to carry over
+deliberately — a volatile journal means a reboot destroys the evidence of
+whatever went wrong, so anomalies worth diagnosing later are written to a small
+file outside the tmpfs.
+
+## 11. Configuration
+
+One file, `cyberdeck.conf`, read at start, in the same `KEY = value` form as the
+iGate's configuration so the two projects read alike:
+
+```
+CALLSIGN = KD3CCO
+NAME = Don
+QTH = State College, PA
+LOCATOR = FN10cs
+
+DEFAULT_MODE = BPSK31
+DEFAULT_CARRIER = 1500
+COLOUR = matrix          # matrix | deckard | hal | tron
+
+RIG_MODEL = 1035
+CAT_DEVICE = /dev/ttyUSB0
+CAT_BAUD = 38400
+PTT_DEVICE = /dev/ttyACM0
+AUDIO_DEVICE = plughw:1,0
+
+TX_TIMEOUT = 180
+SCROLLBACK = 2000
+POLL_MS = 200
+```
+
+## 12. Failure modes
+
+| Failure | Symptom | Handling |
+|---|---|---|
+| fldigi dies | Status line shows `NO MODEM`, transcript keeps its history | Terminal reconnects on a timer; systemd restarts fldigi |
+| XML-RPC stops answering while fldigi lives | Status line freezes | Call timeout of 2 s, then reconnect; never block the keyboard thread |
+| Bluetooth keyboard drops | No input | Status line shows `NO KBD`; terminal keeps running and reconnects |
+| Radio unplugged | fldigi loses its audio device | Status line shows `NO RADIO`; transmit inhibited until it returns |
+| rigctld dies | Frequency field shows `----` | Terminal keeps working; mode and carrier are unaffected |
+| SD card full | Transcript writes fail | Transcript is in RAM; a bounded file is flushed on QSO end only |
+
+The principle throughout: the keyboard and the transcript keep working even when
+the radio side does not, because a terminal that freezes is worse than one that
+says what is missing.
+
+## 13. Build phases
+
+Each phase ends with something demonstrable.
+
+| Phase | Ends with |
+|---|---|
+| 1 | fldigi headless under Xvfb, answering XML-RPC — **done on the laptop**, still to repeat on the 3A+ |
+| 2 | A Python client that prints received text and sends a typed line — **done** |
+| 3 | The curses layout with live status, transcript and compose — **done** |
+| 4 | The four colour schemes and the F1 menu tree — **done** |
+| 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot |
+| 6 | The tuning panel and RSID, evaluated on the air |
+| 7 | An image build script producing the card unattended, as the iGate has |
+
+Phases 1 to 4 need no hardware beyond the Pi and the radio, and phases 1 to 3 can
+be developed on the laptop.
+
+## 14. Verified, and assumed
+
+Separated deliberately, because the difference decides what can break late.
+
+**Verified on this laptop, against fldigi 4.2.13:**
+
+* `main.rx_only` does **not** inhibit `main.tune`: with the inhibit set, tune
+  keyed and stayed keyed across ten consecutive state samples. §9 was written
+  assuming otherwise and has been corrected.
+
+* fldigi runs under `Xvfb` with no display attached and answers XML-RPC on
+  `127.0.0.1:7362`.
+* 169 modems are available, of which 64 are conversational text modes; the first
+  tier in section 6 all exist under those exact names.
+* The method inventory in section 4.2 is real, read from `--xmlrpc-list`.
+* `modem.get_carrier`, `main.get_trx_state`, `text.get_rx_length` and
+  `modem.get_quality` answer correctly on a running instance.
+* **fldigi crashes on a fresh, empty config directory** — an assertion failure in
+  `std::string` during first-run setup, reproducible twice. A working config
+  directory must be seeded into the image. This would otherwise have been found
+  on the first boot of the finished deck.
+
+**Verified previously, on this radio and this board, in the iGate project:**
+
+* The FTX-1 enumerates on a Pi 3A+'s single USB port and presents CAT on
+  `/dev/ttyUSB0`, PTT on `/dev/ttyACM0`, and audio on `plughw:1,0`.
+* hamlib rig model 1035 drives it.
+* The 3A+'s OTG port is sensitive to adapters and cannot power some devices.
+
+**Assumed, and not yet tested. The first three block phase 1 and are cheap:**
+
+* **The 5" DSI panel drives a framebuffer console on a 3A+.** DSI panel support
+  varies by panel and kernel, and this board is not the one most panels are
+  tested against. Nothing else can be built until a console appears on it.
+* **The panel takes 5 V from the 40-pin header, not from USB.** A USB-powered
+  panel conflicts with the radio for the only port and changes the hardware plan.
+* **Terminus 12×24, 10×20 and 16×32 console fonts are present and `setfont`
+  switches between them at runtime** without disturbing a running curses app.
+* `OSC P` palette redefinition works on this panel's console, so a true amber is
+  available rather than the ANSI approximation of yellow.
+* fldigi echoes transmitted text into the RX widget, or does not — this decides
+  how the transcript is assembled, and is a ten-minute check against the running
+  instance.
+* Whether `main.tx` keys reliably under XML-RPC control could not be settled on
+  the bench: repeated trials disagreed, and a control run with the inhibit
+  lifted failed to key at all, which invalidates the trial rather than proving
+  anything. It wants re-testing against a radio that actually transmits. The
+  design no longer depends on the answer, since the inhibit is enforced in the
+  terminal.
+* fldigi's memory footprint plus Xvfb plus Python fits 512 MB comfortably.
+* Bluetooth keyboard latency on a 3A+ is acceptable for typing.
+
+---
+
+## 15. Decisions and open questions
+
+### 15.1 Settled
+
+| Decision | Resolution | Section |
+|---|---|---|
+| Display | 5" capacitive touch DSI, 800×480, at 12×24 giving a 66×20 grid | 3.3 |
+| Transmit model | Over-based: compose while receiving, `Ctrl-T` to start, `Ctrl-K` to hand back. `Enter` is a newline, not a send | 5.4 |
+| Tuning | The radio's own waterfall for RF; a parked audio carrier with AFC and RSID for the modem. No software spectrum | 8 |
+| Colour schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.7 |
+| Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
+| Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
+| Rig control | `rigctld`, model 1035, reusing the iGate's proven FTX-1 configuration | 7 |
+
+### 15.1a Found while building
+
+**Squelch is not optional.** With the squelch open, fldigi decodes the noise
+floor continuously and the transcript fills with random characters within
+seconds — observed on the bench with no radio attached at all. It is not a
+fault and it is not cosmetic: a terminal whose conversation is buried under
+decoded noise is unusable. The deck should start with squelch on, and the
+tuning screen already exposes the level. Whether to enforce a minimum at
+startup is an open question.
+
+**`main.rx_only` does not inhibit `main.tune`.** See §9 and §14; the inhibit is
+now enforced in the terminal instead.
+
+**The hint line has to shed bindings, not be truncated.** At 66 columns the
+full list of seven overflows by one character and renders as `^C abor`, which
+is worse than showing fewer hints. `render.hint_line` drops whole bindings in
+priority order down to 12 columns.
+
+### 15.2 Open
+
+#### Hardware
+
+**1. Which console font size is the default?** 12×24 gives 66×20 and is proposed.
+10×20 gives the classic 80×24 and is noticeably smaller on a 5" panel; 16×32
+gives 50×15, very legible, and leaves about twelve lines of conversation. Worth
+deciding by looking at the panel rather than on paper.
+
+**2. The panel is capacitive touch and the design does not use it.** A console has
+no pointer, and using touch would mean X. Leave it unused, or is there one thing
+worth having it for — scrolling the transcript, or a keyboard-free abort?
+
+**3. Which Bluetooth keyboard, and should the deck be able to pair one itself?**
+Baking a pairing into the image is simpler; a pairing screen is more useful if the
+keyboard is ever replaced away from home.
+
+**4. Battery or mains?** A battery changes the design: a charge indicator in the
+status line, a low-battery shutdown, and a case that holds a pack.
+
+#### Interface
+
+**5. Is a local chat variant wanted?** On VHF simplex with a strong signal,
+turnarounds are cheap and Enter-sends-immediately is a reasonable way to work —
+closer to messaging than to an HF QSO. Worth a switchable behaviour, or does one
+model for everything keep it honest?
+
+**6. Is 1500 Hz the right parking offset?** It is the common default and sits
+comfortably inside any SSB passband. A fixed offset is what makes the
+radio's-waterfall technique work, so it wants choosing once and leaving alone.
+
+**7. Should the transcript separate the two stations into columns, or interleave
+them?** Interleaved with a callsign column is proposed. A split screen — remote
+above, own below — is the other tradition, and is easier to read at a glance on a
+small display.
+
+**8. Macros.** `F5`–`F12` are free. Worth defining CQ, a signal report, a brag
+tape, and a sign-off? If so, what text, and should they be editable on the deck or
+only in the configuration file?
+
+**9. What belongs in the status line at 66 columns?** Section 5.2 currently cuts
+sideband and IMD to fit. What gets cut next if something else has to go in?
+
+#### Operation
+
+**10. Should the deck log QSOs?** A plain text transcript per QSO is cheap. ADIF
+that can be merged into a main log is more work and implies capturing callsign,
+RST and times, which implies fields to fill in, which implies more interface.
+
+**11. Band and frequency control.** Should the menu carry presets for the usual
+digital watering holes — 14.070, 7.070, 3.580, 10.142, 21.070 — or is direct
+numeric entry enough?
+
+**12. Transmit time-out.** What limit? 180 seconds is proposed, which is long for
+a keyboard QSO and short enough to matter if something hangs.
+
+#### Scope
+
+**13. Does the deck need WiFi at all once built?** Leaving it off is one less
+radio in the case and one less attack surface; leaving it on means updates and
+SSH without opening anything.
+
+**14. Is a second radio ever in scope?** The design assumes the FTX-1 exclusively.
+Making the radio a profile, as the iGate does, costs little now and a great deal
+later.
+
+---
+
+## 16. Picking this back up
+
+The three cheap checks that gate everything else, in order. None needs the
+keyboard, the case, or any code:
+
+1. **Does the 5" DSI panel give a framebuffer console on the 3A+?** Attach it,
+   boot, look for a login prompt. Nothing proceeds until this works, and it is the
+   assumption least under this project's control.
+2. **Where does the panel take its power?** If it wants USB rather than the 40-pin
+   header, it competes with the radio for the only port and the hardware plan
+   changes.
+3. **Do Terminus 12×24, 10×20 and 16×32 exist as console fonts, and does `setfont`
+   switch them at runtime?** This settles question 1 by looking at it.
+
+Then phase 1 of section 13: fldigi headless under Xvfb on the 3A+, answering
+XML-RPC over SSH. That has already been proven on a laptop, so the only new
+variable is the board.
+
+Phases 1 to 3 need nothing but the Pi and the radio, and can be developed over
+SSH before the panel or the keyboard exist.

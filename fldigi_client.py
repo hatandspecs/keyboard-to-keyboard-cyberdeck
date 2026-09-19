@@ -1,0 +1,253 @@
+"""The XML-RPC boundary between the terminal and fldigi.
+
+fldigi does the modem work and is never seen: it runs against a virtual X
+server with no display attached (design_doc.md §4.1). Everything the terminal
+needs of it passes through the twenty-odd methods below, out of the 176 fldigi
+exposes.
+
+Two properties matter more than the API surface:
+
+* **No call may block the interface.** Every request carries a timeout, and a
+  dead fldigi surfaces as ``connected == False`` rather than as an exception
+  reaching the keyboard loop. A terminal that freezes is worse than one that
+  says what is missing (§12).
+* **Received text is a stream, not a snapshot.** fldigi keeps an ever-growing
+  RX buffer; ``poll_rx`` remembers how much of it has been read and returns
+  only what is new.
+"""
+
+import socket
+import xmlrpc.client
+
+DEFAULT_URL = "http://127.0.0.1:7362/"
+DEFAULT_TIMEOUT = 2.0
+
+# fldigi's inline control for "return to receive once the buffer has drained".
+# Appending this rather than calling main.rx() is what lets an over finish
+# sending instead of being cut off mid-word (§5.4).
+RX_AFTER_BUFFER = "^r"
+
+
+class _TimeoutTransport(xmlrpc.client.Transport):
+    """xmlrpc.client has no timeout parameter; this supplies one."""
+
+    def __init__(self, timeout):
+        super().__init__()
+        self._timeout = timeout
+
+    def make_connection(self, host):
+        conn = super().make_connection(host)
+        conn.timeout = self._timeout
+        return conn
+
+
+class FldigiError(Exception):
+    pass
+
+
+class Fldigi:
+    """A connection to one fldigi instance.
+
+    Every public method returns a usable value even when fldigi is unreachable,
+    so callers can render a screen without wrapping each field in try/except.
+    Whether the last call succeeded is in ``connected``.
+    """
+
+    def __init__(self, url=DEFAULT_URL, timeout=DEFAULT_TIMEOUT):
+        self.url = url
+        self.timeout = timeout
+        self.connected = False
+        self.last_error = ""
+        self._rx_pos = 0
+        self._proxy = None
+        self._connect()
+        # Probe once, so `connected` describes reality from the moment the
+        # object exists rather than from the first call a caller happens to
+        # make. Without this the interface shows "no modem" for one poll
+        # interval every time it starts.
+        self.version()
+
+    # -- plumbing ---------------------------------------------------------
+
+    def _connect(self):
+        self._proxy = xmlrpc.client.ServerProxy(
+            self.url, transport=_TimeoutTransport(self.timeout), allow_none=True)
+
+    def _call(self, name, *args, default=None):
+        """One XML-RPC call. Never raises; records the failure instead."""
+        try:
+            method = self._proxy
+            for part in name.split("."):
+                method = getattr(method, part)
+            result = method(*args)
+            self.connected = True
+            self.last_error = ""
+            return result
+        except (OSError, socket.timeout, xmlrpc.client.Error) as exc:
+            self.connected = False
+            self.last_error = f"{type(exc).__name__}: {exc}"
+            # A fresh proxy on the next attempt: a socket that failed once
+            # tends to keep failing, and reconnecting is free.
+            self._connect()
+            return default
+
+    def version(self):
+        return self._call("fldigi.name_version", default="")
+
+    # -- received text ----------------------------------------------------
+
+    def poll_rx(self):
+        """New received characters since the last poll, as a string.
+
+        fldigi returns the RX buffer as base64 (XML-RPC type '6'), so it
+        arrives as xmlrpc.client.Binary and has to be decoded. Characters
+        outside ASCII do occur on a noisy channel and must not crash the feed.
+        """
+        length = self._call("text.get_rx_length", default=None)
+        if length is None:
+            return ""
+        if length < self._rx_pos:
+            # The buffer was cleared underneath us; start again rather than
+            # reading from a position that no longer exists.
+            self._rx_pos = 0
+        if length == self._rx_pos:
+            return ""
+        chunk = self._call("text.get_rx", self._rx_pos, length - self._rx_pos,
+                           default=None)
+        if chunk is None:
+            return ""
+        raw = chunk.data if isinstance(chunk, xmlrpc.client.Binary) else bytes(chunk)
+        self._rx_pos = length
+        return raw.decode("utf-8", errors="replace")
+
+    def clear_rx(self):
+        self._call("text.clear_rx")
+        self._rx_pos = 0
+
+    # -- transmitting -----------------------------------------------------
+
+    def start_over(self, text):
+        """Send the composed buffer and key the transmitter.
+
+        Order matters: the text goes into fldigi's TX widget first, so that
+        keying and sending are one action from the operator's point of view.
+        """
+        if text:
+            self._call("text.add_tx", text)
+        self._call("main.tx")
+
+    def send_more(self, text):
+        """Append to what is already going out, mid-over."""
+        if text:
+            self._call("text.add_tx", text)
+
+    def hand_back(self):
+        """Finish the over: drop to receive once the buffer has drained."""
+        self._call("text.add_tx", RX_AFTER_BUFFER)
+
+    def abort(self):
+        self._call("main.abort")
+
+    def receive_only(self, on=True):
+        """Inhibit transmit entirely (§9)."""
+        self._call("main.rx_only" if on else "main.rx_tx")
+
+    def clear_tx(self):
+        self._call("text.clear_tx")
+
+    def trx_state(self):
+        return self._call("main.get_trx_state", default="?")
+
+    def transmitting(self):
+        return str(self.trx_state()).upper().startswith("T")
+
+    # -- modem ------------------------------------------------------------
+
+    def modem_names(self):
+        return self._call("modem.get_names", default=[]) or []
+
+    def modem(self):
+        return self._call("modem.get_name", default="?")
+
+    def set_modem(self, name):
+        return self._call("modem.set_by_name", name, default=None)
+
+    def carrier(self):
+        return self._call("modem.get_carrier", default=0)
+
+    def set_carrier(self, hz):
+        return self._call("modem.set_carrier", int(hz), default=None)
+
+    def nudge_carrier(self, delta):
+        return self._call("modem.inc_carrier", int(delta), default=None)
+
+    def search_up(self):
+        self._call("modem.search_up")
+
+    def search_down(self):
+        self._call("modem.search_down")
+
+    def quality(self):
+        q = self._call("modem.get_quality", default=0.0)
+        try:
+            return float(q)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def bandwidth(self):
+        """Modem bandwidth in Hz, or 0 where fldigi does not report one.
+
+        Olivia is the notable case: it answers 0 here and keeps its real
+        bandwidth behind modem.olivia.get_bandwidth. Callers display what they
+        get rather than inventing a number.
+        """
+        return self._call("modem.get_bandwidth", default=0)
+
+    # -- receiver settings ------------------------------------------------
+
+    def afc(self):
+        return bool(self._call("main.get_afc", default=False))
+
+    def set_afc(self, on):
+        self._call("main.set_afc", bool(on))
+
+    def squelch(self):
+        return bool(self._call("main.get_squelch", default=False))
+
+    def set_squelch(self, on):
+        self._call("main.set_squelch", bool(on))
+
+    def squelch_level(self):
+        return self._call("main.get_squelch_level", default=0.0)
+
+    def set_squelch_level(self, level):
+        self._call("main.set_squelch_level", float(level))
+
+    def rsid(self):
+        return bool(self._call("main.get_rsid", default=False))
+
+    def set_rsid(self, on):
+        self._call("main.set_rsid", bool(on))
+
+    # -- readouts ---------------------------------------------------------
+
+    def signal_to_noise(self):
+        return self._call("main.get_status1", default="")
+
+    def imd(self):
+        return self._call("main.get_status2", default="")
+
+    # -- rig --------------------------------------------------------------
+
+    def frequency(self):
+        f = self._call("rig.get_frequency", default=0.0)
+        try:
+            return float(f)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def set_frequency(self, hz):
+        return self._call("rig.set_frequency", float(hz), default=None)
+
+    def rig_mode(self):
+        return self._call("rig.get_mode", default="")

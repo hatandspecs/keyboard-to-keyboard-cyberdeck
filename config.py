@@ -1,0 +1,100 @@
+"""Station settings, read from cyberdeck.conf.
+
+The same `KEY = value` form as the iGate project's configuration, so the two
+read alike: blank lines and `#` comments ignored, values trimmed, unknown keys
+refused rather than silently absorbed. An unknown key is almost always a typo,
+and a typo that is ignored becomes a setting that mysteriously does nothing.
+"""
+
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_PATH = os.path.join(HERE, "cyberdeck.conf")
+
+# key -> (default, converter, description)
+SCHEMA = {
+    "CALLSIGN":        ("", str, "this station's callsign"),
+    "NAME":            ("", str, "operator name, for macros"),
+    "QTH":             ("", str, "location, for macros"),
+    "LOCATOR":         ("", str, "Maidenhead grid square"),
+
+    "DEFAULT_MODE":    ("BPSK31", str, "modem selected at startup"),
+    "DEFAULT_CARRIER": (1500, int, "audio carrier parked here, in Hz"),
+    "COLOUR":          ("matrix", str, "matrix | deckard | hal | tron"),
+    "FONT":            ("12x24", str, "console font; sets the character grid"),
+
+    "FLDIGI_URL":      ("http://127.0.0.1:7362/", str, "fldigi's XML-RPC address"),
+    "POLL_MS":         (200, int, "how often to ask fldigi for new text"),
+    "SCROLLBACK":      (2000, int, "transcript lines kept in memory"),
+    "TX_TIMEOUT":      (180, int, "seconds before an over is aborted; 0 disables"),
+    "TIMESTAMPS":      ("yes", str, "yes | no"),
+}
+
+COLOURS = ("matrix", "deckard", "hal", "tron")
+
+
+class ConfigError(Exception):
+    pass
+
+
+def load(path=None):
+    """Return a dict of settings. A missing file is not an error: the
+    defaults describe a usable station that simply has no callsign yet, and
+    refusing to start over a missing file would be unhelpful on a first run."""
+    path = path or DEFAULT_PATH
+    values = {k: v[0] for k, v in SCHEMA.items()}
+    if not os.path.exists(path):
+        return values
+
+    unknown = []
+    with open(path, encoding="utf-8") as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if "=" not in line:
+                raise ConfigError(f"{path}:{lineno}: expected KEY = value")
+            key, _, value = line.partition("=")
+            key, value = key.strip().upper(), value.strip()
+            if key not in SCHEMA:
+                unknown.append(f"{path}:{lineno}: unknown setting '{key}'")
+                continue
+            converter = SCHEMA[key][1]
+            try:
+                values[key] = converter(value)
+            except ValueError:
+                raise ConfigError(
+                    f"{path}:{lineno}: {key} = '{value}' is not a "
+                    f"{converter.__name__}") from None
+
+    if unknown:
+        raise ConfigError("\n".join(unknown))
+
+    validate(values)
+    return values
+
+
+def validate(values):
+    if values["COLOUR"].lower() not in COLOURS:
+        raise ConfigError(
+            f"COLOUR = '{values['COLOUR']}' is not one of: {', '.join(COLOURS)}")
+    values["COLOUR"] = values["COLOUR"].lower()
+
+    if not 100 <= values["DEFAULT_CARRIER"] <= 4000:
+        raise ConfigError(
+            f"DEFAULT_CARRIER = {values['DEFAULT_CARRIER']} is outside any SSB "
+            "passband; use something like 1500")
+
+    if not 50 <= values["POLL_MS"] <= 5000:
+        raise ConfigError(f"POLL_MS = {values['POLL_MS']} is not sensible")
+
+    if values["TX_TIMEOUT"] < 0 or values["TX_TIMEOUT"] > 3600:
+        raise ConfigError("TX_TIMEOUT must be 0 (disabled) to 3600 seconds")
+
+    if values["SCROLLBACK"] < 100:
+        raise ConfigError("SCROLLBACK below 100 lines is not worth keeping")
+
+    if values["TIMESTAMPS"].lower() not in ("yes", "no"):
+        raise ConfigError("TIMESTAMPS must be yes or no")
+    values["TIMESTAMPS"] = values["TIMESTAMPS"].lower()
+    return values

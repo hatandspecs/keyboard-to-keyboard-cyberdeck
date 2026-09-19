@@ -1,0 +1,17 @@
+# Local fldigi configuration used for development. Seeded from a working
+# install; fldigi crashes on a genuinely empty config directory.
+fldigi-config/
+
+# Runtime state
+__pycache__/
+*.pyc
+run/
+
+# The station's own settings, which describe one operator.
+cyberdeck.conf
+
+# Credentials baked into the card. Never commit.
+deck.secrets
+
+# Downloaded and generated images.
+deck-build/
