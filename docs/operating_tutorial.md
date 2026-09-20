@@ -735,8 +735,12 @@ Only `,` `.` `<` `>` command the radio itself.
 
 ## 13. What worked, the first time out
 
-Recorded because it is more use than any amount of theory: two contacts,
-**N3QE** and **K4ZW**, 80 m RTTY, 5 W, on 2026-09-19 during a sprint.
+Recorded because it is more use than any amount of theory.
+
+### 13.1 RTTY in a sprint
+
+Two contacts, **N3QE** and **K4ZW**, 80 m RTTY, 5 W, on 2026-09-19 during a
+sprint.
 
 What made the difference, in order of how much it mattered:
 
@@ -756,6 +760,35 @@ the hertz. Section 5 argues this at length; on the air it simply works.
 **Contest exchanges are short**, which makes a sprint a good place to start.
 Nobody expects a rag-chew, the format is predictable, and there are plenty of
 stations calling.
+
+### 13.2 PSK31, and an actual conversation
+
+Two contacts, **N0DLR** and **KC3FL**, 20 m BPSK31 on 14.070 MHz, 5 W, on
+2026-09-20. This is the mode the deck was built for, and it operates quite
+differently from the sprint:
+
+**Caps Lock off.** PSK31 carries lowercase and everyone uses it. The Caps Lock
+habit §9 describes belongs to RTTY alone — leave it on here and you arrive
+shouting.
+
+**`Ctrl-W` and `Ctrl-S` from the conversation screen**, without going to `F2`
+at all. 14.070 is busy enough that searching up or down usually lands on
+someone. Read the notice line: a search that finds nothing tells you the
+carrier did not move, which means the next keystroke should be another search
+rather than a call.
+
+**Answering a CQ beats calling one** at 5 W. Both contacts here came from
+searching, reading a `kn`, and replying — never from calling CQ into the band
+and waiting.
+
+**Have your station description in a memory.** A ragchew asks for name, QTH,
+rig and antenna within the first two overs, and typing that out while the other
+station is sending is the exact thing the message memories exist for. `F5`
+through `F12`, inserted at the cursor, `Ctrl-Z` if the wrong one goes in.
+
+**Watch the transcript, not the clock.** Seven minutes of free text in both
+directions scrolls past; `PgUp` and `PgDn` reach anything that has gone by,
+and the transcript keeps what was sent as well as what arrived.
 
 ## 14. When something goes wrong
 

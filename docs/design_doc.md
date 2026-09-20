@@ -11,9 +11,10 @@ digital modes.
 
 **Status: working, and on the air.** The deck boots on a Pi 3A+ with its panel,
 a bonded Bluetooth keyboard, fldigi under Xvfb, rig control in both directions,
-and two RTTY contacts to its name — **N3QE** and **K4ZW**, 80 m, 2026-09-19.
+and four contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19,
+and **N0DLR** and **KC3FL** on 20 m BPSK31, 2026-09-20.
 
-Nine modules and six test files, **197 checks**, all passing against a live
+Nine modules and six test files, **208 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`).
 `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
 application through a pseudo-terminal and read the screen back with a terminal
@@ -1067,6 +1068,27 @@ end to end and for the first time:
 * Squelch set by hand to just above the noise floor, which is what made the
   difference between fragments and copy.
 
+**Proven on the air, 2026-09-20:**
+
+Two BPSK31 contacts on 20 m at 14.070 MHz — **N0DLR** and **KC3FL** — again at
+5 W from the deck's own panel and keyboard. PSK31 is the mode §1 names as the
+design target, and this was the first time it was transmitted. What the session
+added over the RTTY one:
+
+* **A conversational QSO rather than a contest exchange.** The KC3FL contact ran
+  seven minutes of free text in both directions, which is the load the compose
+  buffer and the transcript were sized for and the sprint never applied.
+* **`Ctrl-W` / `Ctrl-S` as the only means of acquiring a signal.** Both contacts
+  were found by signal search from the conversation screen, without the `F2`
+  screen and without a waterfall — §8's premise, exercised against a live band
+  rather than argued.
+* **The notice lines carrying the result.** A search that finds nothing reports
+  the frequency it left the carrier on; the operator's next keystroke depends on
+  that, and it is the reason the notices exist (§8.3).
+* **Message memories in a real exchange**, inserted at the cursor mid-compose.
+* **Lowercase.** BPSK31 is not Baudot, so the session ran without Caps Lock —
+  the opposite of the RTTY case the command keys were case-folded for (§9.4).
+
 The operating technique that worked is the one §8.1 arrived at: set the band,
 leave the VFO alone, and tune with the carrier.
 
@@ -1170,9 +1192,11 @@ was obvious from a desk.
   and false.** The panel ignores it; the palette is set through the `PIO_CMAP`
   ioctl instead (§5).
 * ~~Whether `main.tx` keys reliably under XML-RPC control~~ — **answered: it
-  does.** Two RTTY contacts were made from the deck, and `Ctrl-C` was verified
-  against a live carrier. What remains untested is breadth rather than
-  principle: PSK31 has never been transmitted, and nothing above 5 W.
+  does.** Four contacts were made from the deck across two sessions, and
+  `Ctrl-C` was verified against a live carrier.
+* ~~Whether PSK31 — the design target — works on the air~~ — **answered: it
+  does.** Two BPSK31 contacts on 2026-09-20 (§14). What remains untested is
+  power: nothing has been sent above 5 W.
 
 ---
 
@@ -1285,21 +1309,23 @@ the keyboard bonded and fldigi decoding.
 
 **Nothing is blocked. In order:**
 
-1. **Work someone on PSK31.** The two contacts so far are RTTY. PSK31 is the
-   mode this deck was designed around — narrower, lower power, and the one
-   place the compose-then-send model matters most — and it has never been
-   transmitted.
-2. **Operate above QRP.** Everything so far has been at 5 W. RTTY and PSK are
+1. **Operate above QRP.** Everything so far has been at 5 W. RTTY and PSK are
    near 100% duty cycle, so the first higher-power session wants the ALC at
    zero and an eye on the finals.
+2. **A long session, and battery operation.** The longest run to date is an
+   evening, always on mains. Neither thermal behaviour nor current draw has
+   been measured, and portability is a claim the deck has not yet been asked
+   to support.
 3. **The remaining console-font question:** 10×20 and 16×32 at runtime via
    `setfont`, without disturbing the running curses application. The 12×24
    default renders correctly.
-4. **Verify the color schemes on the panel — Deckard especially.** The palette
-   redefinition was addressing nothing until it was corrected (§5), so every
-   scheme was rendering as its ANSI approximation and the amber came out as a
-   washed yellow. The corrected version has **not yet been seen on the panel**;
-   the PNG screenshots cannot confirm it, since they draw from the hex values
+4. **Verify Hal and Tron on the panel.** The palette redefinition was
+   addressing nothing until it was corrected (§5), so every scheme was
+   rendering as its ANSI approximation. The corrected version is confirmed for
+   **Matrix** and **Deckard**, photographed on the panel on 2026-09-19 and
+   2026-09-20: the amber is amber rather than the washed yellow the broken
+   version produced. Hal and Tron have not been seen on the panel. The PNG
+   screenshots cannot settle it either way, since they draw from the hex values
    directly.
 
 **Planned, and gated on two cheap hardware checks:**

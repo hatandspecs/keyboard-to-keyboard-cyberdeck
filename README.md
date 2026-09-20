@@ -290,7 +290,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-197 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
+208 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
 on functions in isolation.
@@ -312,6 +312,12 @@ keyboard. Tuned with the `F2` screen, squelch set just above the noise floor,
 and the mark/space reverse toggle — which RTTY on a DATA-U path needs, and
 which had been added hours earlier.
 
+Then **BPSK31 on 2026-09-20**, 20 m, 14.070 MHz, 5 W: **N0DLR** in Brooklyn
+Center, Minnesota, and a ragchew with **KC3FL** in Inverness, Florida. PSK31 is
+the mode the deck was designed around, and these were the first overs sent in
+it. Both were found with `Ctrl-W` / `Ctrl-S` rather than a waterfall — §8's
+premise, tested against a live band.
+
 That closes the loop the project set out to prove: a Pi 3A+, a 5" panel, a
 Bluetooth keyboard and an FTX-1, with no window manager, no mouse and nothing
 on the screen but the terminal.
@@ -324,7 +330,7 @@ Working end to end:
 * WiFi, NTP, first-boot package installation, SSH.
 * The Bluetooth keyboard, after a one-time manual bonding (see below).
 * fldigi 4.2.06 under Xvfb, driven over XML-RPC. Receive proven on real
-  signals; transmit proven by the two contacts above.
+  signals; transmit proven by the four contacts above, in RTTY and BPSK31.
 * The over model in use: compose while receiving, `Ctrl-T` to send, `Ctrl-Y`
   to hand back, `Ctrl-C` verified to drop a live carrier.
 * Line editing with history recall, eight message memories with token
@@ -354,9 +360,9 @@ Working end to end:
   `bluetoothctl` session, documented in the deployment runbook.
 * `main.rx_only` does not inhibit fldigi's `main.tune`; the transmit inhibit is
   enforced in the terminal instead.
-* Transmit is proven on the air but lightly exercised: two contacts, RTTY,
-  80 m, 5 W. PSK31 has never been transmitted, and nothing has been sent at
-  more than QRP power.
+* Transmit is proven on the air but lightly exercised: four contacts across
+  two sessions, RTTY on 80 m and BPSK31 on 20 m, all at 5 W. Nothing has been
+  sent at more than QRP power, and the longest session so far is an evening.
 
 **Fixed along the way**, recorded because each cost real time:
 

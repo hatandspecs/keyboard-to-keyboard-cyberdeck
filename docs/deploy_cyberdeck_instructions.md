@@ -970,7 +970,7 @@ first principles.
 
 | | |
 |---|---|
-| **Two-way contacts** | N3QE and K4ZW, 80 m RTTY, 2026-09-19, 5 W, from the deck's own panel and keyboard |
+| **Two-way contacts** | N3QE and K4ZW, 80 m RTTY, 2026-09-19; N0DLR and KC3FL, 20 m BPSK31, 2026-09-20. All 5 W, from the deck's own panel and keyboard |
 | `tools/build_deck_image.sh build` and `flash` | Run end to end; the card verifies before boot (phase 2 step 4) |
 | The Waveshare 5" DSI panel on a Pi 3A+ | Console at 66×20, `vc4-kms-dsi-7inch`, powered from the DSI connector |
 | Terminus 12×24 | Renders on the panel |
@@ -979,6 +979,7 @@ first principles.
 | fldigi 4.2.06 on a 3A+'s 512 MB | Under Xvfb, with the radio attached |
 | Receive | Real off-air RTTY copy, tuned with `F2` and the reverse toggle |
 | Transmit | PTT, the over model, and `Ctrl-C` against a live carrier |
+| **PSK31 on the air** | The mode the deck was designed around. Two contacts on 14.070, both found with `Ctrl-W` / `Ctrl-S` |
 | Rig control, reads and writes | Needs hamlib 4.7.2 and model 1051 |
 | The color schemes | True hues via `PIO_CMAP`; `OSC P` does not work on this panel |
 
@@ -986,12 +987,11 @@ first principles.
 
 | | |
 |---|---|
-| **PSK31 on the air** | The mode the deck was designed around, never transmitted |
 | **Anything above 5 W** | RTTY and PSK are near 100% duty cycle; watch ALC and the finals |
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
 | A long session | Longest run so far is an evening; no thermal or memory data |
 | Battery operation | Never run off anything but mains |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **197 checks**
+over model, line editing, the color schemes — is covered by **208 checks**
 against a live fldigi (`tools/run_tests.sh`).
