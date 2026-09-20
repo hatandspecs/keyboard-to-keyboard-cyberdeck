@@ -9,11 +9,12 @@ The target is the feel of a dedicated 1980s packet terminal — monochrome text 
 black, no window manager, no mouse, no pointer, nothing to click — over modern
 digital modes.
 
-**Status: built, and running on the hardware.** The deck boots on a Pi 3A+ with
-its panel, a bonded Bluetooth keyboard, fldigi under Xvfb and audio decoding.
-It has not yet transmitted.
+**Status: working, and on the air.** The deck boots on a Pi 3A+ with its panel,
+a bonded Bluetooth keyboard, fldigi under Xvfb, rig control in both directions,
+and two RTTY contacts to its name — **N3QE** and **K4ZW**, 80 m, 2026-09-19.
 
-Nine modules and six test files, 120 checks, all passing against a live fldigi.
+Nine modules and six test files, **137 checks**, all passing against a live
+fldigi (`tools/run_tests.sh`).
 `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
 application through a pseudo-terminal and read the screen back with a terminal
 emulator, so the tests assert on what the deck looks like rather than on
@@ -209,10 +210,10 @@ conversation typed at 30 words per minute.
 ### 5.1 Layout
 
 At the proposed 66×20 grid. These are rendered from the running code, not
-drawn by hand: `capture_screens.py` produces the text and `capture_png.py`
+drawn by hand: `tools/capture_screens.py` produces the text and `tools/capture_png.py`
 renders it to PNG using each scheme's own colors.
 
-![The conversation screen](docs/screens/conversation-matrix.png)
+![The conversation screen](screens/conversation-matrix.png)
 
 `[RX 47]` is the buffer indicator described in section 5.4: 47 characters
 composed while receiving, not yet transmitted.
@@ -373,11 +374,11 @@ flowchart LR
 
 Menus are full-screen overlays with single-key selection, not nested pointers.
 
-![The menu, F1](docs/screens/menu.png)
+![The menu, F1](screens/menu.png)
 
-![The mode picker, F3](docs/screens/mode-picker.png)
+![The mode picker, F3](screens/mode-picker.png)
 
-![The full modem list](docs/screens/all-modes.png)
+![The full modem list](screens/all-modes.png)
 
 ### 5.8 Color schemes
 
@@ -413,9 +414,9 @@ terminal emulator's approximation of them:
 | | |
 |---|---|
 | Matrix | Deckard |
-| ![Matrix](docs/screens/conversation-matrix.png) | ![Deckard](docs/screens/conversation-deckard.png) |
+| ![Matrix](screens/conversation-matrix.png) | ![Deckard](screens/conversation-deckard.png) |
 | Hal | Tron |
-| ![Hal](docs/screens/conversation-hal.png) | ![Tron](docs/screens/conversation-tron.png) |
+| ![Hal](screens/conversation-hal.png) | ![Tron](screens/conversation-tron.png) |
 
 Monochrome means one hue, not one intensity. Emphasis comes from the dim
 variant and from reverse video: the status line is reverse, own transmissions
@@ -513,7 +514,7 @@ is only ever applied to glyphs drawn after it.** Anything that changes colors
 must also force the affected cells to be rewritten.
 
 A second rule, from all three of these: **the PNG screenshots cannot catch
-them.** `capture_png.py` draws with the schemes' hex values directly, so it
+them.** `tools/capture_png.py` draws with the schemes' hex values directly, so it
 renders what was intended rather than what the console produces. It is a
 design record, not a test. Every one of these three faults was invisible in the
 screenshots and obvious on the panel.
@@ -619,7 +620,7 @@ the real radio does not provide. The lesson is narrow and worth keeping — a
 test fixture that does not reproduce the failing condition proves nothing about
 the failure.
 
-`rigctld_client.py` carries a workaround from before the backend was found:
+`src/rigctld_client.py` carries a workaround from before the backend was found:
 rigctld's `w` (send_cmd) forwards a raw CAT string, so the deck could send the
 documented nine-digit form itself. It is **not wired in** and should be deleted
 once 1051 has some hours on it. It is kept for now only because the FTX-1
@@ -719,7 +720,7 @@ narrowed: it is for **reading the numbers**, not for tuning. Carrier, signal
 width, S/N, IMD and the quality bar in one place, for answering *how good is
 this decode* — a question the transcript alone does not answer.
 
-![The tuning screen, F2](docs/screens/tuning.png)
+![The tuning screen, F2](screens/tuning.png)
 
 The quality bar refreshes several times a second. Almost everything here is a
 readout from fldigi or `rigctld`, with one exception worth naming:
@@ -814,6 +815,27 @@ SCROLLBACK = 2000
 POLL_MS = 200
 ```
 
+### 11.1 Repository layout
+
+```
+src/      the application. Installed FLAT into /opt/cyberdeck
+tests/    standalone scripts; three drive the real program through a pty
+tools/    build, flash, development and documentation scripts
+docs/     this document, the runbook, the operating tutorial, screenshots
+refs/     the FTX-1 manuals, including the CAT reference
+```
+
+`src/` installs flat because the systemd unit runs
+`/opt/cyberdeck/cyberdeck.py` and the modules import one another by bare name.
+Only `src/` reaches the deck, with one exception: `configure_fldigi.py` goes
+too, because the PortAudio device name embeds an ALSA card index and the Pi
+numbers the radio differently than the build machine does, so the audio device
+has to be re-chosen on the deck itself.
+
+`config.py` looks for `cyberdeck.conf` beside the modules first and then one
+level up, so the same code works installed flat on the deck and from a
+checkout where the configuration sits at the project root.
+
 ## 12. Failure modes
 
 | Failure | Symptom | Handling |
@@ -893,6 +915,25 @@ Separated deliberately, because the difference decides what can break late.
 * Raspberry Pi OS Trixie ships **fldigi 4.2.06**, not the 4.2.13 this was
   developed against. Every XML-RPC method the deck uses is present in both.
 
+**Proven on the air, 2026-09-19:**
+
+Two RTTY contacts on 80 m during a sprint — **N3QE** and **K4ZW** — worked
+from the deck's own panel and Bluetooth keyboard at 5 W. What that exercised,
+end to end and for the first time:
+
+* The over model against a real correspondent: compose while receiving,
+  `Ctrl-T`, `Ctrl-K`.
+* PTT through `rigctld`, and `Ctrl-C` against a live carrier.
+* The `F2` tuning screen, used to find and hold a signal.
+* The **mark/space reverse toggle**, which RTTY through a DATA-U path
+  requires — added the same evening, after the first partial decodes came out
+  as plausible letters that never formed words.
+* Squelch set by hand to just above the noise floor, which is what made the
+  difference between fragments and copy.
+
+The operating technique that worked is the one §8.1 arrived at: set the band,
+leave the VFO alone, and tune with the carrier.
+
 **Discovered on the deck, and not anticipated anywhere in this document:**
 
 * **Both radios ship rfkill-blocked on a Pi 3.** `/var/lib/systemd/rfkill/`
@@ -958,10 +999,10 @@ Separated deliberately, because the difference decides what can break late.
 * ~~`OSC P` palette redefinition works on this panel's console~~ — **tested,
   and false.** The panel ignores it; the palette is set through the `PIO_CMAP`
   ioctl instead (§5).
-* Whether `main.tx` keys reliably under XML-RPC control. Nothing has been
-  transmitted from the deck at all. The design does not depend on the answer,
-  since the inhibit is enforced in the terminal, but every transmit path is
-  untested against a radio.
+* ~~Whether `main.tx` keys reliably under XML-RPC control~~ — **answered: it
+  does.** Two RTTY contacts were made from the deck, and `Ctrl-C` was verified
+  against a live carrier. What remains untested is breadth rather than
+  principle: PSK31 has never been transmitted, and nothing above 5 W.
 
 ---
 
@@ -1074,12 +1115,13 @@ the keyboard bonded and fldigi decoding.
 
 **Nothing is blocked. In order:**
 
-1. **Make a contact.** Nothing has been transmitted from this deck. The over
-   model, PTT, the transmit time-out and `Ctrl-C` against a live carrier are
-   all written and unit-tested and none has keyed a radio. Test into a dummy
-   load first, and confirm `Ctrl-C` unkeys before relying on it.
-2. **Confirm the transmit audio path.** Receive is proven; transmit is not.
-   Set the radio to its data mode, set drive for zero ALC, and check IMD.
+1. **Work someone on PSK31.** The two contacts so far are RTTY. PSK31 is the
+   mode this deck was designed around — narrower, lower power, and the one
+   place the compose-then-send model matters most — and it has never been
+   transmitted.
+2. **Operate above QRP.** Everything so far has been at 5 W. RTTY and PSK are
+   near 100% duty cycle, so the first higher-power session wants the ALC at
+   zero and an eye on the finals.
 3. **The remaining console-font question:** 10×20 and 16×32 at runtime via
    `setfont`, without disturbing the running curses application. The 12×24
    default renders correctly.

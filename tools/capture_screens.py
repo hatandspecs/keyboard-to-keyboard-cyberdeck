@@ -6,9 +6,15 @@ staged on the bench, and fldigi with an open squelch fills the transcript with
 decoded noise. Everything else here is a live capture of the running
 application through a pseudo-terminal.
 
-Regenerate with:  python3 capture_screens.py > screens.md
+Regenerate with:  python3 tools/capture_screens.py > docs/screens.md
 """
-import calendar, sys, time
+import calendar, time
+import os
+import sys
+
+# The application modules live in src/; this tool lives in tools/.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_PROJECT, "src"))
 import render, menus
 from session import Session
 
@@ -63,31 +69,37 @@ FIELDS = dict(call="KD3CCO", freq="14.070.589", sideband="PKTUSB", mode="BPSK63"
 
 
 def tuning_screen(width=W, height=H):
-    """The F2 screen, composed as Deck._draw_tune composes it."""
-    q, bar_w = 62, max(10, width - 22)
-    filled = int(bar_w * q / 100)
-    rows = [
-        f"  rig      {render.frequency(14070589)}  PKTUSB",
-        f"  carrier  1500 Hz        width  "
-        f"{render.mode_bandwidth('BPSK63', 0)}",
-        "  S/N      18 dB",
-        "  IMD      -24 dB",
-        "",
-        f"  quality  {'█' * filled}{'░' * (bar_w - filled)}  {q}",
-        "",
-        "  AFC on    squelch on  (5)   RSID on    TXID on",
-    ]
+    """The F2 screen, rendered from the same functions the deck uses.
+
+    Nothing here is hand-copied: render.tune_rows and render.TUNE_HINTS are
+    what the panel draws, so a control added to that screen appears in the
+    documentation screenshots without anyone remembering to update them.
+    """
     lines = [render.status_line({**FIELDS, "call": "TUNING"}, width),
              render.rule(width)]
+    rows = render.tune_rows({
+        "freq": render.frequency(14070589),
+        "rig_mode": "PKTUSB",
+        "carrier": 1500,
+        "width": render.mode_bandwidth("BPSK63", 0),
+        "snr": "18 dB",
+        "imd": "-24 dB",
+        "quality": 62,
+        "afc": True,
+        "squelch": True,
+        "squelch_level": 5,
+        "rsid": True,
+        "txid": True,
+        "reverse": False,
+    }, width)
     for r in rows:
         lines.append([(r[:width - 1], "bright")])
     while len(lines) < height - 4:
         lines.append([("", "bright")])
     lines = lines[:height - 4]
     lines.append(render.rule(width))
-    lines.append([("  ← →  carrier ±10 Hz      ↑ ↓  search signal", "dim")])
-    lines.append([("  , .  VFO ±100 Hz         < >  VFO ±1 kHz", "dim")])
-    lines.append([("  a AFC  s squelch  r RSID  x TXID   F2/Esc back", "dim")])
+    for hint in render.TUNE_HINTS:
+        lines.append([(hint[:width - 1], "dim")])
     return lines
 
 

@@ -15,3 +15,14 @@ deck.secrets
 
 # Downloaded and generated images.
 deck-build/
+
+# Working notes from a session at the radio. Kept out of the history because
+# they are a scratchpad, not a record — the findings that matter are written
+# into docs/design_doc.md §14 instead.
+scratch_notes.txt
+
+# Yaesu's FTX-1 manuals. Kept locally, not in the history: vendor PDFs are
+# large, not ours to redistribute, and downloadable from Yaesu. The one fact
+# from them this project depends on is quoted where it matters — the CAT
+# manual's FA<9 digits> frequency format, in docs/design_doc.md 7.1.
+refs/

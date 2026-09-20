@@ -38,7 +38,7 @@
 │                                                                  │
 │  quality  ███████████████████████████░░░░░░░░░░░░░░░░░  62       │
 │                                                                  │
-│  AFC on    squelch on  (5)   RSID on    TXID on                  │
+│  AFC on   squelch on  (5)  RSID on   TXID on   REV off           │
 │                                                                  │
 │                                                                  │
 │                                                                  │
@@ -48,7 +48,7 @@
 │──────────────────────────────────────────────────────────────────│
 │  ← →  carrier ±10 Hz      ↑ ↓  search signal                     │
 │  , .  VFO ±100 Hz         < >  VFO ±1 kHz                        │
-│  a AFC  s squelch  r RSID  x TXID   F2/Esc back                  │
+│  a AFC  s sql  r RSID  x TXID  v REV   F2/Esc back               │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

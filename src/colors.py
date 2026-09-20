@@ -1,4 +1,4 @@
-"""The four monochrome schemes (design_doc.md §5.8).
+"""The four monochrome schemes (docs/design_doc.md §5.8).
 
 Each is one hue on black, with a dim variant for the timestamp and callsign
 columns. Monochrome means one hue, not one intensity.

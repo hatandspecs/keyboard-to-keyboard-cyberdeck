@@ -3,7 +3,7 @@
 
 The only thing on the screen: a status line, the conversation, and what is
 being typed. No window manager, no pointer, nothing to click. fldigi does the
-modem work invisibly behind an XML-RPC connection (design_doc.md §4).
+modem work invisibly behind an XML-RPC connection (docs/design_doc.md §4).
 
 Run it over SSH for development; on the deck it runs on tty1 against the
 framebuffer, where the color schemes use the real palette.
@@ -104,7 +104,7 @@ class Deck:
             # Our own transmission, echoed back by fldigi as it goes out.
             # Held here rather than written to the transcript: it is drawn as
             # a transient TX line under the over while sending, and dropped
-            # when the over completes. See design_doc.md §5.5 for why this is
+            # when the over completes. See docs/design_doc.md §5.5 for why this is
             # transient rather than permanent.
             self._tx_echo += text
             self.scroll = 0
@@ -204,30 +204,28 @@ class Deck:
             {**self.status_fields(), "call": "TUNING"}, w), w)
         self._put(1, 0, render.rule(w), w)
 
-        q = f.quality()
-        bar_w = max(10, w - 22)
-        filled = int(bar_w * min(max(q, 0), 100) / 100)
-        rows = [
-            f"  rig      {render.frequency(f.frequency())}  {f.rig_mode()}",
-            f"  carrier  {f.carrier()} Hz        width  "
-            f"{render.mode_bandwidth(f.modem(), f.bandwidth())}",
-            f"  S/N      {(f.signal_to_noise() or '').strip()}",
-            f"  IMD      {(f.imd() or '').strip()}",
-            "",
-            f"  quality  {'█' * filled}{'░' * (bar_w - filled)}  {q:.0f}",
-            "",
-            f"  AFC {'on ' if f.afc() else 'off'}  squelch {'on ' if f.squelch() else 'off'}"
-            f" ({f.squelch_level():.0f})  RSID {'on ' if f.rsid() else 'off'}"
-            f"  TXID {'on ' if f.txid() else 'off'}  REV {'on' if f.reverse() else 'off'}",
-        ]
+        rows = render.tune_rows({
+            "freq": render.frequency(f.frequency()),
+            "rig_mode": f.rig_mode(),
+            "carrier": f.carrier(),
+            "width": render.mode_bandwidth(f.modem(), f.bandwidth()),
+            "snr": f.signal_to_noise(),
+            "imd": f.imd(),
+            "quality": f.quality(),
+            "afc": f.afc(),
+            "squelch": f.squelch(),
+            "squelch_level": f.squelch_level(),
+            "rsid": f.rsid(),
+            "txid": f.txid(),
+            "reverse": f.reverse(),
+        }, w)
         for i, text in enumerate(rows):
             if 2 + i < h - 4:
                 self._put(2 + i, 0, [(text[:w - 1], "bright")], w)
 
         self._put(h - 4, 0, render.rule(w), w)
-        self._put(h - 3, 0, [("  ← →  carrier ±10 Hz      ↑ ↓  search signal"[:w - 1], "dim")], w)
-        self._put(h - 2, 0, [("  , .  VFO ±100 Hz         < >  VFO ±1 kHz"[:w - 1], "dim")], w)
-        self._put(h - 1, 0, [("  a AFC  s sql  r RSID  x TXID  v REV   F2/Esc back"[:w - 1], "dim")], w)
+        for i, hint in enumerate(render.TUNE_HINTS):
+            self._put(h - 3 + i, 0, [(hint[:w - 1], "dim")], w)
 
     def _menu_for(self, which, w, h):
         """The menu structure for a name, for navigation and hit-testing."""

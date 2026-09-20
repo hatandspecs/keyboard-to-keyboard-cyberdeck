@@ -19,7 +19,8 @@ Every key in this document was read out of the deck's source, not remembered.
 10. [Where to listen](#10-where-to-listen)
 11. [Reading the status line](#11-reading-the-status-line)
 12. [Full key reference](#12-full-key-reference)
-13. [When something goes wrong](#13-when-something-goes-wrong)
+13. [What worked, the first time out](#13-what-worked-the-first-time-out)
+14. [When something goes wrong](#14-when-something-goes-wrong)
 
 ---
 
@@ -655,7 +656,31 @@ Only `,` `.` `<` `>` command the radio itself.
 
 ---
 
-## 13. When something goes wrong
+## 13. What worked, the first time out
+
+Recorded because it is more use than any amount of theory: two contacts,
+**N3QE** and **K4ZW**, 80 m RTTY, 5 W, on 2026-09-19 during a sprint.
+
+What made the difference, in order of how much it mattered:
+
+**Squelch just above the noise floor.** Not on, not off — adjusted. `F1` → `2`,
+then `+` and `-`. Too high and real signals never open it; too low and the
+transcript fills with garbage that buries the copy. Finding the edge was the
+single biggest improvement.
+
+**The reverse toggle.** `v`. RTTY is conventionally lower sideband and the deck
+transmits AFSK through the radio's DATA-U path, which is upper — so the tones
+arrive swapped and decode as plausible letters that never form words. Both
+contacts needed it.
+
+**The `F2` search, not the VFO knob.** `↑`/`↓` lands the carrier on a signal to
+the hertz. Section 5 argues this at length; on the air it simply works.
+
+**Contest exchanges are short**, which makes a sprint a good place to start.
+Nobody expects a rag-chew, the format is predictable, and there are plenty of
+stations calling.
+
+## 14. When something goes wrong
 
 **Nothing decodes at all.** Turn squelch off (`F1` → `2` → `s`). If the screen
 does not fill with garbage within a few seconds, audio is not reaching the

@@ -5,6 +5,15 @@ application cursor mode: Down is \x1bOB, not \x1b[B. The deck itself runs on
 the Linux console, where kcud1 is \x1b[B. ncurses resolves both from terminfo;
 the test has to send whatever its own TERM specifies.
 """
+import os
+import sys
+
+# src/ holds the application; tests/ holds this. Both are addressed from the
+# project root so a test can be run from anywhere.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SRC = os.path.join(_PROJECT, "src")
+sys.path.insert(0, _SRC)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_screen import run, show
 from fldigi_client import Fldigi
 

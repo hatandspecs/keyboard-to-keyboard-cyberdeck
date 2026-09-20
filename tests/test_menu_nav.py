@@ -1,4 +1,13 @@
 """Menu navigation, driven through a real pty, with fldigi checked afterwards."""
+import os
+import sys
+
+# src/ holds the application; tests/ holds this. Both are addressed from the
+# project root so a test can be run from anywhere.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SRC = os.path.join(_PROJECT, "src")
+sys.path.insert(0, _SRC)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_screen import run, show
 from fldigi_client import Fldigi
 

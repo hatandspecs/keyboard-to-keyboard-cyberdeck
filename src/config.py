@@ -9,7 +9,17 @@ and a typo that is ignored becomes a setting that mysteriously does nothing.
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_PATH = os.path.join(HERE, "cyberdeck.conf")
+
+# Two layouts have to work. On the deck the modules are installed flat into
+# /opt/cyberdeck alongside cyberdeck.conf, so the file sits next to this one.
+# In the repository the modules are in src/ and the configuration is at the
+# project root, one level up. Checking both keeps a single code path for the
+# running deck and for anything driven from a checkout.
+_CANDIDATES = (
+    os.path.join(HERE, "cyberdeck.conf"),
+    os.path.join(os.path.dirname(HERE), "cyberdeck.conf"),
+)
+DEFAULT_PATH = next((c for c in _CANDIDATES if os.path.exists(c)), _CANDIDATES[0])
 
 # key -> (default, converter, description)
 SCHEMA = {

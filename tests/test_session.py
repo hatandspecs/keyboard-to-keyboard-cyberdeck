@@ -1,4 +1,12 @@
-"""Behavior of the over-based transmit model (design_doc.md §5.4)."""
+"""Behavior of the over-based transmit model (docs/design_doc.md §5.4)."""
+import os
+import sys
+
+# src/ holds the application; tests/ holds this. Both are addressed from the
+# project root so a test can be run from anywhere.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SRC = os.path.join(_PROJECT, "src")
+sys.path.insert(0, _SRC)
 import session
 from session import Session, RX, TX
 

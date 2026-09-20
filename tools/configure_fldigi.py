@@ -28,7 +28,7 @@ import shutil
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_DIR = os.path.join(HERE, "fldigi-config")
+DEFAULT_DIR = os.path.join(os.path.dirname(HERE), "fldigi-config")
 
 NET_RIGCTL_MODEL = 2          # hamlib RIG_MODEL_NETRIGCTL
 NET_RIGCTL_DEVICE = "localhost:4532"

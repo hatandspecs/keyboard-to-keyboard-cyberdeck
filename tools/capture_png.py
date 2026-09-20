@@ -1,7 +1,7 @@
 """Render the deck's screens to PNG, in each color scheme.
 
 The text comes from the same functions the application draws with, and the
-colors are the schemes' own hex values (design_doc.md §5.8) rather than a
+colors are the schemes' own hex values (docs/design_doc.md §5.8) rather than a
 terminal emulator's approximation of them — so these show what the panel
 shows, including the true amber and the cyan-shifted Tron blue that the eight
 ANSI colors cannot express.
@@ -9,9 +9,14 @@ ANSI colors cannot express.
 Cell geometry follows the 12x24 console font on the 800x480 panel: 66x20
 characters. Rendered at 2x for legibility in documentation.
 
-    python3 capture_png.py            # all screens, all schemes
+    python3 tools/capture_png.py            # all screens, all schemes
 """
 import os
+import sys
+
+# The application modules live in src/; this tool lives in tools/.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_PROJECT, "src"))
 from PIL import Image, ImageDraw, ImageFont
 
 import capture_screens as cap
@@ -23,7 +28,7 @@ SCALE = 2
 CELL_W, CELL_H = 12 * SCALE, 24 * SCALE
 COLS, ROWS = 66, 20
 PAD = 8 * SCALE
-OUT = "docs/screens"
+OUT = os.path.join(_PROJECT, "docs", "screens")
 
 FONT_CANDIDATES = [
     "/usr/share/fonts/liberation-mono-fonts/LiberationMono-Bold.ttf",

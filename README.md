@@ -7,7 +7,7 @@ terminal over modern digital modes.
 
 ![The conversation screen](docs/screens/conversation-matrix.png)
 
-Full design rationale is in [design_doc.md](design_doc.md).
+Full design rationale is in [design_doc.md](docs/design_doc.md).
 
 ### Color schemes
 
@@ -101,18 +101,36 @@ flowchart TD
   RC -- "CAT /dev/ttyUSB0<br/>PTT /dev/ttyACM0" --> RIG
 ```
 
+### Layout
+
+```
+src/      the application — installed flat into /opt/cyberdeck on the deck
+tests/    standalone scripts; three drive the real program through a pty
+tools/    build, flash, development and documentation scripts
+docs/     design, runbook, operating tutorial, screenshots
+refs/     the FTX-1 manuals, including the CAT reference
+```
+
+`src/` installs flat because the systemd unit runs
+`/opt/cyberdeck/cyberdeck.py` and the modules import each other by bare name.
+Nothing else in the repository reaches the deck.
+
 | File | What it is |
 |---|---|
-| `cyberdeck.py` | The terminal: curses, key handling, the main loop |
-| `fldigi_client.py` | The XML-RPC boundary. Never raises at the caller |
-| `session.py` | Transcript, compose buffer, the shape of an over |
-| `render.py` | Layout as pure functions, so it can be tested at any width |
-| `menus.py` | Menu structure and rendering |
-| `colors.py` | The four schemes, console palette and ANSI fallback |
-| `config.py` | `cyberdeck.conf` — the station's own settings |
-| `build_deck_image.sh` | Builds and flashes the Pi's SD card |
-| `configure_fldigi.py` | Sets fldigi's audio and rig control without its GUI |
-| [`deploy_cyberdeck_instructions.md`](deploy_cyberdeck_instructions.md) | The full runbook, blank card to on the air |
+| [`src/cyberdeck.py`](src/cyberdeck.py) | The terminal: curses, key handling, the main loop |
+| [`src/fldigi_client.py`](src/fldigi_client.py) | The XML-RPC boundary. Never raises at the caller |
+| [`src/session.py`](src/session.py) | Transcript, compose buffer, line editing, the shape of an over |
+| [`src/render.py`](src/render.py) | Layout as pure functions, so it can be tested at any width |
+| [`src/menus.py`](src/menus.py) | Menu structure and rendering |
+| [`src/colors.py`](src/colors.py) | The four schemes, console palette and ANSI fallback |
+| [`src/config.py`](src/config.py) | `cyberdeck.conf` — the station's own settings |
+| [`src/rigctld_client.py`](src/rigctld_client.py) | Unused. Documents a hamlib bug and a raw-CAT workaround |
+| [`tools/build_deck_image.sh`](tools/build_deck_image.sh) | Builds and flashes the Pi's SD card |
+| [`tools/configure_fldigi.py`](tools/configure_fldigi.py) | Sets fldigi's audio and rig control without its GUI |
+| [`tools/dev-fldigi.sh`](tools/dev-fldigi.sh) | fldigi headless under Xvfb, for development |
+| [`tools/run_tests.sh`](tools/run_tests.sh) | The whole suite, one command |
+| [`docs/deploy_cyberdeck_instructions.md`](docs/deploy_cyberdeck_instructions.md) | The full runbook, blank card to on the air |
+| [`docs/operating_tutorial.md`](docs/operating_tutorial.md) | How to actually work someone, for a first-timer |
 | `deck.conf` | How to build that card: hostname, panel, keyboard, radio |
 
 ## Running it on a laptop with the FTX-1
@@ -146,9 +164,9 @@ and often no screen, so everything that has to be right is set from the command
 line:
 
 ```bash
-python3 configure_fldigi.py --show          # what is set now
-python3 configure_fldigi.py --list-audio    # PortAudio's device names
-python3 configure_fldigi.py --rigctld --audio "USB Audio Device" --call KD3CCO
+python3 tools/configure_fldigi.py --show          # what is set now
+python3 tools/configure_fldigi.py --list-audio    # PortAudio's device names
+python3 tools/configure_fldigi.py --rigctld --audio "USB Audio Device" --call KD3CCO
 ```
 
 `--rigctld` is the important one. The FTX-1 presents CAT and PTT on two separate
@@ -161,11 +179,11 @@ it and `rigctld` fight over the same device and one of them loses.
 ```bash
 git clone <this repo> && cd keyboard-to-keyboard-cyberdeck
 cp cyberdeck.conf.example cyberdeck.conf   # set CALLSIGN and the rest
-./dev-fldigi.sh                            # Xvfb + fldigi, seeded config
-python3 cyberdeck.py
+tools/dev-fldigi.sh                        # Xvfb + fldigi, seeded config
+python3 src/cyberdeck.py
 ```
 
-`dev-fldigi.sh` copies `~/.fldigi` into `fldigi-config/` the first time,
+`tools/dev-fldigi.sh` copies `~/.fldigi` into `fldigi-config/` the first time,
 because of the empty-config crash above.
 
 **Turn the squelch on before you operate.** With it open fldigi decodes the
@@ -176,7 +194,7 @@ seconds. `F2`, then `s`.
 
 > The condensed version is below. For the step-by-step with recovery
 > procedures, follow
-> **[deploy_cyberdeck_instructions.md](deploy_cyberdeck_instructions.md)**.
+> **[deploy_cyberdeck_instructions.md](docs/deploy_cyberdeck_instructions.md)**.
 
 The deck proper: a 3A+, a 5" DSI panel, a Bluetooth keyboard, and the FTX-1 on
 the single USB port.
@@ -215,11 +233,11 @@ OS has no disk encryption and the card pulls out with a fingernail.
 ### Build and flash
 
 ```bash
-./build_deck_image.sh check              # validate both files
-./build_deck_image.sh units              # review the systemd units first
-./build_deck_image.sh build              # produce deck-build/cyberdeck.img
-lsblk                                    # find the card
-./build_deck_image.sh flash /dev/sdX     # asks you to type the path twice
+tools/build_deck_image.sh check              # validate both files
+tools/build_deck_image.sh units              # review the systemd units first
+tools/build_deck_image.sh build              # produce deck-build/cyberdeck.img
+lsblk                                        # find the card
+tools/build_deck_image.sh flash /dev/sdX     # asks you to type the path twice
 ```
 
 `/dev/sdX` is not a real device. Check `lsblk` and use what it tells you.
@@ -230,7 +248,7 @@ The card is customized offline on your laptop, not on the Pi, so it boots
 straight into a working terminal with no console session at any point:
 
 * WiFi profiles, the user account with a hashed password, SSH and your key.
-* The project into `/opt/cyberdeck`, with `cyberdeck.conf` alongside.
+* `src/` into `/opt/cyberdeck`, with `cyberdeck.conf` alongside.
 * The Bluetooth pairing service, its retry timer, and the first-boot installer.
 * A **seeded fldigi configuration** — an empty one crashes.
 * `config.txt`: the DSI panel overlay.
@@ -253,36 +271,47 @@ up, and the deck is still reachable at `ssh deck@cyberdeck.local`.
 ## Tests
 
 ```bash
-for t in test_session.py test_render.py test_menus.py test_screen.py \
-         test_menu_nav.py test_menu_arrows.py; do
-  python3 "$t"
-done
+tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
+tools/run_tests.sh
 ```
 
-120 checks. `test_screen.py` and `test_menu_nav.py` fork a pseudo-terminal, run
-the real application, and read the screen back with a terminal emulator, so the
-tests assert on what the deck looks like rather than on functions in isolation.
-They need a running fldigi — start `./dev-fldigi.sh` first.
+137 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
+a pseudo-terminal, run the real application, and read the screen back with a
+terminal emulator, so the tests assert on what the deck looks like rather than
+on functions in isolation.
 
-Regenerate the screenshots with `python3 capture_png.py`, which renders the
-screens at each scheme's own hex values. `capture_screens.py` produces the
+Each file is also a standalone script — `python3 tests/test_session.py` — which
+is the quickest way to work on one area.
+
+Regenerate the screenshots with `python3 tools/capture_png.py`, which renders the
+screens at each scheme's own hex values. `tools/capture_screens.py` produces the
 same screens as text, in `docs/screens.md`.
 
 ## Status
 
-**The deck exists and runs.** Built, flashed, booted on a Pi 3A+, panel lit,
-Bluetooth keyboard bonded, fldigi and rigctld running, audio decoding. It has
-not yet made a contact.
+**The deck works. It has made contacts.**
+
+First two QSOs on **2026-09-19**, 80 m RTTY, during an RTTY sprint:
+**N3QE** and **K4ZW**, worked from the deck's own screen and Bluetooth
+keyboard. Tuned with the `F2` screen, squelch set just above the noise floor,
+and the mark/space reverse toggle — which RTTY on a DATA-U path needs, and
+which had been added hours earlier.
+
+That closes the loop the project set out to prove: a Pi 3A+, a 5" panel, a
+Bluetooth keyboard and an FTX-1, with no window manager, no mouse and nothing
+on the screen but the terminal.
 
 Working end to end:
 
-* `build_deck_image.sh build` and `flash` — run through, and the resulting card
-  verifies before boot (`deploy_cyberdeck_instructions.md`, phase 2 step 4).
+* `tools/build_deck_image.sh build` and `flash` — run through, and the resulting card
+  verifies before boot (`docs/deploy_cyberdeck_instructions.md`, phase 2 step 4).
 * The Waveshare 5" DSI panel on a 3A+, with `dtoverlay=vc4-kms-dsi-7inch`.
 * WiFi, NTP, first-boot package installation, SSH.
 * The Bluetooth keyboard, after a one-time manual bonding (see below).
-* fldigi 4.2.06 under Xvfb, driven over XML-RPC; audio decoding confirmed by
-  the squelch-off noise test.
+* fldigi 4.2.06 under Xvfb, driven over XML-RPC. Receive proven on real
+  signals; transmit proven by the two contacts above.
+* The over model in use: compose while receiving, `Ctrl-T` to send, `Ctrl-K`
+  to hand back, `Ctrl-C` verified to drop a live carrier.
 * **Rig control, reads and writes.** Frequency and mode track the radio, and
   the band presets and the tuning screen's VFO keys move the dial — with
   hamlib 4.7.2 built from source and rig model 1051. See below.
@@ -297,7 +326,7 @@ Working end to end:
   #2219](https://github.com/Hamlib/Hamlib/issues/2219)). Hamlib 4.7.1 added a
   native FTX-1 backend, **model 1051**, still marked Beta. The build takes
   20–30 minutes on a 3A+, which is why a first boot is long.
-* **`rigctld_client.py` is dead code**, kept only until the Beta backend has
+* **`src/rigctld_client.py` is dead code**, kept only until the Beta backend has
   some hours on it. It documents the bug and carries a raw-CAT workaround that
   is no longer wired in.
 * **First-time Bluetooth bonding is manual.** An LE keyboard will not deliver
@@ -307,9 +336,9 @@ Working end to end:
   `bluetoothctl` session, documented in the deployment runbook.
 * `main.rx_only` does not inhibit fldigi's `main.tune`; the transmit inhibit is
   enforced in the terminal instead.
-* Nothing has been transmitted. Every transmit path — PTT, the over model, the
-  abort key against a live carrier — is written and unit-tested but has never
-  keyed a radio.
+* Transmit is proven on the air but lightly exercised: two contacts, RTTY,
+  80 m, 5 W. PSK31 has never been transmitted, and nothing has been sent at
+  more than QRP power.
 
 **Fixed along the way**, recorded because each cost real time:
 

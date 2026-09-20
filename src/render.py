@@ -3,7 +3,7 @@
 Kept free of curses so the layout can be tested at any width without a
 terminal, which matters because the grid is not fixed: the 800x480 panel gives
 66x20 at the proposed 12x24 console font, 80x24 at 10x20, and 50x15 at 16x32
-(design_doc.md §3.3). Everything here adapts to the width it is given rather
+(docs/design_doc.md §3.3). Everything here adapts to the width it is given rather
 than assuming one.
 
 A rendered line is a list of (text, kind) segments. The kind names an
@@ -140,6 +140,48 @@ def mode_bandwidth(name, reported=0):
         if tail.isdigit():
             return f"{tail} Hz"
     return "\u2014"
+
+
+# The tuning screen's readouts and key hints. These live here, not in the
+# terminal, so that the documentation screenshots render from the same source
+# as the panel — the hand-copied version in tools/capture_screens.py drifted
+# every time a control was added, and the published screenshot quietly stopped
+# matching the deck.
+TUNE_HINTS = (
+    "  \u2190 \u2192  carrier \u00b110 Hz      \u2191 \u2193  search signal",
+    "  , .  VFO \u00b1100 Hz         < >  VFO \u00b11 kHz",
+    "  a AFC  s sql  r RSID  x TXID  v REV   F2/Esc back",
+)
+
+
+def tune_rows(fields, width):
+    """The body of the F2 screen as plain strings.
+
+    `fields` carries already-formatted values so this stays free of fldigi:
+    freq, rig_mode, carrier, width, snr, imd, quality, afc, squelch,
+    squelch_level, rsid, txid, reverse.
+    """
+    def onoff(v, pad=True):
+        return ("on " if pad else "on") if v else "off"
+
+    q = float(fields.get("quality", 0) or 0)
+    bar_w = max(10, width - 22)
+    filled = int(bar_w * min(max(q, 0), 100) / 100)
+    return [
+        f"  rig      {fields.get('freq', '')}  {fields.get('rig_mode', '')}",
+        f"  carrier  {fields.get('carrier', 0)} Hz        width  "
+        f"{fields.get('width', '')}",
+        f"  S/N      {(fields.get('snr') or '').strip()}",
+        f"  IMD      {(fields.get('imd') or '').strip()}",
+        "",
+        f"  quality  {'\u2588' * filled}{'\u2591' * (bar_w - filled)}  {q:.0f}",
+        "",
+        f"  AFC {onoff(fields.get('afc'))}  squelch {onoff(fields.get('squelch'))}"
+        f" ({float(fields.get('squelch_level', 0)):.0f})"
+        f"  RSID {onoff(fields.get('rsid'))}"
+        f"  TXID {onoff(fields.get('txid'))}"
+        f"  REV {onoff(fields.get('reverse'), pad=False)}",
+    ]
 
 
 def status_line(fields, width):

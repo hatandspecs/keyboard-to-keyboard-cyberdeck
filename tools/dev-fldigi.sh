@@ -9,7 +9,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="${HERE}/fldigi-config"
+PROJECT_DIR="$(cd "${HERE}/.." && pwd)"
+CONFIG_DIR="${PROJECT_DIR}/fldigi-config"
 DISPLAY_NUM="${CYBERDECK_DISPLAY:-:99}"
 PORT="${CYBERDECK_XMLRPC_PORT:-7362}"
 
@@ -46,7 +47,7 @@ Xvfb "$DISPLAY_NUM" -screen 0 1024x768x16 >/dev/null 2>&1 &
 sleep 2
 DISPLAY="$DISPLAY_NUM" fldigi --config-dir "$CONFIG_DIR" \
   --xmlrpc-server-address 127.0.0.1 --xmlrpc-server-port "$PORT" \
-  > "${HERE}/fldigi-config/fldigi.log" 2>&1 &
+  > "${CONFIG_DIR}/fldigi.log" 2>&1 &
 
 echo "fldigi starting on ${DISPLAY_NUM}, XML-RPC on 127.0.0.1:${PORT}"
 for i in $(seq 1 30); do
@@ -59,5 +60,5 @@ except Exception: sys.exit(1)
   fi
   sleep 1
 done
-echo "fldigi did not answer XML-RPC within 30s; see ${HERE}/fldigi-config/fldigi.log" >&2
+echo "fldigi did not answer XML-RPC within 30s; see ${CONFIG_DIR}/fldigi.log" >&2
 exit 1

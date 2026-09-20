@@ -3,7 +3,7 @@
 Blank SD card to a working terminal, in order. Every command is meant to be
 run as written.
 
-**Before starting, read this once:** `build_deck_image.sh build` and `flash`
+**Before starting, read this once:** `tools/build_deck_image.sh build` and `flash`
 have been run end to end once, on 2026-09-19, and the resulting card verifies
 (Phase 2, step 4). Nothing has been *booted* yet — every phase from 3 onward is
 written from the scripts rather than from a working deck, so expect to hit
@@ -77,8 +77,8 @@ Device`** rather than anything mentioning Yaesu. That is the string to look for.
 
 ```bash
 cd ~/git_repos/keyboard-to-keyboard-cyberdeck
-./dev-fldigi.sh                             # Xvfb + fldigi, seeded from ~/.fldigi
-python3 configure_fldigi.py --show          # what is set now
+tools/dev-fldigi.sh                             # Xvfb + fldigi, seeded from ~/.fldigi
+python3 tools/configure_fldigi.py --show          # what is set now
 ```
 
 On a fresh configuration `--show` prints only the identity fields — no audio or
@@ -96,8 +96,8 @@ warning below:
 
 ```bash
 pip install sounddevice                     # only needed for the listing
-./dev-fldigi.sh stop
-python3 configure_fldigi.py --list-audio
+tools/dev-fldigi.sh stop
+python3 tools/configure_fldigi.py --list-audio
 ```
 
 ```
@@ -128,8 +128,8 @@ which is what a modem wants. `--auto-audio` applies that preference itself.
 Then set both things that matter:
 
 ```bash
-python3 configure_fldigi.py --rigctld --auto-audio
-python3 configure_fldigi.py --show          # confirm
+python3 tools/configure_fldigi.py --rigctld --auto-audio
+python3 tools/configure_fldigi.py --show          # confirm
 ```
 
 ```
@@ -159,7 +159,7 @@ Restart fldigi and confirm it came up against the radio rather than against
 nothing:
 
 ```bash
-./dev-fldigi.sh
+tools/dev-fldigi.sh
 python3 -c "
 from fldigi_client import Fldigi
 f = Fldigi()
@@ -266,7 +266,7 @@ echo 100 | sudo tee /sys/class/backlight/*/brightness    # 0–255
 ## Phase 1 — build the image
 
 ```bash
-./build_deck_image.sh check
+tools/build_deck_image.sh check
 ```
 
 It refuses until both configuration files are real, and prints a summary:
@@ -276,7 +276,7 @@ summary — it is the last chance to catch a typo cheaply.
 Review what will be written to the card:
 
 ```bash
-./build_deck_image.sh units
+tools/build_deck_image.sh units
 less deck-build/units/cyberdeck-ui.service
 less deck-build/units/cyberdeck-firstboot.sh
 ```
@@ -284,7 +284,7 @@ less deck-build/units/cyberdeck-firstboot.sh
 Then build. This downloads about 500 MB the first time and asks for `sudo`:
 
 ```bash
-./build_deck_image.sh build
+tools/build_deck_image.sh build
 ```
 
 It ends with the path to `deck-build/cyberdeck.img`.
@@ -393,7 +393,7 @@ lsof +D /run/media/$USER/<LABEL> 2>/dev/null
 ### 3. Write it
 
 ```bash
-./build_deck_image.sh flash "$DEV"
+tools/build_deck_image.sh flash "$DEV"
 sync
 ```
 
@@ -672,8 +672,7 @@ error: fldigi opens whatever is at that name, or nothing, and the deck looks
 perfectly healthy while decoding silence.
 
 ```bash
-cd /opt/cyberdeck
-python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config --show
+python3 /opt/cyberdeck/configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config --show
 ```
 
 If `PORTINDEVICE` is still `'USB Audio Device: - (hw:1,0)'` and `arecord -l`
@@ -681,7 +680,7 @@ put the radio on card 0, re-choose it on this machine:
 
 ```bash
 sudo systemctl stop cyberdeck-fldigi        # it holds the capture device
-python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config --auto-audio
+python3 /opt/cyberdeck/configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config --auto-audio
 sudo systemctl start cyberdeck-fldigi
 ```
 
@@ -693,7 +692,7 @@ If `sounddevice` is not installed on the deck, name the device explicitly
 instead, building it from what `arecord -l` reported:
 
 ```bash
-python3 configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config \
+python3 /opt/cyberdeck/configure_fldigi.py --config-dir /opt/cyberdeck/fldigi-config \
   --audio "USB Audio Device: - (hw:0,0)"
 ```
 
@@ -722,23 +721,47 @@ sudo systemctl start cyberdeck-fldigi
 
 ## Phase 5 — on the air
 
+This is the phase that has actually been done: two RTTY contacts on 80 m,
+2026-09-19. What follows is what worked, in order.
+
 At the deck's own screen and keyboard:
 
-1. `F3` → pick **BPSK31**.
-2. `F2` → `s` to **turn the squelch on**. With it open, fldigi decodes the noise
-   floor continuously and the transcript fills with random characters within
-   seconds.
-3. Tune the FTX-1 to **14.070 USB**.
-4. Watch for decoded text.
+1. **`F1` → `3`** to set a band, or tune the radio directly. 3.580 for 80 m
+   RTTY, 14.070 for 20 m PSK31.
+2. **`F3`** to pick the mode. `4` for RTTY, `1` for BPSK31. Leave **`a` AUTO
+   (RSID)** on and the deck follows other stations into their mode.
+3. **`F2`** for the tuning screen, then `↑`/`↓` to search for a signal.
+4. **Set the squelch just above the noise floor** — `F1` → `2`, then `+` and
+   `-`. This mattered more than anything else: too high and nothing decodes,
+   too low and the transcript fills with noise. Getting it just over the floor
+   was the difference between fragments and copy.
+5. **On RTTY, try `v`** if you get plausible letters that never form words.
+   Ham RTTY is conventionally lower sideband and the deck transmits AFSK
+   through the radio's DATA-U path, which is upper, so the tones can arrive
+   swapped. This is not optional on 80 m — it was needed for both contacts.
 
 Before transmitting:
 
 * **Set the radio's time-out timer.** PTT is a pin the interface holds; a hung
   host holds the radio keyed, and the radio's own timer is the only backstop.
-* Check that `Ctrl-C` aborts, before relying on it.
+* **Check `Ctrl-C` aborts** before relying on it. Verified against a live
+  carrier.
+* **Reduce power.** RTTY and PSK are near 100% duty cycle, unlike SSB. The
+  contacts above were made at **5 W**.
+* **`Ctrl-I` to arm.** Transmit starts inhibited at every power-on; the status
+  line shows `INH` until you clear it.
 
-To work someone: type while receiving, `Ctrl-T` to start the over, `Ctrl-K` to
-hand back. `Enter` inserts a newline — it does not send.
+To work someone: type while receiving — it buffers, nothing goes out — then
+`Ctrl-T` to send the whole over at once, and `Ctrl-K` to hand back. `Enter`
+inserts a newline; it does not send.
+
+**Caps Lock is normal here.** RTTY is Baudot and has no lowercase, so every
+RTTY signal on the air is uppercase. Every command key on the deck is
+case-folded and works either way.
+
+[`operating_tutorial.md`](operating_tutorial.md) is the long version, written for a first
+keyboard-to-keyboard contact: what to say, the abbreviations, and how a QSO is
+structured.
 
 ---
 
@@ -755,7 +778,7 @@ losetup -a
 sudo losetup -d /dev/loopN
 ```
 
-Then rerun `./build_deck_image.sh build`. The downloaded image is cached, so
+Then rerun `tools/build_deck_image.sh build`. The downloaded image is cached, so
 only the customization repeats.
 
 ### Blank panel, but SSH works
@@ -890,33 +913,80 @@ lives in `deck.conf`, `deck.secrets` and `cyberdeck.conf` on the laptop.
 
 ---
 
+## Updating the code on a running deck
+
+Reflashing is for changing the *machine*. For changing the terminal — which is
+most iteration — copy the modules across and restart the unit. The deck keeps
+its configuration, its fldigi seed, its Bluetooth bond and its hamlib build.
+
+On the laptop:
+
+```bash
+rsync -av src/*.py deck@cyberdeck.local:/tmp/deckupd/
+```
+
+On the deck:
+
+```bash
+sudo cp /tmp/deckupd/*.py /opt/cyberdeck/
+sudo systemctl restart cyberdeck-ui
+systemctl is-active cyberdeck-ui
+```
+
+Only `src/` goes over. Tests, tools and documentation stay on the build
+machine; `/opt/cyberdeck` holds the flat set of modules the unit runs plus
+`configure_fldigi.py`, `cyberdeck.conf` and the fldigi seed.
+
+**If a module is renamed or removed, delete the old one.** A stale file beside
+its replacement still imports cleanly and will be found instead of the new
+name. `colors.py` replaced `colours.py` this way and the leftover had to be
+removed by hand:
+
+```bash
+sudo rm -f /opt/cyberdeck/<old name>.py
+```
+
+To confirm the running process is the code you just copied:
+
+```bash
+md5sum /opt/cyberdeck/cyberdeck.py
+systemctl show cyberdeck-ui -p ExecMainStartTimestamp
+```
+
+The process start must be **after** the file's timestamp. An hour was lost once
+to debugging a deck that was running the previous copy.
+
 ## What has and has not been tested
 
 Recorded honestly so that a failure is recognised rather than debugged from
 first principles.
 
-**Works, on the real deck:**
+**Proven, on the real deck:**
 
 | | |
 |---|---|
-| `build_deck_image.sh build` and `flash` | Run end to end; the card verifies before boot |
-| The Waveshare 5" DSI panel on a Pi 3A+ | Console renders at 66×20, `vc4-kms-dsi-7inch`, powered from the DSI connector |
+| **Two-way contacts** | N3QE and K4ZW, 80 m RTTY, 2026-09-19, 5 W, from the deck's own panel and keyboard |
+| `tools/build_deck_image.sh build` and `flash` | Run end to end; the card verifies before boot (phase 2 step 4) |
+| The Waveshare 5" DSI panel on a Pi 3A+ | Console at 66×20, `vc4-kms-dsi-7inch`, powered from the DSI connector |
 | Terminus 12×24 | Renders on the panel |
-| WiFi, NTP, firstboot install, SSH | About five minutes over WiFi |
+| WiFi, NTP, firstboot install, SSH | About five minutes, plus 20–30 for the hamlib build |
 | Bluetooth keyboard | After a one-time manual bond — see phase 3 |
-| fldigi on a 3A+'s 512 MB | Runs under Xvfb with the radio attached; fldigi 4.2.06 on Trixie |
-| Receive audio | Confirmed by the squelch-off noise test |
-| Rig control, reads and writes | Frequency and mode track the radio; band presets and the VFO keys move the dial. Needs hamlib 4.7.2 and model 1051 |
+| fldigi 4.2.06 on a 3A+'s 512 MB | Under Xvfb, with the radio attached |
+| Receive | Real off-air RTTY copy, tuned with `F2` and the reverse toggle |
+| Transmit | PTT, the over model, and `Ctrl-C` against a live carrier |
+| Rig control, reads and writes | Needs hamlib 4.7.2 and model 1051 |
+| The color schemes | True hues via `PIO_CMAP`; `OSC P` does not work on this panel |
 
 **Not tested:**
 
 | | |
 |---|---|
-| **Transmit, at all** | No PTT, no over, no abort against a live carrier. Every transmit path is unit-tested and none has keyed a radio |
-
+| **PSK31 on the air** | The mode the deck was designed around, never transmitted |
+| **Anything above 5 W** | RTTY and PSK are near 100% duty cycle; watch ALC and the finals |
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
-| `OSC P` palette redefinition | The true-amber path on this panel is unconfirmed |
-| A contact | The deck has never been on the air |
+| A long session | Longest run so far is an evening; no thermal or memory data |
+| Battery operation | Never run off anything but mains |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, the color schemes — is covered by 120 tests against a live fldigi.
+over model, line editing, the color schemes — is covered by **137 checks**
+against a live fldigi (`tools/run_tests.sh`).

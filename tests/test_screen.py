@@ -4,7 +4,15 @@ The deck's whole point is what it looks like, so the test drives the real
 application through a real pseudo-terminal and reconstructs the screen with a
 terminal emulator, rather than asserting on functions in isolation.
 """
-import os, pty, sys, time, fcntl, termios, struct, select
+import pty, time, fcntl, termios, struct, select
+import os
+import sys
+
+# src/ holds the application; tests/ holds this. Both are addressed from the
+# project root so a test can be run from anywhere.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SRC = os.path.join(_PROJECT, "src")
+sys.path.insert(0, _SRC)
 import pyte
 
 
@@ -19,7 +27,9 @@ def run(keys=(), cols=66, rows=20, settle=1.2):
         # or a mode chosen by one test would leak into the next.
         os.environ["CYBERDECK_STATE_PATH"] = ""
         os.environ["LINES"], os.environ["COLUMNS"] = str(rows), str(cols)
-        os.execvp(sys.executable, [sys.executable, "cyberdeck.py"])
+        os.chdir(_PROJECT)          # cyberdeck.conf is read from here
+        os.execvp(sys.executable,
+                  [sys.executable, os.path.join(_SRC, "cyberdeck.py")])
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
 
     def pump(seconds):

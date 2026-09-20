@@ -14,9 +14,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DECK_CONF="${SCRIPT_DIR}/deck.conf"
-DECK_SECRETS="${SCRIPT_DIR}/deck.secrets"
-BUILD_DIR="${SCRIPT_DIR}/deck-build"
+# tools/ lives one level down; everything this script reads or writes is
+# addressed from the project root, not from here.
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DECK_CONF="${PROJECT_DIR}/deck.conf"
+DECK_SECRETS="${PROJECT_DIR}/deck.secrets"
+BUILD_DIR="${PROJECT_DIR}/deck-build"
 IMAGE_OUT="${BUILD_DIR}/cyberdeck.img"
 
 declare -A CFG=()
@@ -532,18 +535,24 @@ install_project() {
   step "Installing the terminal"
   local dest="${ROOT_MNT}/opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
   sudo mkdir -p "$dest"
-  sudo rsync -a \
-    --exclude '.git/' --exclude '__pycache__/' --exclude 'deck-build/' \
-    --exclude 'deck.secrets' --exclude 'docs/' --exclude 'fldigi-config/' \
-    "${SCRIPT_DIR}/" "${dest}/"
+  # Only what the deck runs: the application modules, flat, exactly as the
+  # unit expects to find them at /opt/cyberdeck/cyberdeck.py. Tests, tools,
+  # docs and reference manuals stay on the build machine.
+  sudo rsync -a --exclude '__pycache__/' "${PROJECT_DIR}/src/" "${dest}/"
+
+  # One tool travels with it: the audio device has to be re-chosen ON the deck,
+  # because a PortAudio name embeds the ALSA card index and the Pi numbers the
+  # radio differently than the build machine does. Runbook phase 4 step 3.
+  sudo install -m 755 "${PROJECT_DIR}/tools/configure_fldigi.py" \
+    "${dest}/configure_fldigi.py"
 
   # The station's own settings. cyberdeck.conf is gitignored, so fall back to
   # the example rather than shipping a card with no configuration at all.
-  if [[ -f "${SCRIPT_DIR}/cyberdeck.conf" ]]; then
-    sudo cp "${SCRIPT_DIR}/cyberdeck.conf" "${dest}/cyberdeck.conf"
+  if [[ -f "${PROJECT_DIR}/cyberdeck.conf" ]]; then
+    sudo cp "${PROJECT_DIR}/cyberdeck.conf" "${dest}/cyberdeck.conf"
     note "cyberdeck.conf installed"
   else
-    sudo cp "${SCRIPT_DIR}/cyberdeck.conf.example" "${dest}/cyberdeck.conf"
+    sudo cp "${PROJECT_DIR}/cyberdeck.conf.example" "${dest}/cyberdeck.conf"
     note "no cyberdeck.conf here; installed the example — set CALLSIGN on the deck"
   fi
 
@@ -551,9 +560,9 @@ install_project() {
   # assertion failure during first-run setup, so the card cannot be left to
   # generate its own.
   local seed=""
-  [[ -d "${SCRIPT_DIR}/fldigi-config" ]] && seed="${SCRIPT_DIR}/fldigi-config"
+  [[ -d "${PROJECT_DIR}/fldigi-config" ]] && seed="${PROJECT_DIR}/fldigi-config"
   [[ -z "$seed" && -d "$HOME/.fldigi" ]] && seed="$HOME/.fldigi"
-  [[ -n "$seed" ]] || die "no fldigi configuration to seed from. Run ./dev-fldigi.sh once, or run fldigi on a desktop."
+  [[ -n "$seed" ]] || die "no fldigi configuration to seed from. Run tools/dev-fldigi.sh once, or run fldigi on a desktop."
   sudo rsync -a --exclude 'fldigi.log' "${seed}/" "${dest}/fldigi-config/"
   note "fldigi config seeded from ${seed}"
 

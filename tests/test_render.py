@@ -1,4 +1,12 @@
-"""Layout at every grid the panel can produce (design_doc.md §3.3)."""
+"""Layout at every grid the panel can produce (docs/design_doc.md §3.3)."""
+import os
+import sys
+
+# src/ holds the application; tests/ holds this. Both are addressed from the
+# project root so a test can be run from anywhere.
+_PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_SRC = os.path.join(_PROJECT, "src")
+sys.path.insert(0, _SRC)
 import time, render
 from render import plain
 from session import Session
