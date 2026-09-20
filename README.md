@@ -46,9 +46,11 @@ waterfall display, image modes, or packet.
 `F2` toggles the whole screen rather than overlaying a panel: on 66 columns a
 tuning display worth reading and a conversation worth reading do not coexist.
 
-The radio's own waterfall finds signals and sets the VFO. fldigi's carrier is
-parked at a fixed offset and AFC holds it — see §8 of the design document for
-why there is no software spectrum.
+Tuning is key-driven, not waterfall-driven: `↑` `↓` run fldigi's own signal
+search and `←` `→` nudge the carrier ten hertz at a time. Those keys work on
+the conversation screen too, which is where they belong — the decoded text is
+the only real confirmation that tuning worked. See §8 of the design document
+for why there is no software spectrum.
 
 ![The menu, F1](docs/screens/menu.png)
 
@@ -63,8 +65,10 @@ the full list — 97 conversational modems, paginated, single-key selection.
 |---|---|
 | `F1` | Menu |
 | `F2` | Toggle the chat and tuning screens |
-| `F3` | Mode picker |
+| `F3` | Mode picker, including **AUTO (RSID)** |
 | `F4` | Cycle the color scheme |
+| `←` `→` | Carrier ∓10 Hz — works on both screens |
+| `↑` `↓` | Search for the next signal — works on both screens |
 | `Ctrl-T` | Start the over — send the buffer and key the rig |
 | `Ctrl-K` | Hand back — drop to receive when the buffer drains |
 | `Ctrl-C` | Abort transmit immediately |
@@ -72,6 +76,13 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-Q` | Quit |
 | `Esc` | Close a menu |
+
+Menus take arrow keys as well as their single-key shortcuts: `↑` `↓` move a
+`▸` marker, `Enter` chooses. Transmit starts **inhibited** at every power-on;
+`Ctrl-I` arms it.
+
+`Ctrl-I` and `Tab` are the same byte — ASCII 9 — so `Tab` also toggles the
+inhibit. Watch the status line if you hit it by accident.
 
 ## How it is put together
 
@@ -242,12 +253,13 @@ up, and the deck is still reachable at `ssh deck@cyberdeck.local`.
 ## Tests
 
 ```bash
-for t in test_session.py test_render.py test_menus.py test_screen.py test_menu_nav.py; do
+for t in test_session.py test_render.py test_menus.py test_screen.py \
+         test_menu_nav.py test_menu_arrows.py; do
   python3 "$t"
 done
 ```
 
-113 checks. `test_screen.py` and `test_menu_nav.py` fork a pseudo-terminal, run
+120 checks. `test_screen.py` and `test_menu_nav.py` fork a pseudo-terminal, run
 the real application, and read the screen back with a terminal emulator, so the
 tests assert on what the deck looks like rather than on functions in isolation.
 They need a running fldigi — start `./dev-fldigi.sh` first.
@@ -258,17 +270,52 @@ same screens as text, in `docs/screens.md`.
 
 ## Status
 
-Build phases 1–4 of §13 are done. Phases 5–7 need hardware: the panel, the
-keyboard, and the image build. Section 16 of the design document lists the
-three cheap checks that gate them.
+**The deck exists and runs.** Built, flashed, booted on a Pi 3A+, panel lit,
+Bluetooth keyboard bonded, fldigi and rigctld running, audio decoding. It has
+not yet made a contact.
+
+Working end to end:
+
+* `build_deck_image.sh build` and `flash` — run through, and the resulting card
+  verifies before boot (`deploy_cyberdeck_instructions.md`, phase 2 step 4).
+* The Waveshare 5" DSI panel on a 3A+, with `dtoverlay=vc4-kms-dsi-7inch`.
+* WiFi, NTP, first-boot package installation, SSH.
+* The Bluetooth keyboard, after a one-time manual bonding (see below).
+* fldigi 4.2.06 under Xvfb, driven over XML-RPC; audio decoding confirmed by
+  the squelch-off noise test.
+* Rig control **reads**: frequency, mode and signal figures track the radio.
 
 **Known limitations**
 
+* **The deck cannot set the radio's frequency.** Hamlib 4.6.2, which is what
+  Raspberry Pi OS Trixie ships, builds a malformed Yaesu frequency command for
+  the FT-991 model — `FA` plus eight digits where the FTX-1's CAT manual
+  specifies nine, zero-padded. The radio discards it silently. Reads are
+  unaffected, which is what made it hard to find. Writing `FA014075000;` to the
+  port by hand moves the VFO immediately. Hamlib 4.6.5 builds the command
+  correctly, so the fix is a hamlib upgrade; `rigctld_client.py` documents the
+  bug and carries a workaround that is **not currently wired in**.
+* **First-time Bluetooth bonding is manual.** An LE keyboard will not deliver
+  input over an unbonded link, and bonding needs a passkey displayed by the Pi
+  and typed on the keyboard — which cannot be automated. `cyberdeck-btpair`
+  reconnects an already-bonded keyboard; the first bond is a one-off
+  `bluetoothctl` session, documented in the deployment runbook.
 * `main.rx_only` does not inhibit fldigi's `main.tune`; the transmit inhibit is
   enforced in the terminal instead.
-* `build_deck_image.sh build` is written but **has never been run end to end**.
-  It needs `sudo`, loop devices and a network, none of which were available
-  where it was developed. `check`, `units` and every generated artefact are
-  tested; the mount-and-write path is not.
-* The DSI panel has not been tested on a 3A+, and where it takes its power is
-  unconfirmed. Both gate everything else.
+* Nothing has been transmitted. Every transmit path — PTT, the over model, the
+  abort key against a live carrier — is written and unit-tested but has never
+  keyed a radio.
+
+**Fixed along the way**, recorded because each cost real time:
+
+* Raspberry Pi OS ships the Pi 3's WiFi *and* Bluetooth radios rfkill-blocked.
+  Setting the regulatory domain does not clear it. The build now unblocks both
+  before NetworkManager starts — without that, first boot installs nothing and
+  the keyboard never pairs, which presents as four unrelated faults.
+* `curses.wrapper` leaves the terminal in `cbreak`, where `Ctrl-C` raises
+  `KeyboardInterrupt` instead of reaching the handler — on the one key whose
+  job is to stop a transmission. The terminal now runs in `raw` mode and drops
+  PTT on every exit path.
+* The status bar rendered as an unreadable solid block: `A_REVERSE` combined
+  with `A_BOLD` put the bold intensity on the background. Reverse-video pairs
+  are now defined as black-on-hue outright.

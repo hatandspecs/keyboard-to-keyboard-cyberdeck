@@ -508,19 +508,102 @@ journalctl -u cyberdeck-firstboot -n 40 --no-pager
 systemctl status cyberdeck-xvfb cyberdeck-fldigi cyberdeck-ui --no-pager
 ```
 
-Keyboard:
+Firstboot takes five to ten minutes and shows `activating` throughout. When it
+reads `active`, it has **finished** — for a oneshot with `RemainAfterExit`,
+that is the completed state, not a running one.
 
 ```bash
-bluetoothctl info DF:3C:77:61:6C:21 | grep -E 'Connected|Paired'
-journalctl -u cyberdeck-btpair -n 20 --no-pager
+ls -l /var/lib/cyberdeck-firstboot-done
+which fldigi Xvfb rigctld
+df -h /                      # rootfs should have expanded to fill the card
 ```
 
-If it did not pair, put it back in pairing mode and wait — `cyberdeck-btpair.timer`
-retries every five minutes rather than giving up. To force an attempt:
+### The keyboard: the first bond is manual
+
+```bash
+bluetoothctl info DF:3C:77:61:6C:21 | grep -E 'Connected|Paired|Bonded'
+```
+
+**Expect this to fail the first time, and read the fields carefully.** The
+signature to look for is:
+
+```
+Paired: no      Bonded: no      Connected: yes      Trusted: yes
+```
+
+Connected but not bonded means the link is up and the keyboard types nothing.
+A Bluetooth LE keyboard will not deliver input over an unbonded link — HID over
+LE requires encryption — and bonding a keyboard requires a passkey that the Pi
+displays and you type **on the keyboard**. That cannot be automated, and should
+not be: typing the code is what proves the device is a keyboard.
+
+So `cyberdeck-btpair` cannot do the first bond. Its job is reconnecting a
+keyboard that is already bonded. Do this once, by hand:
+
+```bash
+bluetoothctl
+```
+
+Inside that **single session** — the agent only exists for the lifetime of the
+`bluetoothctl` process, so these cannot be separate commands:
+
+```
+remove DF:3C:77:61:6C:21
+power on
+agent KeyboardDisplay
+default-agent
+scan on
+```
+
+Put the keyboard into pairing mode, wait for its `[NEW] Device` line, then:
+
+```
+pair DF:3C:77:61:6C:21
+```
+
+A six-digit passkey appears:
+
+```
+[agent] Passkey: 585717
+```
+
+**Type those digits on the keyboard and press Enter.** Nothing echoes anywhere.
+If the passkey regenerates before you finish, the keyboard dropped and
+re-advertised — type faster, or `remove` and retry so there is one deliberate
+attempt rather than repeated auto-reconnects.
+
+Success looks like:
+
+```
+[CHG] Device DF:3C:77:61:6C:21 Bonded: yes
+[CHG] Device DF:3C:77:61:6C:21 Paired: yes
+[CHG] Device DF:3C:77:61:6C:21 ServicesResolved: yes
+```
+
+Then:
+
+```
+trust DF:3C:77:61:6C:21
+scan off
+quit
+```
+
+Type on the keyboard at the deck's screen to confirm. **The LED may keep
+blinking as though still pairing — ignore it; the transcript is the test.**
+
+From here `cyberdeck-btpair` reconnects it automatically at boot, retrying
+every five minutes:
 
 ```bash
 sudo systemctl start cyberdeck-btpair
+journalctl -u cyberdeck-btpair -n 20 --no-pager
 ```
+
+**If pairing attempts fail repeatedly, check what else the radio is doing.**
+The Pi 3A+ shares one chip and one antenna between WiFi and Bluetooth. Pairing
+attempts during the first-boot package download failed three times in a row and
+succeeded immediately once apt had finished. Wait for `Setup complete.` before
+troubleshooting anything else.
 
 ---
 
@@ -715,6 +798,54 @@ journalctl -u cyberdeck-fldigi -n 40 --no-pager
 `cyberdeck-ui` requires `cyberdeck-fldigi`, which requires `cyberdeck-xvfb`.
 Check them in that order.
 
+### Nothing installed, no keyboard, no hostname, wrong clock
+
+Four symptoms, one cause, and worth recognising immediately because it looks
+like four separate faults: **both radios ship rfkill-blocked** on a Pi 3.
+
+```bash
+rfkill list
+```
+
+`Soft blocked: yes` on either entry means the deck has no network, so firstboot
+installed nothing, the keyboard cannot pair, `cyberdeck.local` does not resolve
+and NTP never set the clock.
+
+The build unblocks both before NetworkManager starts, so a card built by the
+current script should never show this. If one does, the oneshot did not run:
+
+```bash
+systemctl status cyberdeck-wifi-country --no-pager
+journalctl -u cyberdeck-wifi-country --no-pager
+sudo rfkill unblock wifi bluetooth
+```
+
+Setting the regulatory domain is **not** enough on its own — `modprobe.d` and
+`/etc/default/crda` set the domain but do not clear the block.
+
+### The deck reads the radio's frequency but cannot change it
+
+Known, and not your configuration. Hamlib 4.6.2 builds a malformed Yaesu
+frequency command: `FA` plus eight digits, where the FTX-1 needs nine,
+zero-padded. The radio discards it silently.
+
+Confirm in one step — this writes the documented form straight to the port:
+
+```bash
+sudo systemctl stop cyberdeck-rigctld
+stty -F /dev/ttyUSB0 38400 raw -echo
+printf 'FA014075000;' > /dev/ttyUSB0
+sudo systemctl start cyberdeck-rigctld
+```
+
+If the dial moves, CAT is healthy and the fault is hamlib's formatter. See
+design_doc.md §7.1. Check for a newer package before considering a source
+build:
+
+```bash
+apt-cache policy libhamlib-utils libhamlib4
+```
+
 ### No keyboard, no screen, no SSH
 
 The one USB port holds the radio. Unplug the FTX-1, plug in a USB keyboard, and
@@ -728,19 +859,33 @@ lives in `deck.conf`, `deck.secrets` and `cyberdeck.conf` on the laptop.
 
 ---
 
-## What has not been tested
+## What has and has not been tested
 
-Recorded honestly so that a failure here is recognized rather than debugged
-from first principles:
+Recorded honestly so that a failure is recognised rather than debugged from
+first principles.
+
+**Works, on the real deck:**
 
 | | |
 |---|---|
-| `build_deck_image.sh build` | **Run end to end, 2026-09-19.** Produced a card whose boot settings, payload and unit symlinks all verify (Phase 2, step 4). Never booted |
-| The 5" DSI panel on a Pi 3A+ | Never attached. The overlay is confirmed from Waveshare's documentation, not from a boot |
-| Bluetooth pairing at first boot | The script is syntax-checked, never run against a real keyboard |
-| Terminus console fonts at 12×24 | Never rendered on the panel |
-| fldigi on a 3A+'s 512 MB | Runs comfortably on a laptop; untested with Xvfb on that board |
-| The FTX-1's `hw:` index on the Pi | Predicted as `hw:0,0`; confirmed only as `hw:1,0` on the laptop |
+| `build_deck_image.sh build` and `flash` | Run end to end; the card verifies before boot |
+| The Waveshare 5" DSI panel on a Pi 3A+ | Console renders at 66×20, `vc4-kms-dsi-7inch`, powered from the DSI connector |
+| Terminus 12×24 | Renders on the panel |
+| WiFi, NTP, firstboot install, SSH | About five minutes over WiFi |
+| Bluetooth keyboard | After a one-time manual bond — see phase 3 |
+| fldigi on a 3A+'s 512 MB | Runs under Xvfb with the radio attached; fldigi 4.2.06 on Trixie |
+| Receive audio | Confirmed by the squelch-off noise test |
+| Rig control, reads | Frequency, mode and signal figures track the radio |
+
+**Not tested:**
+
+| | |
+|---|---|
+| **Transmit, at all** | No PTT, no over, no abort against a live carrier. Every transmit path is unit-tested and none has keyed a radio |
+| **Rig control, writes** | Broken on the shipped hamlib — see §7.1 and the troubleshooting entry above |
+| Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
+| `OSC P` palette redefinition | The true-amber path on this panel is unconfirmed |
+| A contact | The deck has never been on the air |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, the color schemes — is covered by 113 tests against a live fldigi.
+over model, the color schemes — is covered by 120 tests against a live fldigi.

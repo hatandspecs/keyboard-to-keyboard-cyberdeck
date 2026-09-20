@@ -9,18 +9,23 @@ The target is the feel of a dedicated 1980s packet terminal — monochrome text 
 black, no window manager, no mouse, no pointer, nothing to click — over modern
 digital modes.
 
-**Status: phases 1–4 built and tested.** Eight modules and five test files,
-113 checks, all passing against a live fldigi. `test_screen.py` and
-`test_menu_nav.py` drive the real application through a pseudo-terminal and
-read the screen back with a terminal emulator, so the tests assert on what the
-deck looks like rather than on functions in isolation.
+**Status: built, and running on the hardware.** The deck boots on a Pi 3A+ with
+its panel, a bonded Bluetooth keyboard, fldigi under Xvfb and audio decoding.
+It has not yet transmitted.
 
-Phases 5–7 remain, and all three need hardware: the panel, the Bluetooth
-keyboard, and an image build. Section 16 lists the checks that gate them. The architecture is settled and the
-riskiest assumption in it — fldigi running headless and answering XML-RPC — has
-been verified rather than assumed. Section 14 separates what has been tested from
-what has not. Section 15 records the decisions already made and the fourteen still
-open. Section 16 is where to start when this is picked back up.
+Nine modules and six test files, 120 checks, all passing against a live fldigi.
+`test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
+application through a pseudo-terminal and read the screen back with a terminal
+emulator, so the tests assert on what the deck looks like rather than on
+functions in isolation.
+
+One thing blocks normal operation: **hamlib 4.6.2 cannot set this radio's
+frequency** (§7.1). Reads are unaffected, which is what made it hard to find.
+
+Section 14 separates what has been verified on the hardware from what is still
+assumed, and records three faults that cost real time and are easy to hit
+again. Section 15 records the decisions already made and the ones still open.
+Section 16 is where to start when this is picked back up.
 
 ---
 
@@ -361,10 +366,26 @@ terminal emulator's approximation of them:
 | Hal | Tron |
 | ![Hal](docs/screens/conversation-hal.png) | ![Tron](docs/screens/conversation-tron.png) |
 
-Monochrome means one hue, not one intensity. Emphasis comes from the dim variant
-and from reverse video: the status line is reverse, own transmissions are full
-brightness, received text is full brightness, timestamps and the callsign column
-are dim, and menu selection is reverse.
+Monochrome means one hue, not one intensity. Emphasis comes from the dim
+variant and from reverse video: the status line is reverse, own transmissions
+and received text are full brightness, timestamps and the callsign column are
+dim.
+
+**Two corrections from running it on the panel**, both the same mistake:
+
+* Reverse video must be a colour pair defined outright as **black on the hue**,
+  not a normal pair plus `A_REVERSE`, and never with `A_BOLD`. Combining the
+  two puts the bold intensity on what becomes the background, and the status
+  line renders as a solid block of colour with text the same hue as the bar it
+  sits on — unreadable, and indistinguishable from an empty bar.
+* **Menu selection is not reverse video.** Even done correctly it disappeared
+  into its own highlight on this panel. Selection is a `▸` marker plus a step
+  from dim to bright, which carries the same information without depending on
+  how a console renders an attribute.
+
+The general rule the panel taught: on a console whose attribute handling is not
+under test, encode state in *characters and intensity*, and use filled bars
+only where the contrast is defined explicitly.
 
 Each scheme redefines two Linux console palette entries — one bright, one dim —
 with `OSC P` escape sequences (`\033]P<index><rrggbb>`), leaving black as
@@ -401,17 +422,47 @@ This reuses a configuration already proven on this radio, keeps the two-port PTT
 arrangement in one place, and means the terminal can read frequency through
 fldigi rather than opening a second connection to the radio.
 
+### 7.1 Reads work; writes are broken on the shipped hamlib
+
+Reading is sound: frequency, mode and the signal figures track the radio, and
+turning the VFO knob moves the deck's display.
+
+Setting frequency does not work at all on hamlib 4.6.2, which is what
+Raspberry Pi OS Trixie ships. `newcat_set_freq` under model 1035 builds
+
+    FA14075000;
+
+— `FA` and **eight** digits. The FTX-1's CAT manual specifies nine,
+zero-padded, and the radio's own replies use nine (`FA014070000;`). The short
+form is discarded silently: no error, no change, and the deck's display reverts
+to the radio's real frequency on the next poll, which presents as the deck
+fighting the radio rather than as a malformed command.
+
+Every frequency path is affected — the band presets, the tuning screen's VFO
+keys, and anything fldigi attempts through hamlib.
+
+Hamlib 4.6.5 builds the command correctly, so the fix is a hamlib upgrade
+rather than a different rig model. Three models were checked on 4.6.5 — FT-991,
+FT-710, FTDX-10 — and all build nine digits.
+
+`rigctld_client.py` carries a workaround: rigctld's `w` (send_cmd) forwards a
+raw CAT string, so the deck can send the documented nine-digit form while
+rigctld keeps sole ownership of the serial port. It is **not wired in**. An
+upgrade fixes the cause for every hamlib consumer on the machine, including
+fldigi's own rig control and anything added later; the workaround fixes one
+call on one code path. The file exists because it documents the bug precisely
+and because it is the fallback if a build on a 512 MB board proves impractical.
+
 ## 8. Tuning
 
 Two different things get tuned, and conflating them is what made this look like
 the hardest problem in the design. It is not.
 
 **1. Where the receiver's passband sits — the radio's job.** The FTX-1 has its
-own spectrum scope and waterfall, and it is a better instrument for this than
-anything an 800×480 panel could render from a 512 MB Pi. Finding a PSK signal in
-a band segment, seeing how crowded 14.070 is, spotting the station calling
-slightly off — all of that happens on the radio's display, using the radio's
-controls, where it has always happened.
+own spectrum scope and waterfall, and rendering a spectrum on an 800×480 panel
+from a 512 MB Pi was never going to beat it. Choosing a band segment and seeing
+whether 14.070 is busy happens on the radio's display, where it has always
+happened.
 
 **2. Which signal inside the passband fldigi decodes — the deck's job.** fldigi
 demodulates one narrow signal at one audio frequency within the 3 kHz passband.
@@ -424,9 +475,40 @@ free:
 > Use the radio's waterfall and VFO to bring the wanted signal to that offset.
 > AFC holds it once it is close.
 
-This is ordinary practice with narrow filters, it needs no software spectrum on
-the deck, and it turns tuning into a task with one control: the VFO knob, watched
-on the radio's own display, confirmed by a number on the deck.
+### 8.1 That technique does not survive contact with the radio
+
+It is ordinary practice with narrow filters and it reads well. In use it is the
+wrong way round.
+
+The FTX-1's narrowest waterfall span is about **5 kHz**. Across a few hundred
+pixels that is tens of hertz per pixel, and a BPSK31 signal is 31 Hz wide — one
+pixel, perhaps two. Landing that on a specific audio offset by turning a knob
+and watching a display at that scale is not a task the operator should be given.
+
+The inversion is this: **hold the VFO still and move the carrier.** fldigi's own
+`modem.search_up` / `search_down` find the next signal in the received audio
+and land the carrier on it to the hertz, which no amount of knob-turning
+matches. The dial is then set once per band and left alone, and the VFO knob is
+for changing bands or for reaching activity outside the current passband.
+
+So the deck binds `↑` `↓` to search and `←` `→` to a ten-hertz nudge, and binds
+them **on the conversation screen as well as the tuning screen**. That second
+part matters more than it looks: the tuning screen shows the carrier but hides
+the transcript, so tuning there is done blind. A carrier number that looks
+right while nothing decodes is not tuned. The decoded text is the only
+confirmation that counts, so the keys have to work where the text is.
+
+The consequence for the operator is a shorter procedure than the original
+technique: set the band, press `↑`, read.
+
+Two things the deck has to say out loud, because there is no waterfall to make
+them obvious:
+
+* A carrier move produces **nothing** on the radio — no dial change, no
+  waterfall shift. Without a spectrum display, a key that changes an invisible
+  number is indistinguishable from a dead key.
+* A search that finds nothing has to say so. `search up: nothing found above
+  the squelch; still 1832 Hz` separates a quiet band from a broken binding.
 
 Three fldigi facilities back it up when the offset technique is inconvenient:
 
@@ -454,17 +536,28 @@ rendering one would mean reading the audio separately, which would mean sharing
 the ALSA capture device with fldigi through `dsnoop`. That complexity buys a
 worse version of a display the radio already has.
 
-### 8.1 The tuning screen
+### 8.2 The tuning screen
 
 `F2` toggles the whole screen between chat and tuning, rather than overlaying a
 panel. On 66 columns a tuning display worth reading and a conversation worth
-reading do not coexist, and tuning is a thing done deliberately between overs
-rather than while typing.
+reading do not coexist.
+
+Since §8.1 moved tuning onto the conversation screen, this screen's job has
+narrowed: it is for **reading the numbers**, not for tuning. Carrier, signal
+width, S/N, IMD and the quality bar in one place, for answering *how good is
+this decode* — a question the transcript alone does not answer.
 
 ![The tuning screen, F2](docs/screens/tuning.png)
 
-The quality bar refreshes several times a second. Everything on this screen is a
-readout from fldigi or `rigctld`; nothing here is computed by the deck.
+The quality bar refreshes several times a second. Almost everything here is a
+readout from fldigi or `rigctld`, with one exception worth naming:
+**signal width is partly computed by the deck**, because `modem.get_bandwidth`
+returns 0 for every fixed-bandwidth mode — BPSK31, RTTY, Olivia — and a figure
+only where bandwidth is a settable modem parameter, such as Hell. Displaying
+that 0 asserts BPSK31 is zero hertz wide. The deck substitutes the definitional
+figures only: the PSK family from its symbol rate, Olivia and Contestia from
+the name, where the second number *is* the bandwidth. Everything else shows an
+em dash rather than a number quoted from memory.
 
 Received text continues to accumulate in the transcript while the tuning screen
 is up, and the transcript is intact on return.
@@ -479,6 +572,18 @@ unmistakable and its stop path to be immediate.
   a room.
 * **`Ctrl-C` aborts** via `main.abort`, at any time, from any panel, including
   while a menu is open.
+
+  This did not work as written, and the failure was the worst possible shape.
+  `curses.wrapper` leaves the terminal in `cbreak`, where the driver still
+  turns `Ctrl-C` into `SIGINT` — so it never reached the handler waiting for
+  byte 3, and Python unwound with a `KeyboardInterrupt` traceback. On the one
+  key whose entire job is to stop a transmission. The terminal now runs in
+  `raw` mode, and the main loop drops PTT in a `finally` so that a crash, a
+  clean exit and a signal all leave the radio unkeyed.
+
+* **Transmit starts inhibited at every power-on.** A deck that lives in a bag
+  should not come up able to key a radio attached to an unknown antenna; an
+  extra keystroke before the first over is a small price. `INHIBIT_ON_START`.
 * **A transmit time-out.** If transmit has been active longer than a configured
   limit, the terminal calls `main.abort` and records it. The radio's own
   time-out timer is the backstop, not the primary.
@@ -556,18 +661,19 @@ says what is missing.
 
 Each phase ends with something demonstrable.
 
-| Phase | Ends with |
-|---|---|
-| 1 | fldigi headless under Xvfb, answering XML-RPC — **done on the laptop**, still to repeat on the 3A+ |
-| 2 | A Python client that prints received text and sends a typed line — **done** |
-| 3 | The curses layout with live status, transcript and compose — **done** |
-| 4 | The four color schemes and the F1 menu tree — **done** |
-| 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot |
-| 6 | The tuning panel and RSID, evaluated on the air |
-| 7 | An image build script producing the card unattended, as the iGate has — **written, never run** |
+| Phase | Ends with | |
+|---|---|---|
+| 1 | fldigi headless under Xvfb, answering XML-RPC | **done**, laptop and deck |
+| 2 | A Python client that prints received text and sends a typed line | **done** |
+| 3 | The curses layout with live status, transcript and compose | **done** |
+| 4 | The four color schemes and the F1 menu tree | **done** |
+| 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot | **done** |
+| 6 | The tuning panel and RSID, evaluated on the air | receive only; see §7.1 |
+| 7 | An image build script producing the card unattended, as the iGate has | **done**, run end to end |
 
-Phases 1 to 4 need no hardware beyond the Pi and the radio, and phases 1 to 3 can
-be developed on the laptop.
+Phase 6 is the only one outstanding, and it is blocked on rig control rather
+than on anything in this document: frequency cannot be set on the shipped
+hamlib (§7.1), and nothing has been transmitted.
 
 ## 14. Verified, and assumed
 
@@ -598,28 +704,63 @@ Separated deliberately, because the difference decides what can break late.
 * hamlib rig model 1035 drives it.
 * The 3A+'s OTG port is sensitive to adapters and cannot power some devices.
 
-**Assumed, and not yet tested. The first three block phase 1 and are cheap:**
+**Verified on the deck itself, on the first build:**
 
-* **The 5" DSI panel drives a framebuffer console on a 3A+.** DSI panel support
-  varies by panel and kernel, and this board is not the one most panels are
-  tested against. Nothing else can be built until a console appears on it.
-* **The panel takes 5 V from the 40-pin header, not from USB.** A USB-powered
-  panel conflicts with the radio for the only port and changes the hardware plan.
-* **Terminus 12×24, 10×20 and 16×32 console fonts are present and `setfont`
-  switches between them at runtime** without disturbing a running curses app.
-* `OSC P` palette redefinition works on this panel's console, so a true amber is
-  available rather than the ANSI approximation of yellow.
-* fldigi echoes transmitted text into the RX widget, or does not — this decides
-  how the transcript is assembled, and is a ten-minute check against the running
-  instance.
-* Whether `main.tx` keys reliably under XML-RPC control could not be settled on
-  the bench: repeated trials disagreed, and a control run with the inhibit
-  lifted failed to key at all, which invalidates the trial rather than proving
-  anything. It wants re-testing against a radio that actually transmits. The
-  design no longer depends on the answer, since the inhibit is enforced in the
-  terminal.
-* fldigi's memory footprint plus Xvfb plus Python fits 512 MB comfortably.
-* Bluetooth keyboard latency on a 3A+ is acceptable for typing.
+* **The Waveshare 5" DSI panel drives a framebuffer console on a 3A+**, using
+  `dtoverlay=vc4-kms-dsi-7inch`. The name is not a mistake: Waveshare's 800×480
+  DSI panels match the official 7" panel's timing and share its overlay. There
+  is no `5_0_inch` parameter under `vc4-kms-dsi-waveshare-panel`, which covers
+  their panels that are *not* 800×480.
+* **The panel takes its power from the DSI connector**, about 1.2 W. It does
+  not compete for the USB port.
+* fldigi under Xvfb, Python and the terminal **fit 512 MB** with the radio
+  attached and services running.
+* Bluetooth keyboard latency on a 3A+ is fine for typing.
+* The whole first-boot install — fldigi, Xvfb, hamlib, fonts — completes over
+  WiFi in about five minutes.
+* Raspberry Pi OS Trixie ships **fldigi 4.2.06**, not the 4.2.13 this was
+  developed against. Every XML-RPC method the deck uses is present in both.
+
+**Discovered on the deck, and not anticipated anywhere in this document:**
+
+* **Both radios ship rfkill-blocked on a Pi 3.** `/var/lib/systemd/rfkill/`
+  holds `platform-3f300000.mmcnr:wlan` and
+  `platform-soc-amba-3f201000.serial:bluetooth`, both set to `1`. Setting the
+  regulatory domain does **not** clear the block. The symptom is four apparently
+  separate faults — no package install, no fldigi, no keyboard, no mDNS, wrong
+  clock — all from one cause. §10 now unblocks both before NetworkManager.
+
+* **An LE keyboard will not deliver input over an unbonded link.** The pairing
+  script reported success on `Connected: yes` while `Paired: no, Bonded: no`,
+  and the keyboard typed nothing. HID over LE requires an encrypted, bonded
+  link, and bonding a keyboard requires a passkey displayed by the host and
+  typed on the keyboard — which cannot be automated, and should not be: it is
+  what proves the device is a keyboard. First bonding is therefore a manual
+  step, and the service's real job is reconnecting an already-bonded keyboard.
+  The script also ran each `bluetoothctl` command as a separate process, so the
+  agent it registered was gone before pairing began.
+
+* **Hamlib 4.6.2 cannot set this radio's frequency.** With model 1035
+  (FT-991), the closest model that reads the FTX-1 correctly, `newcat_set_freq`
+  builds `FA14075000;` — `FA` plus eight digits. The FTX-1 CAT manual specifies
+  nine, zero-padded, and the radio's own replies use nine
+  (`FA014070000;`). The malformed command is discarded with no error. Writing
+  `FA014075000;` to the port by hand moves the VFO immediately. Hamlib 4.6.5
+  builds it correctly, so this is a version bug, not a model mismatch. §7 is
+  written on the assumption that hamlib can set frequency; that assumption is
+  false on the shipped version.
+
+**Still assumed, and not yet tested:**
+
+* **Terminus 12×24, 10×20 and 16×32 console fonts** switch at runtime with
+  `setfont` without disturbing a running curses application. The 12×24 default
+  renders; the others have not been tried.
+* `OSC P` palette redefinition works on this panel's console, so a true amber
+  is available rather than the ANSI approximation of yellow.
+* Whether `main.tx` keys reliably under XML-RPC control. Nothing has been
+  transmitted from the deck at all. The design does not depend on the answer,
+  since the inhibit is enforced in the terminal, but every transmit path is
+  untested against a radio.
 
 ---
 
@@ -725,21 +866,50 @@ later.
 
 ## 16. Picking this back up
 
-The three cheap checks that gate everything else, in order. None needs the
-keyboard, the case, or any code:
+Everything the original version of this section listed as a gating unknown has
+been answered. The panel works, the overlay is `vc4-kms-dsi-7inch`, the panel
+draws its 1.2 W from the DSI connector, and the deck boots to its terminal with
+the keyboard bonded and fldigi decoding.
 
-1. **Does the 5" DSI panel give a framebuffer console on the 3A+?** Attach it,
-   boot, look for a login prompt. Nothing proceeds until this works, and it is the
-   assumption least under this project's control.
-2. **Where does the panel take its power?** If it wants USB rather than the 40-pin
-   header, it competes with the radio for the only port and the hardware plan
-   changes.
-3. **Do Terminus 12×24, 10×20 and 16×32 exist as console fonts, and does `setfont`
-   switch them at runtime?** This settles question 1 by looking at it.
+**The one thing blocking normal operation:**
 
-Then phase 1 of section 13: fldigi headless under Xvfb on the 3A+, answering
-XML-RPC over SSH. That has already been proven on a laptop, so the only new
-variable is the board.
+1. **Hamlib cannot set the radio's frequency** (§7.1). Reads work; the set
+   command is malformed on the shipped 4.6.2. Check whether a newer hamlib is
+   available as a package before considering a source build:
 
-Phases 1 to 3 need nothing but the Pi and the radio, and can be developed over
-SSH before the panel or the keyboard exist.
+   ```bash
+   apt-cache policy libhamlib-utils libhamlib4
+   ```
+
+   If a build is needed, `build_deck_image.sh` has to reproduce it, or the next
+   reflash silently restores the broken version — which would be a bad thing to
+   rediscover from the symptom.
+
+**Then, in order, none of it blocked:**
+
+2. **Make a contact.** Nothing has been transmitted from this deck. The over
+   model, PTT, the transmit time-out and `Ctrl-C` against a live carrier are
+   all written and unit-tested and none has keyed a radio. Test into a dummy
+   load first, and confirm `Ctrl-C` unkeys before relying on it.
+3. **Confirm the transmit audio path.** Receive is proven; transmit is not.
+   Set the radio to its data mode, set drive for zero ALC, and check IMD.
+4. **The remaining console-font question:** 10×20 and 16×32 at runtime via
+   `setfont`, without disturbing the running curses application. The 12×24
+   default renders correctly.
+5. **`OSC P` palette redefinition** on this panel, for a true amber rather than
+   the ANSI approximation.
+
+**Worth doing when convenient:**
+
+* Set a timezone in the build. The deck defaults to Europe/London, so journal
+  timestamps sit an hour off local without anything being wrong. The deck's own
+  clock is UTC by design and is unaffected.
+* A `DECK_PERSISTENT_JOURNAL` setting. The build puts the journal in RAM to
+  spare the card, which is right for normal use and exactly wrong while
+  bringing hardware up — the boot that failed left no log to read.
+* An RTC. The 3A+ has none, so the clock is wrong until NTP, and wrong for the
+  whole session anywhere without WiFi. That matters for logging.
+
+**What not to re-derive**, because it cost time to find and is easy to hit
+again: the rfkill block on both radios, the LE bonding passkey requirement, and
+the eight-digit frequency command. All three are in §14.

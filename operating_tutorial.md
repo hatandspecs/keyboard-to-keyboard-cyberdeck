@@ -186,7 +186,7 @@ follows.
 ### What fldigi does with that audio
 
 fldigi listens at **one spot** inside that 3 kHz of audio. That spot is the
-**carrier**, and it is shown on the `F2` screen and in the banner.
+**carrier**, and it is shown on the `F2` screen.
 
 Carrier 1500 Hz means: *decode whatever is at 1500 Hz in the audio*, which is
 whatever is transmitting at dial + 1500 Hz on the air.
