@@ -10,6 +10,8 @@ framebuffer, where the color schemes use the real palette.
 """
 
 import curses
+import json
+import os
 import sys
 import time
 
@@ -18,7 +20,7 @@ import config as configmod
 import menus
 import render
 from fldigi_client import Fldigi
-from session import Session, RX, TX
+from session import Entry, Session, RX, TX
 
 CHAT, TUNE = "chat", "tune"
 
@@ -39,6 +41,8 @@ class Deck:
         self.menu_sel = 0
         self._page_keys = {}
         self.status_note = ""
+        self._tx_seen = False
+        self._tx_echo = ""
         self.fldigi = Fldigi(url=settings["FLDIGI_URL"])
         self.session = Session(
             callsign=settings["CALLSIGN"],
@@ -53,6 +57,13 @@ class Deck:
                               f"at {self.fldigi.carrier()} Hz")
         else:
             self.session.note("no connection to fldigi — check it is running")
+
+        # After the configured defaults, so that what was last chosen wins.
+        self._load_state()
+        if self.fldigi.connected and settings.get("REMEMBER_STATE") == "yes":
+            self.session.note(f"resumed {self.fldigi.modem()} at "
+                              f"{self.fldigi.carrier()} Hz, "
+                              f"{colors.SCHEMES[self.scheme]['name']}")
 
         # Powering on into a transmit-capable state is the wrong default for a
         # deck that lives in a bag: a stray Ctrl-T on a radio connected to an
@@ -72,10 +83,41 @@ class Deck:
     # -- fldigi ------------------------------------------------------------
 
     def poll(self):
+        # fldigi echoes transmitted text back through its RX buffer, so text
+        # read while the radio is keyed is our own coming back — recording it
+        # would enter every over twice, once from the keyboard and once as
+        # though a correspondent had sent it.
+        #
+        # The buffer is still drained rather than skipped: poll_rx() advances
+        # its read position, and leaving the echo in place would deliver the
+        # whole over in one lump the moment we returned to receive.
+        #
+        # fldigi's own TX state decides this, not the session's. Ctrl-K ends
+        # the over immediately but fldigi keeps sending until its buffer
+        # drains, and the echo keeps arriving for that whole tail.
         text = self.fldigi.poll_rx()
-        if text:
+        sending = self.fldigi.trx_state() != "RX"
+        if text and not sending:
             self.session.receive(text)
             self.scroll = 0
+        elif text:
+            # Our own transmission, echoed back by fldigi as it goes out.
+            # Held here rather than written to the transcript: it is drawn as
+            # a transient TX line under the over while sending, and dropped
+            # when the over completes. See design_doc.md §5.5 for why this is
+            # transient rather than permanent.
+            self._tx_echo += text
+            self.scroll = 0
+
+        if sending:
+            self._tx_seen = True
+        elif self._tx_seen:
+            # fldigi has finished draining and dropped back to receive. This
+            # is the moment the over is really over: Ctrl-K only stops adding
+            # to the buffer.
+            self._tx_seen = False
+            self._tx_echo = ""
+            self.session.note("sent")
         if self.session.tx_timed_out():
             self.fldigi.abort()
             self.session.abort()
@@ -129,8 +171,14 @@ class Deck:
         self._put(0, 0, render.status_line(self.status_fields(), w), w)
         self._put(1, 0, render.rule(w), w)
 
+        entries = self.session.entries
+        if self._tx_seen and self._tx_echo:
+            # A transient line showing what fldigi has actually put on the air
+            # so far, under the over as typed. Not part of the session: it is
+            # gone the moment the over completes.
+            entries = list(entries) + [Entry("TX", self._tx_echo)]
         lines = render.transcript_lines(
-            self.session.entries, w, body_h,
+            entries, w, body_h,
             timestamps=self.cfg["TIMESTAMPS"] == "yes", scroll=self.scroll)
         for i, line in enumerate(lines):
             self._put(2 + i, 0, line, w)
@@ -139,7 +187,8 @@ class Deck:
         self._put(rule_row, 0, render.rule(w), w)
 
         clines, (crow, ccol) = render.compose_lines(
-            self.session.compose, self.session.buffer_indicator(), w, compose_h)
+            self.session.compose, self.session.buffer_indicator(), w, compose_h,
+            cursor=self.session.cursor)
         for i, line in enumerate(clines):
             self._put(rule_row + 1 + i, 0, line, w)
 
@@ -167,9 +216,9 @@ class Deck:
             "",
             f"  quality  {'█' * filled}{'░' * (bar_w - filled)}  {q:.0f}",
             "",
-            f"  AFC {'on ' if f.afc() else 'off'}   squelch {'on ' if f.squelch() else 'off'}"
-            f" ({f.squelch_level():.0f})   RSID {'on ' if f.rsid() else 'off'}"
-            f"   TXID {'on' if f.txid() else 'off'}",
+            f"  AFC {'on ' if f.afc() else 'off'}  squelch {'on ' if f.squelch() else 'off'}"
+            f" ({f.squelch_level():.0f})  RSID {'on ' if f.rsid() else 'off'}"
+            f"  TXID {'on ' if f.txid() else 'off'}  REV {'on' if f.reverse() else 'off'}",
         ]
         for i, text in enumerate(rows):
             if 2 + i < h - 4:
@@ -178,7 +227,7 @@ class Deck:
         self._put(h - 4, 0, render.rule(w), w)
         self._put(h - 3, 0, [("  ← →  carrier ±10 Hz      ↑ ↓  search signal"[:w - 1], "dim")], w)
         self._put(h - 2, 0, [("  , .  VFO ±100 Hz         < >  VFO ±1 kHz"[:w - 1], "dim")], w)
-        self._put(h - 1, 0, [("  a AFC  s squelch  r RSID  x TXID   F2/Esc back"[:w - 1], "dim")], w)
+        self._put(h - 1, 0, [("  a AFC  s sql  r RSID  x TXID  v REV   F2/Esc back"[:w - 1], "dim")], w)
 
     def _menu_for(self, which, w, h):
         """The menu structure for a name, for navigation and hit-testing."""
@@ -196,7 +245,7 @@ class Deck:
             return menus.DISPLAY
         if m == "tuning":
             return menus.tuning_menu(f.afc(), f.squelch(), f.squelch_level(),
-                                     f.rsid(), f.txid())
+                                     f.rsid(), f.txid(), f.reverse())
         if m == "radio":
             return menus.RADIO
         if m == "system":
@@ -253,37 +302,60 @@ class Deck:
         elif ch == curses.KEY_F2:
             self.screen = TUNE
         elif ch == curses.KEY_F4:
-            self.scheme = colors.cycle(self.scheme)
-            colors.apply(self.scheme)
-            self.session.note(f"color: {colors.SCHEMES[self.scheme]['name']}")
+            self._apply_scheme(colors.cycle(self.scheme))
         elif ch == 20:                       # Ctrl-T
             text = self.session.start_over()
             if text is not None:
+                self._tx_echo = ""
                 self.fldigi.start_over(text)
         elif ch == 11:                       # Ctrl-K
             if self.session.hand_back():
                 self.fldigi.hand_back()
         elif ch == 3:                        # Ctrl-C
+            # Record how much actually went out before the abort. This is the
+            # one case where intent and reality differ and the difference
+            # matters, so it is kept rather than dropped with the transient
+            # progress line.
+            partial = self._tx_echo.strip()
             self.fldigi.abort()
             self.session.abort()
+            if partial:
+                self.session.note(f"aborted — sent: {partial}")
+            self._tx_echo = ""
         elif ch == 12:                       # Ctrl-L
             self.scr.clearok(True)
         elif ch == 9:                        # Ctrl-I: inhibit toggle
             self.session.inhibit(not self.session.inhibited)
             self.fldigi.receive_only(self.session.inhibited)
-        # Tuning from the conversation screen, where the decode is visible.
-        # The F2 screen shows the carrier but hides the transcript, so tuning
-        # there is done blind: you can watch the number change but not whether
-        # it produced readable text. Moving the carrier is only meaningful
-        # against what comes out, so the same keys work here.
+        # On the conversation screen the arrows edit the line, as they would
+        # in any terminal: left and right move the cursor, up and down recall
+        # what was sent before.
+        #
+        # Tuning lives on F5-F8 here rather than on Ctrl+arrows, because the
+        # Linux console cannot send a modified arrow at all — TERM=linux
+        # defines no kUP5/kLFT5, so ncurses sees a plain KEY_UP whether or not
+        # Ctrl is held. Binding it would have worked over SSH from an xterm
+        # and silently not on the panel, which is worse than not offering it.
         elif ch == curses.KEY_LEFT:
-            self.fldigi.nudge_carrier(-10)
+            self.session.move(-1)
         elif ch == curses.KEY_RIGHT:
-            self.fldigi.nudge_carrier(10)
+            self.session.move(1)
         elif ch == curses.KEY_UP:
-            self._search(self.fldigi.search_up, "up")
+            self.session.recall(-1)
         elif ch == curses.KEY_DOWN:
+            self.session.recall(1)
+        elif ch == curses.KEY_HOME:
+            self.session.home()
+        elif ch == curses.KEY_END:
+            self.session.end()
+        elif ch == curses.KEY_F5:
+            self.fldigi.nudge_carrier(-10)
+        elif ch == curses.KEY_F6:
+            self.fldigi.nudge_carrier(10)
+        elif ch == curses.KEY_F7:
             self._search(self.fldigi.search_down, "down")
+        elif ch == curses.KEY_F8:
+            self._search(self.fldigi.search_up, "up")
         elif ch == curses.KEY_PPAGE:
             self.scroll += 5
         elif ch == curses.KEY_NPAGE:
@@ -297,6 +369,90 @@ class Deck:
         elif ch == 17:                       # Ctrl-Q quits
             return False
         return True
+
+    # -- remembered state --------------------------------------------------
+    #
+    # What the operator last chose, restored on the next start so the deck
+    # comes back as it was left. Deliberately NOT including the transmit
+    # inhibit: that is re-asserted on every power-on regardless, because a
+    # deck coming out of a bag able to key a radio attached to an unknown
+    # antenna is the thing INHIBIT_ON_START exists to prevent. Convenience
+    # does not get to override that.
+
+    def _state_path(self):
+        # The environment wins, so a test run can point this somewhere
+        # disposable — otherwise each run would inherit the previous one's
+        # mode and the configured DEFAULT_MODE would never be exercised.
+        # Empty means "do not remember", which is what the tests use.
+        override = os.environ.get("CYBERDECK_STATE_PATH")
+        if override is not None:
+            return os.path.expanduser(override) or None
+        if self.cfg.get("REMEMBER_STATE") != "yes":
+            return None
+        return os.path.expanduser(self.cfg.get("STATE_PATH") or "")
+
+    def _load_state(self):
+        """Apply the remembered mode, carrier, color and timestamps."""
+        path = self._state_path()
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8") as fh:
+                state = json.load(fh)
+        except (OSError, ValueError):
+            return          # absent or corrupt: the configured defaults stand
+        if state.get("timestamps") in ("yes", "no"):
+            self.cfg["TIMESTAMPS"] = state["timestamps"]
+        scheme = state.get("color")
+        if scheme in colors.SCHEMES:
+            self.scheme = scheme
+            colors.apply(scheme)
+        if self.fldigi.connected:
+            if state.get("mode"):
+                self.fldigi.set_modem(state["mode"])
+            if state.get("carrier"):
+                self.fldigi.set_carrier(state["carrier"])
+
+    def _save_state(self):
+        """Never raises: failing to remember a preference must not disturb a
+        contact in progress."""
+        path = self._state_path()
+        if not path:
+            return
+        state = {
+            "color": self.scheme,
+            "timestamps": self.cfg["TIMESTAMPS"],
+            "mode": self.fldigi.modem() if self.fldigi.connected else None,
+            "carrier": self.fldigi.carrier() if self.fldigi.connected else None,
+        }
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".new"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(state, fh)
+            os.replace(tmp, path)       # atomic: no truncated file after a cut
+        except OSError:
+            pass
+
+    def _apply_scheme(self, name):
+        """Switch color scheme and force the whole screen to be repainted.
+
+        The repaint is not cosmetic. fbcon resolves a glyph's color when it is
+        drawn, so redefining a palette entry does NOT recolor anything already
+        on screen — and ncurses repaints only cells whose content or pair
+        NUMBER changed. Changing scheme changes neither: the text is the same
+        and the pair is still pair 3, only its definition moved. So without
+        this, a scheme change leaves the old colors up until something else
+        happens to rewrite those cells, which is why the status bar kept the
+        previous scheme's color and one stale cell sat green in the corner.
+        """
+        self.scheme = name
+        colors.apply(name)
+        self.scr.clearok(True)
+        self.scr.touchwin()
+        # No transcript note: the scheme change is self-evident on screen and
+        # a log of it is noise in the middle of a contact.
+        self._save_state()
 
     def _open_menu(self, which):
         self.menu = which
@@ -318,7 +474,10 @@ class Deck:
 
     def _handle_menu(self, ch):
         f, m = self.fldigi, self.menu
-        key = chr(ch) if 32 <= ch < 127 else ""
+        # Case-folded for the same reason as the tuning screen: every
+        # single-key shortcut here is a letter or a digit, and none of them
+        # should stop working because Caps Lock is on.
+        key = chr(ch).lower() if 32 <= ch < 127 else ""
 
         # Arrow-key navigation. The single-key shortcuts still work — this is
         # an addition, not a replacement — but a menu you can walk with the
@@ -386,13 +545,12 @@ class Deck:
         if m == "display":
             scheme = {"1": "matrix", "2": "deckard", "3": "hal", "4": "tron"}.get(key)
             if scheme:
-                self.scheme = scheme
-                colors.apply(scheme)
-                self.session.note(f"color: {colors.SCHEMES[scheme]['name']}")
+                self._apply_scheme(scheme)
                 self._close_menu()
             elif key == "t":
                 self.cfg["TIMESTAMPS"] = "no" if self.cfg["TIMESTAMPS"] == "yes" else "yes"
                 self.session.note(f"timestamps {self.cfg['TIMESTAMPS']}")
+                self._save_state()
                 self._close_menu()
             return True
 
@@ -405,6 +563,10 @@ class Deck:
                 f.set_rsid(not f.rsid())
             elif key == "x":
                 f.set_txid(not f.txid())
+            elif key == "v":
+                on = not f.reverse()
+                f.set_reverse(on)
+                self.session.note(f"mark/space reversed {'on' if on else 'off'}")
             elif key == "+":
                 f.set_squelch_level(min(100.0, f.squelch_level() + 5))
             elif key == "-":
@@ -412,6 +574,7 @@ class Deck:
             elif key == "c":
                 f.set_carrier(self.cfg["DEFAULT_CARRIER"])
                 self.session.note(f"carrier parked at {self.cfg['DEFAULT_CARRIER']} Hz")
+                self._save_state()
                 self._close_menu()
             return True
 
@@ -512,6 +675,7 @@ class Deck:
     def _set_mode(self, name):
         self.fldigi.set_modem(name)
         self.session.note(f"mode changed to {self.fldigi.modem()}")
+        self._save_state()
         self._close_menu()
 
     def _typed(self, char):
@@ -522,6 +686,11 @@ class Deck:
 
     def _handle_tune(self, ch):
         f = self.fldigi
+        # Case-folded: a command key must not depend on Caps Lock or a held
+        # shift. The deck reported "unhandled key 65 (A)" for every letter on
+        # this screen until this was fixed, which looked exactly like the
+        # bindings being dead.
+        key = chr(ch).lower() if 32 <= ch < 127 else ""
         if ch in (curses.KEY_F2, 27):
             self.screen = CHAT
         elif ch == curses.KEY_LEFT:
@@ -532,24 +701,35 @@ class Deck:
             self._search(f.search_up, "up")
         elif ch == curses.KEY_DOWN:
             self._search(f.search_down, "down")
-        elif ch == ord("a"):
+        elif key == "a":
             f.set_afc(not f.afc())
-        elif ch == ord("s"):
+        elif key == "s":
             f.set_squelch(not f.squelch())
-        elif ch == ord("r"):
+        elif key == "r":
             f.set_rsid(not f.rsid())
-        elif ch == ord("x"):
+        elif key == "x":
             f.set_txid(not f.txid())
-        elif ch == ord(","):
+        elif key == "v":
+            on = not f.reverse()
+            f.set_reverse(on)
+            self.session.note(f"mark/space reversed {'on' if on else 'off'}")
+        elif key == ",":
             self._set_vfo(f.frequency() - 100)
-        elif ch == ord("."):
+        elif key == ".":
             self._set_vfo(f.frequency() + 100)
-        elif ch == ord("<"):
+        elif key == "<":
             self._set_vfo(f.frequency() - 1000)
-        elif ch == ord(">"):
+        elif key == ">":
             self._set_vfo(f.frequency() + 1000)
         elif ch == 17:
             return False
+        else:
+            # Anything this screen does not bind is reported rather than
+            # silently dropped. A key that appears dead is otherwise
+            # indistinguishable from a key whose handler ran and did nothing
+            # visible, which cost an hour once.
+            name = curses.keyname(ch).decode(errors="replace") if ch >= 0 else "?"
+            print(f"tune: unhandled key {ch} ({name})", file=sys.stderr)
         return True
 
 

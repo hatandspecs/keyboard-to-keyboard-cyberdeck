@@ -409,7 +409,7 @@ list of everything fldigi supports, paged.
 | `1` | **BPSK31** | **Start here.** The default for conversation. Narrow, efficient, and where the people are |
 | `2` | BPSK63 | Twice the speed, needs a better signal. Good on a strong path |
 | `3` | QPSK31 | BPSK31 with error correction. Better in noise, worse when the path is unstable |
-| `4` | RTTY | The old standard. Rugged, noisy, wide. Still used in contests |
+| `4` | RTTY | The old standard. Rugged, noisy, wide. Still used in contests. **Sounds like two tones alternating rapidly** — if you hear that on the band, this is the mode |
 | `5` | OLIVIA-8/250 | Very robust — readable below the noise floor. Slow |
 | `6` | OLIVIA-8/500 | Wider and faster Olivia |
 | `7` | MFSK16 | Good on paths with flutter or auroral distortion |
@@ -421,6 +421,35 @@ list of everything fldigi supports, paged.
 
 The practical rule: **BPSK31 unless you have a reason**. If the path is too
 noisy for it, try Olivia. If you have a strong signal and want speed, BPSK63.
+
+### Why RTTY is all capitals
+
+RTTY is Baudot — five bits per character. The code has no lowercase at all, so
+every RTTY signal on the air is uppercase because nothing else can be sent.
+fldigi converts your typing for you, so there is no need to hold Caps Lock,
+though it does no harm: every command key on the deck is case-folded and works
+either way.
+
+PSK31 is not like this. It uses varicode, carries the full character set, and
+ordinary mixed case is the convention — so Caps Lock is worth switching off
+when you go back to PSK.
+
+This is also why RTTY copy fails in stretches rather than degrading gently:
+Baudot needs a separate shift character to reach digits and punctuation, and
+one corrupted shift throws everything after it into the wrong state until the
+next one arrives.
+
+### Identifying a mode by ear
+
+Before reaching for AUTO, the sound tells you most of it:
+
+| Sounds like | Probably |
+|---|---|
+| Two tones alternating rapidly, a warble | **RTTY** |
+| A single steady musical tone, warbling slightly | **PSK31** |
+| Several tones in a rising or shifting pattern | **Olivia** or **MFSK** |
+| Bursts that start and stop on a clock, ~15 s | **FT8** — not a keyboard mode, will not decode |
+| A rough, rapid buzz | **FELDHELL** |
 
 ### A caveat about CW
 
@@ -550,8 +579,11 @@ shrinks.
 | `Ctrl-I` | Transmit inhibit on/off — **`Tab` does this too**, see below |
 | `Ctrl-L` | Redraw the screen |
 | `Ctrl-Q` | Quit |
-| `←` `→` | Carrier ∓10 Hz — **tune while watching the decode** |
-| `↑` `↓` | Search for the next signal up or down |
+| `←` `→` | Move the cursor in the line you are typing |
+| `↑` `↓` | Recall previous overs |
+| `Home` / `End` | Start / end of the line |
+| `F5` `F6` | Carrier ∓10 Hz — **tune while watching the decode** |
+| `F7` `F8` | Search for the next signal, down / up |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Enter` | Newline — **does not send** |
 | `Backspace` | Delete from the compose buffer |
@@ -561,11 +593,25 @@ shrinks.
 | Key | Submenu | Contents |
 |---|---|---|
 | `1` | Mode | `a` AUTO (RSID) · the eleven modes above · `m` for all |
-| `2` | Tuning | `a` AFC · `s` squelch · `r` RSID · `x` TXID · `+`/`-` squelch level · `c` park carrier |
+| `2` | Tuning | `a` AFC · `s` squelch · `r` RSID · `x` TXID · `v` reverse · `+`/`-` squelch level · `c` park carrier |
 | `3` | Radio | `1`–`6` band frequencies |
 | `4` | Display | `1` Matrix · `2` Deckard · `3` Hal · `4` Tron · `t` timestamps |
 | `5` | Station | Read-only; edit `cyberdeck.conf` |
 | `6` | System | `i` inhibit · `c` clear transcript · `q` quit |
+
+**The line you type edits like a terminal.** `←` `→` move the cursor and
+typing inserts at it, `Backspace` deletes before it, `Home` and `End` jump to
+the ends, and `↑` `↓` recall overs you have already sent — useful for repeating
+a call or reusing a station description. Stepping forward past the newest entry
+gives you back whatever you were typing before you started browsing.
+
+None of that applies **mid-over**: once `Ctrl-T` is pressed, characters go out
+as you type them and cannot be recalled. That is how keyboard modes have always
+worked and is not a fault.
+
+**Tuning from this screen is on `F5`–`F8`**, not the arrows. The Linux console
+cannot report a modified arrow at all, so `Ctrl-←` is indistinguishable from
+`←` on the panel and the arrows had to do one job each.
 
 **Navigating menus.** Either way works:
 
@@ -593,7 +639,7 @@ and guessing.
 | `↑` `↓` | **Search for the next signal** up or down | **No** |
 | `,` `.` | VFO ∓100 Hz | Yes |
 | `<` `>` | VFO ∓1 kHz | Yes |
-| `a` `s` `r` `x` | AFC · squelch · RSID · TXID | No |
+| `a` `s` `r` `x` `v` | AFC · squelch · RSID · TXID · reverse | No |
 | `F2` or `Esc` | Back to the conversation | — |
 
 **The third column matters and it surprises people.** `←` `→` `↑` `↓` move
@@ -616,9 +662,19 @@ does not fill with garbage within a few seconds, audio is not reaching the
 modem — that is a wiring or sound-card problem, not a radio one. See Phase 4
 step 3 of `deploy_cyberdeck_instructions.md`.
 
-**Garbage decodes, but never anything readable.** Usually the wrong sideband —
-digital is USB on every band. Otherwise the carrier is not on a signal: use
-`F2` and `↑`/`↓` to search rather than hunting by hand.
+**Garbage decodes, but never anything readable.** Three causes, in order of
+likelihood:
+
+* **The carrier is not on the signal.** Use `↑`/`↓` to search rather than
+  placing it by hand — a BPSK31 signal is 31 Hz wide and 20 Hz off decodes
+  nothing.
+* **Wrong mark/space sense, on RTTY.** Ham RTTY is conventionally lower
+  sideband, and the deck runs AFSK through the radio's DATA-U path, which is
+  upper — so the tones can arrive swapped. The signature is a steady stream of
+  plausible letters that never form words. Press **`v`** (`F1` → `2` → `v`, or
+  `v` on the `F2` screen) to flip it. If the text turns into English, that was
+  it.
+* **Wrong sideband** — digital is USB on every band.
 
 **Frequency shows 0.0.** Rig control is down. The mode still works; you just
 have to set the VFO on the radio's own dial. Check `cyberdeck-rigctld`.

@@ -21,7 +21,7 @@
 │──────────────────────────────────────────────────────────────────│
 │ W3TM de KD3CCO  all the fldigi keyboard modes — psk, olivia,     │
 │ mfsk, rtty                                               [RX 71] │
-│ F1 menu  F2 tune  F3 mode  ←→↑↓ tune  ^T over  ^K hand  ^C abort │
+│ F1 menu  F2 tune  F5-F8 tune  ^T over  ^K hand  ^C abort         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

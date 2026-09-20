@@ -15,6 +15,9 @@ def run(keys=(), cols=66, rows=20, settle=1.2):
     pid, fd = os.forkpty()
     if pid == 0:
         os.environ["TERM"] = "xterm"
+        # No remembered state: every run starts from the configured defaults,
+        # or a mode chosen by one test would leak into the next.
+        os.environ["CYBERDECK_STATE_PATH"] = ""
         os.environ["LINES"], os.environ["COLUMNS"] = str(rows), str(cols)
         os.execvp(sys.executable, [sys.executable, "cyberdeck.py"])
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))

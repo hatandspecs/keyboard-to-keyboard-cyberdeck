@@ -84,6 +84,56 @@ s5 = Session(callsign="KD3CCO")
 s5.receive("one\ntwo\n")
 check("two separate received lines", transcript(s5), [("RX", "one"), ("RX", "two")])
 
+print("\n-- the compose line edits like a terminal --")
+e = Session(callsign="KD3CCO")
+for c in "hello wrld":
+    e.type(c)
+check("cursor sits at the end while typing", e.cursor, 10)
+e.move(-3)
+check("left arrow moves the cursor", e.cursor, 7)
+e.type("o")
+check("typing inserts at the cursor", e.compose, "hello world")
+check("and the cursor follows the insertion", e.cursor, 8)
+e.backspace()
+check("backspace deletes before the cursor", e.compose, "hello wrld")
+e.home()
+check("home goes to the start", e.cursor, 0)
+e.end()
+check("end goes to the end", e.cursor, 10)
+check("the cursor cannot run past the end", (e.move(5), e.cursor), (False, 10))
+e.home()
+check("nor before the start", (e.move(-5), e.cursor), (False, 0))
+
+print("\n-- previous overs can be recalled --")
+h = Session(callsign="KD3CCO")
+for c in "first over":
+    h.type(c)
+h.start_over(); h.hand_back()
+for c in "second over":
+    h.type(c)
+h.start_over(); h.hand_back()
+check("history keeps them newest first", h.history, ["second over", "first over"])
+for c in "draft":
+    h.type(c)
+h.recall(-1)
+check("up recalls the most recent", h.compose, "second over")
+h.recall(-1)
+check("again goes further back", h.compose, "first over")
+h.recall(1)
+check("down comes forward again", h.compose, "second over")
+h.recall(1)
+check("and past the newest restores the draft", h.compose, "draft")
+check("the cursor lands at the end of a recalled line",
+      (h.recall(-1), h.cursor), (True, len("second over")))
+
+print("\n-- history is not touched mid-over --")
+m = Session(callsign="KD3CCO")
+for c in "hi":
+    m.type(c)
+m.start_over()
+check("recall does nothing while transmitting", m.recall(-1), False)
+check("nor does the cursor move", m.move(-1), False)
+
 print("\n-- scrollback is bounded --")
 s6 = Session(callsign="KD3CCO", scrollback=100)
 for i in range(500):

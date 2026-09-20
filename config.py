@@ -35,6 +35,10 @@ SCHEMA = {
                                        "leaves the radio alone"),
     "RSID_ON_START":   ("yes", str, "yes | no — follow other stations' mode "
                                     "identifiers automatically"),
+    "REMEMBER_STATE":  ("yes", str, "yes | no — restore mode, carrier, color "
+                                    "and timestamps across restarts"),
+    "STATE_PATH":      ("~/.local/state/cyberdeck.json", str,
+                        "where that is kept; delete it to start clean"),
 }
 
 COLORS = ("matrix", "deckard", "hal", "tron")

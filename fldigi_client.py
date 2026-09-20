@@ -237,6 +237,16 @@ class Fldigi:
     def set_rsid(self, on):
         self._call("main.set_rsid", bool(on))
 
+    def reverse(self):
+        """Mark/space sense. RTTY on the air is conventionally lower sideband;
+        running AFSK through the radio's DATA-U path is upper, so the tones
+        arrive swapped and decode as steady, word-free garbage until this is
+        flipped."""
+        return bool(self._call("main.get_reverse", default=False))
+
+    def set_reverse(self, on):
+        self._call("main.set_reverse", bool(on))
+
     def txid(self):
         """Send an identifier ahead of our own overs, so others can follow us.
 

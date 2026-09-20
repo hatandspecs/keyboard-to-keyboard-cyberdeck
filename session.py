@@ -46,6 +46,10 @@ class Session:
         self.callsign = callsign or "LOCAL"
         self.entries = deque(maxlen=scrollback)
         self.compose = ""
+        self.cursor = 0
+        self.history = []          # previously sent overs, newest first
+        self._recall = None        # position while browsing history
+        self._pending = ""         # what was being typed before browsing
         self.state = RX
         self.tx_timeout = tx_timeout
         self._clock = clock
@@ -99,25 +103,80 @@ class Session:
 
         Returns the text that should go on the air right now: everything while
         an over is running, nothing while receiving.
+
+        While receiving, the character is inserted at the cursor, so the line
+        can be edited like any other terminal input. Mid-over there is no
+        cursor to speak of — characters go out as they are typed and cannot be
+        recalled — so it appends and sends.
         """
-        self.compose += char
         if self.state == TX:
-            out, self.compose = self.compose, ""
+            out, self.compose, self.cursor = self.compose + char, "", 0
             self._append(self.callsign, out)
             return out
+        self.compose = self.compose[:self.cursor] + char + self.compose[self.cursor:]
+        self.cursor += len(char)
         return ""
 
     def backspace(self):
-        """Correct the composed buffer.
+        """Correct the composed buffer, deleting before the cursor.
 
         Only meaningful while receiving. Mid-over the characters have already
         been sent, and the far end has seen them — which is how RTTY chat has
         always worked, and is not a bug to be hidden.
         """
-        if self.state == RX and self.compose:
-            self.compose = self.compose[:-1]
+        if self.state == RX and self.cursor > 0:
+            self.compose = (self.compose[:self.cursor - 1]
+                            + self.compose[self.cursor:])
+            self.cursor -= 1
             return True
         return False
+
+    # -- line editing ------------------------------------------------------
+
+    def move(self, delta):
+        """Move the cursor within the composed line. True if it moved."""
+        if self.state != RX:
+            return False
+        was = self.cursor
+        self.cursor = max(0, min(len(self.compose), self.cursor + delta))
+        return self.cursor != was
+
+    def home(self):
+        self.cursor = 0
+
+    def end(self):
+        self.cursor = len(self.compose)
+
+    def recall(self, delta):
+        """Step through previously sent overs, newest first.
+
+        delta -1 goes back in time, +1 forward. Stepping forward past the most
+        recent entry restores whatever was being typed before the first
+        recall, so browsing the history and coming back costs nothing.
+        """
+        if self.state != RX or not self.history:
+            return False
+        # history[0] is the most recent, so going back in time means moving
+        # UP the list by index. _recall is the entry currently shown, or None
+        # while the draft is being edited.
+        if self._recall is None:
+            if delta > 0:
+                return False               # already at the newest: the draft
+            self._pending = self.compose
+            at = 0
+        else:
+            at = self._recall - delta      # delta -1 (older) -> index + 1
+
+        if at < 0:                         # forward past the newest entry
+            self._recall = None
+            self.compose = self._pending
+            self.cursor = len(self.compose)
+            return True
+        at = min(at, len(self.history) - 1)
+        self._recall = at
+        self.compose = self.history[at]
+        self.cursor = len(self.compose)
+        return True
 
     # -- the over ---------------------------------------------------------
 
@@ -136,9 +195,16 @@ class Session:
             return None
         if self.state == TX:
             return None
-        text, self.compose = self.compose, ""
+        text, self.compose, self.cursor = self.compose, "", 0
+        self._recall = None
+        if text.strip():
+            self.history.insert(0, text.rstrip("\n"))
+            del self.history[40:]      # a session's worth, not a logbook
         self.state = TX
         self._tx_started = self._clock()
+        # This is the over as intended. What fldigi actually puts on the air
+        # is shown separately and transiently while sending — see the
+        # transmit-progress note in design_doc.md §5.5.
         if text:
             self._append(self.callsign, text)
         return text

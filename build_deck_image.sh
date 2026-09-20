@@ -201,6 +201,13 @@ TTYReset=yes
 TTYVHangup=yes
 Environment=TERM=linux
 Environment=PYTHONUNBUFFERED=1
+# Setting the console palette is a privileged operation: the PIO_CMAP ioctl
+# needs CAP_SYS_TTY_CONFIG, which is why setvtrgb(1) requires root. Without
+# it the color schemes silently fall back to the stock console palette and
+# every scheme renders as its ANSI approximation. This grants that one
+# capability and nothing else.
+AmbientCapabilities=CAP_SYS_TTY_CONFIG
+CapabilityBoundingSet=CAP_SYS_TTY_CONFIG
 ExecStartPre=-/usr/bin/setfont ${CFG[DECK_CONSOLE_FONT]:-Uni3-TerminusBold24x12}
 ExecStart=/usr/bin/python3 ${dir}/cyberdeck.py
 Restart=always
@@ -556,6 +563,20 @@ install_project() {
 
 configure_boot() {
   step "Boot settings"
+
+  # UTC throughout. The terminal's own clock is hardcoded to gmtime and shows
+  # Zulu whatever the system says — that is the convention for logging a
+  # contact — but the system clock underneath defaults to Europe/London, so
+  # journal timestamps read an hour off the panel. Correlating a crash against
+  # "what was on screen at the time" is hard enough without an offset in it.
+  local tz="${CFG[DECK_TIMEZONE]:-UTC}"
+  if [[ -e "${ROOT_MNT}/usr/share/zoneinfo/${tz}" ]]; then
+    sudo ln -sf "/usr/share/zoneinfo/${tz}" "${ROOT_MNT}/etc/localtime"
+    echo "$tz" | sudo tee "${ROOT_MNT}/etc/timezone" >/dev/null
+    note "timezone ${tz}"
+  else
+    note "timezone ${tz} not found in the image; leaving the default"
+  fi
   local cfg="${BOOT_MNT}/config.txt" cmd="${BOOT_MNT}/cmdline.txt"
 
   if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" ]]; then

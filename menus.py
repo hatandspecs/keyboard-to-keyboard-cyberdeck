@@ -1,4 +1,4 @@
-"""Full-screen menus, selected by a single key (design_doc.md §5.6).
+"""Full-screen menus, selected by a single key (design_doc.md §5.7).
 
 No pointer, no cursor to move, no nesting deeper than two: a menu is a list of
 labeled keys and pressing one does the thing. That is the fastest interface
@@ -73,7 +73,7 @@ DISPLAY = {
     "footer": "Esc back   ↑↓ move   Enter select",
 }
 
-def tuning_menu(afc, squelch, level, rsid, txid):
+def tuning_menu(afc, squelch, level, rsid, txid, reverse=False):
     """Tuning options with their current state shown.
 
     The static version of this menu gave no feedback: pressing `s` toggled
@@ -91,6 +91,7 @@ def tuning_menu(afc, squelch, level, rsid, txid):
             ("-", f"Squelch level down     ({level:.0f})"),
             ("r", f"RSID        {onoff(rsid)}   follow others' identifiers"),
             ("x", f"TXID        {onoff(txid)}   send one before our overs"),
+            ("v", f"Reverse     {onoff(reverse)}   mark/space sense, for RTTY"),
             ("c", "Park carrier at the configured offset"),
         ],
         "footer": "Esc back   ↑↓ move   Enter select   F2 live tuning",

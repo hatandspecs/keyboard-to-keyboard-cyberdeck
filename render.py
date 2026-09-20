@@ -184,15 +184,38 @@ def status_line(fields, width):
     return [((" " + parts["call"] + " " + state).ljust(width)[:width], "reverse")]
 
 
-def compose_lines(text, indicator, width, height):
+def compose_lines(text, indicator, width, height, cursor=None):
     """The bottom region: what is being typed, with the buffer indicator
     right-aligned on the last line. Returns lines and the cursor position
-    within them as (row, col)."""
+    within them as (row, col).
+
+    `cursor` is an index into `text`; None means the end, which is where it
+    sits unless the line is being edited.
+    """
     body_w = max(8, width - 2)
     wrapped = _wrap(text, body_w) or [""]
-    wrapped = wrapped[-height:] if height else wrapped
-    cursor_row = len(wrapped) - 1
-    cursor_col = 1 + len(wrapped[-1])
+    shown = wrapped[-height:] if height else wrapped
+
+    if cursor is None:
+        cursor = len(text)
+    cursor = max(0, min(len(text), cursor))
+    # Walk the wrapped lines counting characters until the cursor index is
+    # reached, so the caret lands where the character actually is rather than
+    # at the end of the text.
+    remaining, row, col = cursor, 0, 0
+    for i, line in enumerate(wrapped):
+        if remaining <= len(line):
+            row, col = i, remaining
+            break
+        remaining -= len(line)
+        row, col = i, len(line)
+    else:
+        row, col = len(wrapped) - 1, len(wrapped[-1])
+
+    hidden = len(wrapped) - len(shown)
+    cursor_row = max(0, row - hidden)
+    cursor_col = 1 + col
+    wrapped = shown
 
     out = []
     for i, line in enumerate(wrapped):
@@ -222,11 +245,10 @@ def plain(segments):
 # and 50 at the largest one, so the line has to shed bindings rather than be
 # truncated mid-word — a hint that reads "^C abor" is worse than no hint.
 _HINT_TIERS = (
-    " F1 menu  F2 tune  F3 mode  \u2190\u2192 carrier  \u2191\u2193 search"
-    "  ^T over  ^K hand  ^C abort",
-    " F1 menu  F2 tune  F3 mode  \u2190\u2192\u2191\u2193 tune  ^T over"
-    "  ^K hand  ^C abort",
-    " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand  ^C abort",
+    " F1 menu  F2 tune  F5/F6 carrier  F7/F8 search  ^T over  ^K hand"
+    "  ^C abort",
+    " F1 menu  F2 tune  F5-F8 tune  ^T over  ^K hand  ^C abort",
+    " F1 menu  F2 tune  F5-F8 tune  ^T over  ^K hand",
     " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand",
     " F2 tune  F3 mode  F4 color  ^T over  ^K hand",
     " F2 tune  ^T over  ^K hand  ^C abort",

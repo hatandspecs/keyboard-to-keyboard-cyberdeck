@@ -280,7 +280,56 @@ characters composed, `[TX]` while the buffer is going out — so the state is ne
 ambiguous. Question 5 asks whether a local-only chat variant is wanted for VHF
 work, where Enter-sends is reasonable because turnarounds are cheap.
 
-### 5.5 Key bindings
+### 5.5 Showing a transmission as it goes out
+
+fldigi echoes transmitted text back through its RX buffer. That was listed as
+an open question in §14 and answered on the air: it does. Read naively it puts
+every over in the transcript twice — once from the keyboard, once as though a
+correspondent had sent it — which is how it was first noticed.
+
+The echo is not noise, though. It is the only confirmation of what has
+**actually reached the air**, arriving character by character at the modem's
+own rate, and on an abort it is the only record of how much went out before
+`Ctrl-C`. Three ways to present it were considered.
+
+**A. Both lines, permanently.** The over as typed, attributed to this station,
+and a `TX` line beneath it built from the echo. Simple, and the two lines can
+disagree — which is exactly what you want to see on an abort or a stalled
+buffer. The cost is screen: every over takes twice the transcript on a
+20-row panel, roughly 13 rows of visible history, so an exchange that fits
+today scrolls away. Once an over completes the two lines are usually
+identical and the second has stopped earning its place.
+
+**B. Transient progress — implemented.** The over as typed appears at
+`Ctrl-T`. Beneath it, a `TX` line built from the echo grows while fldigi
+sends, and **disappears when the over completes**, leaving one clean entry.
+Live progress and divergence-detection while it matters; a compact log
+afterwards. The `TX` line is not a session entry at all — it is assembled at
+draw time from a string held by the terminal, so nothing has to be removed
+from the transcript later.
+
+The exception is an abort: `Ctrl-C` writes what was actually sent into the
+transcript as a marker (`aborted — sent: ...`) before clearing the transient
+line, because that is the one case where intent and reality differ and the
+difference is worth keeping.
+
+**C. Echo only.** No line at `Ctrl-T`; the transcript entry is built solely
+from the echo. The most truthful — the log shows what reached the air and
+nothing else — and the most compact. It was rejected because it gives no
+acknowledgement that `Ctrl-T` registered until the first character comes back,
+and no record of intent to compare against.
+
+Switching between these is small: A is B without clearing `_tx_echo` on
+completion and with the transient line promoted to a real entry; C is removing
+the `_append` from `Session.start_over()` and `Session.type()` and writing the
+echo through a `sent()` method instead.
+
+**How the end of an over is known.** Not `Ctrl-K` — that only stops adding to
+the buffer, and fldigi keeps transmitting until it drains. The signal is
+fldigi's own `main.get_trx_state` returning to `RX`, which is also what gates
+the echo handling. The transcript marks it `sent`.
+
+### 5.6 Key bindings
 
 | Key | Action |
 |---|---|
@@ -302,7 +351,7 @@ alongside a conversation worth reading.
 Function keys beyond `F4` are unassigned and are the natural home for macros
 (question 8).
 
-### 5.6 Menu tree
+### 5.7 Menu tree
 
 ```mermaid
 flowchart LR
@@ -330,7 +379,7 @@ Menus are full-screen overlays with single-key selection, not nested pointers.
 
 ![The full modem list](docs/screens/all-modes.png)
 
-### 5.7 Color schemes
+### 5.8 Color schemes
 
 Four, each a single hue on black:
 
@@ -386,21 +435,82 @@ dim.
   how a console renders an attribute.
 
 * **The palette redefinition was addressing nothing.** `apply()` wrote the
-  `OSC P` sequences for slots 8 and 9, then built its color pairs out of
-  `scheme["ansi"]` — so nothing ever drew with the slots it had just defined.
-  Every scheme rendered as its ANSI approximation. Matrix, Hal and Tron
-  survived that, because ANSI green, red and cyan are close enough to the
+  `OSC P` sequences for entries 8 and 9, then built its color pairs out of
+  `scheme["ansi"]` — so nothing ever drew with the entries it had just
+  defined. Every scheme rendered as its ANSI approximation. Matrix, Hal and
+  Tron survived that, because ANSI green, red and cyan are close enough to the
   intent; **Deckard did not**, because amber is precisely the hue ANSI cannot
-  approximate. This document predicted that outcome as the fallback behaviour
-  and then the code delivered it everywhere. The pairs now name slots 8 and 9
-  directly when the console reports 16 colors, and the intensity attributes
-  are dropped in that mode — on a Linux console `A_BOLD` shifts the foreground
-  into the 8-15 range, which would move text straight back off the slot the
-  scheme had just defined.
+  approximate. This document predicted that outcome as the fallback and then
+  the code delivered it everywhere.
+
+  The correct entries are not free choice. On the Linux console a color pair
+  can only name entries **0-7**; 8-15 are reachable for a foreground only via
+  `A_BOLD`, which the console implements by adding 8, and are not reachable at
+  all for a background. So the two entries a scheme must redefine are the ANSI
+  index itself, for dim text, and that index **+ 8**, for bright:
+
+  | Scheme | ANSI | dim entry | bright entry |
+  |---|---|---|---|
+  | Matrix | 2 | 2 | 10 |
+  | Deckard | 3 | 3 | 11 |
+  | Hal | 1 | 1 | 9 |
+  | Tron | 6 | 6 | 14 |
+
+  A first attempt at this fix gated on `curses.COLORS >= 16` so it could name
+  entries 8 and 9 directly. `TERM=linux` reports **8** colors, so that gate is
+  always false and the correction would have changed nothing — the same bug
+  with a new guard. Caught before it shipped only by checking the terminfo.
+
+* **`OSC P` does not work on this panel at all**, which is why none of the
+  above could have helped on its own. It is a VGA-console feature; the panel
+  runs fbcon on the vc4 DRM driver, which ignores the sequence. Proven by
+  writing it straight to `/dev/tty1` and watching nothing change — and that
+  result explains the original symptom completely: every scheme had been
+  rendering as the stock console palette since the beginning. Red and cyan
+  passed as acceptable because the console's defaults are close to the intent;
+  green read as dull and entry 3's brown-to-yellow pair was never going to
+  look like amber.
+
+  The working mechanism is the **`PIO_CMAP` ioctl**, which is what
+  `setvtrgb(1)` uses. It takes all sixteen entries at once as 48 bytes of
+  R,G,B, so `colors.py` reads the current table, replaces three entries and
+  writes it back. `OSC P` is kept as a fallback for a console that honours it.
+
+  §14 listed "OSC P palette redefinition works on this panel's console" as
+  assumed and untested. It is now tested, and it was false.
+
+  The reverse-video bar gets **its own entry**. A background cannot reach
+  8-15, but it can name any of 0-7, so the bar is not obliged to share the
+  scheme's dim entry: entry **5** is given over to it and redefined to the
+  scheme's bright hex. The status bar is therefore full brightness while dim
+  text stays dim. Entry 5 is free — the schemes use 1, 2, 3 and 6 — and this
+  program owns the console.
+
+* **Changing a scheme did not recolor the screen.** Redefining a palette entry
+  recolors nothing already drawn: fbcon resolves a glyph's color when it is
+  written to the framebuffer, not at scan-out. And ncurses rewrites a cell only
+  when its character or its *attribute* changed — where an attribute carries
+  the color-pair **number**, not the pair's definition. Redefining pair 3 in
+  place therefore left every cell byte-identical, so ncurses skipped them all.
+
+  The symptom was unmistakable once seen: after switching to Hal, only the
+  digits that happened to change value came out red, while the rest of the
+  status bar stayed the previous scheme's green. Body text appeared to work,
+  because a transcript changes constantly; the status bar did not, because its
+  text is static.
+
+  `clearok()` was tried first and was not reliable. The fix is to give **each
+  scheme its own pair numbers** — Matrix 1-3, Deckard 4-6, Hal 7-9, Tron 10-12
+  — so that switching scheme changes every cell's attribute and ncurses has no
+  choice but to rewrite the screen.
 
 The general rule the panel taught: on a console whose attribute handling is not
 under test, encode state in *characters and intensity*, and use filled bars
 only where the contrast is defined explicitly.
+
+A second, sharper rule from the palette work: **on this console a color change
+is only ever applied to glyphs drawn after it.** Anything that changes colors
+must also force the affected cells to be rewritten.
 
 A second rule, from all three of these: **the PNG screenshots cannot catch
 them.** `capture_png.py` draws with the schemes' hex values directly, so it
@@ -811,6 +921,28 @@ Separated deliberately, because the difference decides what can break late.
   be right — the binary, the library search path, and the model — and each was
   silently ineffective alone.
 
+* **fldigi echoes transmitted text back through its RX buffer.** §14 listed
+  this as an open ten-minute question; it was answered on the air instead, by
+  every over appearing in the transcript twice — once attributed to this
+  station from the keyboard, once as though a correspondent had sent it. The
+  deck now drains the RX buffer while transmitting and discards what it reads.
+  Draining rather than skipping matters: `poll_rx()` advances its read
+  position, so leaving the echo in place would deliver the whole over in one
+  lump on return to receive. The gate is fldigi's `main.get_trx_state`, not
+  the session's state — `Ctrl-K` ends the over immediately while fldigi keeps
+  sending until its buffer drains, and the echo arrives for that whole tail.
+
+* **Command keys must be case-folded.** Every letter binding on the tuning
+  screen and in the menus compared against a lowercase character, so with
+  Caps Lock on the deck received `65 (A)` and matched nothing — the keys
+  looked dead while the code was correct. This is not an edge case: RTTY is
+  Baudot and has no lowercase, so **every RTTY operator works with Caps Lock
+  on**, which is exactly when the tuning controls are wanted.
+
+  It was found by logging unhandled keys to stderr rather than by reasoning.
+  That reporting is now permanent: a key that appears dead is otherwise
+  indistinguishable from a key whose handler ran and did nothing visible.
+
 * **Power-cycling the radio renumbers its serial ports.** The CP2105 detaches
   and the kernel assigns the next free numbers on re-attach, so CAT moves from
   `ttyUSB0` to `ttyUSB1`. Every path in this project now uses
@@ -823,8 +955,9 @@ Separated deliberately, because the difference decides what can break late.
 * **Terminus 12×24, 10×20 and 16×32 console fonts** switch at runtime with
   `setfont` without disturbing a running curses application. The 12×24 default
   renders; the others have not been tried.
-* `OSC P` palette redefinition works on this panel's console, so a true amber
-  is available rather than the ANSI approximation of yellow.
+* ~~`OSC P` palette redefinition works on this panel's console~~ — **tested,
+  and false.** The panel ignores it; the palette is set through the `PIO_CMAP`
+  ioctl instead (§5).
 * Whether `main.tx` keys reliably under XML-RPC control. Nothing has been
   transmitted from the deck at all. The design does not depend on the answer,
   since the inhibit is enforced in the terminal, but every transmit path is
@@ -841,7 +974,7 @@ Separated deliberately, because the difference decides what can break late.
 | Display | 5" capacitive touch DSI, 800×480, at 12×24 giving a 66×20 grid | 3.3 |
 | Transmit model | Over-based: compose while receiving, `Ctrl-T` to start, `Ctrl-K` to hand back. `Enter` is a newline, not a send | 5.4 |
 | Tuning | The radio's own waterfall for RF; a parked audio carrier with AFC and RSID for the modem. No software spectrum | 8 |
-| Color schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.7 |
+| Color schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.8 |
 | Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
 | Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
 | Rig control | `rigctld`, model 1035, reusing the iGate's proven FTX-1 configuration | 7 |
