@@ -731,10 +731,11 @@ At the deck's own screen and keyboard:
 2. **`F3`** to pick the mode. `4` for RTTY, `1` for BPSK31. Leave **`a` AUTO
    (RSID)** on and the deck follows other stations into their mode.
 3. **`F2`** for the tuning screen, then `↑`/`↓` to search for a signal.
-4. **Set the squelch just above the noise floor** — `F1` → `2`, then `+` and
-   `-`. This mattered more than anything else: too high and nothing decodes,
-   too low and the transcript fills with noise. Getting it just over the floor
-   was the difference between fragments and copy.
+4. **Set the squelch just above the noise floor** — `+` and `-` on the `F2`
+   screen, watching the `decode` line as you go. This mattered more than
+   anything else: too high and nothing decodes, too low and the transcript
+   fills with noise. Getting it just over the floor was the difference between
+   fragments and copy.
 5. **On RTTY, try `v`** if you get plausible letters that never form words.
    Ham RTTY is conventionally lower sideband and the deck transmits AFSK
    through the radio's DATA-U path, which is upper, so the tones can arrive
@@ -752,8 +753,12 @@ Before transmitting:
   line shows `INH` until you clear it.
 
 To work someone: type while receiving — it buffers, nothing goes out — then
-`Ctrl-T` to send the whole over at once, and `Ctrl-K` to hand back. `Enter`
+`Ctrl-T` to send the whole over at once, and `Ctrl-Y` to hand back. `Enter`
 inserts a newline; it does not send.
+
+`F5` to `F12` insert stored messages at the cursor, which is worth setting up
+before a contest rather than during one — `F1` → `5` edits them on the deck.
+`Ctrl-Z` undoes an insert.
 
 **Caps Lock is normal here.** RTTY is Baudot and has no lowercase, so every
 RTTY signal on the air is uppercase. Every command key on the deck is
@@ -988,5 +993,5 @@ first principles.
 | Battery operation | Never run off anything but mains |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **137 checks**
+over model, line editing, the color schemes — is covered by **197 checks**
 against a live fldigi (`tools/run_tests.sh`).

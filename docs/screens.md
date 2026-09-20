@@ -4,11 +4,12 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │ KD3CCO  14.070.589  PKTUSB  BPSK63  1500Hz  S/N 18     RX  2114Z │
 │──────────────────────────────────────────────────────────────────│
-│ 2109Z RX      KD3CCO de W3TM  good copy, 599 here in State       │
+│ 2109Z RX      KD3CCO de NOCALL  good copy, 599 here in State     │
 │               College. rig is an FTX-1 running 20 watts into a   │
 │               vertical.                                          │
-│ 2111Z KD3CCO  W3TM de KD3CCO  copy 100 percent. this is a pi 3a+ │
-│               running fldigi headless behind a terminal i wrote. │
+│ 2111Z KD3CCO  NOCALL de KD3CCO  copy 100 percent. this is a pi   │
+│               3a+ running fldigi headless behind a terminal i    │
+│               wrote.                                             │
 │ 2113Z RX      that is excellent. what modes does it do?          │
 │ 2114Z --      mode changed to BPSK63                             │
 │                                                                  │
@@ -17,11 +18,10 @@
 │                                                                  │
 │                                                                  │
 │                                                                  │
-│                                                                  │
 │──────────────────────────────────────────────────────────────────│
-│ W3TM de KD3CCO  all the fldigi keyboard modes — psk, olivia,     │
-│ mfsk, rtty                                               [RX 71] │
-│ F1 menu  F2 tune  F5-F8 tune  ^T over  ^K hand  ^C abort         │
+│ NOCALL de KD3CCO  all the fldigi keyboard modes — psk, olivia,   │
+│ mfsk, rtty                                               [RX 73] │
+│ F1 menu   F2 tune   F5+ memory   ^T over   ^Y hand   ^C abort    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,22 +33,22 @@
 │──────────────────────────────────────────────────────────────────│
 │  rig      14.070.589  PKTUSB                                     │
 │  carrier  1500 Hz        width  63 Hz                            │
-│  S/N      18 dB                                                  │
-│  IMD      -24 dB                                                 │
+│  signal   S/N 18 dB   IMD -24 dB                                 │
 │                                                                  │
 │  quality  ███████████████████████████░░░░░░░░░░░░░░░░░  62       │
 │                                                                  │
 │  AFC on   squelch on  (5)  RSID on   TXID on   REV off           │
 │                                                                  │
-│                                                                  │
+│  decode                                                          │
+│           NOCALL DE KD3CCO GOOD COPY ON 80M RTTY                 │
 │                                                                  │
 │                                                                  │
 │                                                                  │
 │                                                                  │
 │──────────────────────────────────────────────────────────────────│
-│  ← →  carrier ±10 Hz      ↑ ↓  search signal                     │
-│  , .  VFO ±100 Hz         < >  VFO ±1 kHz                        │
-│  a AFC  s sql  r RSID  x TXID  v REV   F2/Esc back               │
+│  ← →   carrier ±10 Hz        ↑ ↓   search signal                 │
+│  ,  .   VFO ±100 Hz          <  >   VFO ±1 kHz                   │
+│  a AFC    s squelch    + - level    r RSID    x TXID    v REV    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,12 +59,12 @@
 │ MENU                                                             │
 │                                                                  │
 │  1  Mode                                                         │
-│  2  Tuning                                                       │
-│▸ 3  Radio                                                        │
+│  2  Tune Settings                                                │
+│▸ 3  Band                                                         │
 │  4  Display                                                      │
-│  5  Station                                                      │
-│  6  System                                                       │
-│                                                                  │
+│  5  Memories                                                     │
+│  6  Station                                                      │
+│  7  System                                                       │
 │                                                                  │
 │                                                                  │
 │                                                                  │

@@ -80,9 +80,12 @@ if __name__ == "__main__":
     ok.append(("fldigi connected (modem in status)", "BPSK31" in body))
     ok.append(("hint line is not truncated mid-word", "abor|" not in body and "F2 tune" in body))
 
-    typed = show("after typing an over", run(keys=["W3TM de KD3CCO  testing"]))
+    over = "NOCALL de KD3CCO  testing"
+    typed = show("after typing an over", run(keys=[over]))
     ok.append(("typed text appears in compose", "testing" in typed))
-    ok.append(("indicator counts it", "[RX 23]" in typed))
+    # Counted from the string rather than written in: the expected number
+    # changed silently when the example callsign did.
+    ok.append((f"indicator counts it ({len(over)})", f"[RX {len(over)}]" in typed))
 
     tune = show("F2 tuning screen", run(keys=["\x1bOQ"]))   # F2 in xterm
     ok.append(("tuning screen reached", "quality" in tune or "TUNING" in tune))

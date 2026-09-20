@@ -61,7 +61,7 @@ flowchart TD
     TX["TRANSMITTING<br/>radio is keyed<br/>each keystroke goes out live"]
 
     RX -->|"Ctrl-T &mdash; send the buffer, start the over"| TX
-    TX -->|"Ctrl-K &mdash; hand back"| RX
+    TX -->|"Ctrl-Y &mdash; hand back"| RX
     TX -->|"Ctrl-C &mdash; abort, drop PTT now"| RX
 ```
 
@@ -76,7 +76,7 @@ character by character, as you type it. That is the conversational part — the
 other operator watches your sentences form, typos and all. Nobody corrects
 typos in this hobby. Type on.
 
-`Ctrl-K` ends the over. fldigi finishes sending whatever is still in its buffer
+`Ctrl-Y` ends the over. fldigi finishes sending whatever is still in its buffer
 and then drops back to receive on its own — the radio does not unkey the
 instant you press it, and that is correct.
 
@@ -127,13 +127,13 @@ appear and to get used to the screen.
 enforced inside the deck, so no keystroke can key the radio while it is set.
 Nothing to do here; just check the status line.
 
-`Ctrl-I`, or `F1` → `6` → `i`, clears it when you are ready to transmit. Set
+`Ctrl-I`, or `F1` → `7` → `i`, clears it when you are ready to transmit. Set
 `INHIBIT_ON_START = no` in `cyberdeck.conf` if you would rather it came up
 live.
 
 **2. Set the mode.** `F3` → `1` for **BPSK31**. This is where the people are.
 
-**3. Set the frequency.** `F1` → `3` (Radio) → `1` for **14.070 MHz**, the 20 m
+**3. Set the frequency.** `F1` → `3` (Band) → `4` for **14.070 MHz**, the 20 m
 PSK31 watering hole. The deck sets the radio's **mode** at the same time, from
 `RIG_MODE` in `cyberdeck.conf` (default `USB`), so the sideband is not something
 to remember on each band change.
@@ -142,7 +142,7 @@ to remember on each band change.
 > where voice uses lower. This surprises people. If you are decoding nothing on
 > a band that sounds busy, check the sideband first.
 
-**4. Turn the squelch off.** `F1` → `2` (Tuning) → `s` toggles it. With squelch
+**4. Turn the squelch off.** `F1` → `2` (Tune Settings) → `s` toggles it. With squelch
 **off**, fldigi decodes the noise floor continuously and the transcript fills
 with random characters within a few seconds.
 
@@ -228,7 +228,7 @@ have to.
 
 ### How to actually tune, every time
 
-1. **Set the band once.** `F1` → `3` → `1` for 14.070. Then take your hand off
+1. **Set the band once.** `F1` → `3` → `4` for 14.070. Then take your hand off
    the VFO knob.
 2. **Turn squelch off** (`F1` → `2` → `s`) and confirm the screen fills with
    garbage. That is your proof audio is arriving. Turn it back on.
@@ -251,6 +251,20 @@ have to.
    words is the only confirmation that matters.
 6. **Leave AFC on** (`F2` → `a`). It tracks a drifting signal so you do not
    have to.
+
+**The `decode` line is the instrument that matters.** It shows the tail of
+what is being decoded, live, one line, at the bottom of the `F2` screen. It
+answers the two questions the numbers cannot:
+
+* **Is the carrier on a signal?** Noise looks like noise. Nothing looks like
+  nothing. The quality bar can sit high on something that is not text.
+* **Is the mark/space sense right?** Plausible letters that never form words
+  mean press `v`. That is the whole diagnosis, visible without leaving the
+  screen you are tuning on.
+
+**Squelch is adjusted here too** — `+` and `-`, two at a time. Setting it just
+above the noise floor is what turns fragments into copy, and doing it while
+watching the decode line is far quicker than guessing from the menu.
 
 **`F2` is for reading, not for tuning.** It shows carrier, width, S/N, IMD and
 signal quality in one place, which is useful when you want to know *how good*
@@ -281,7 +295,7 @@ you will not understand others *unless you know them*.
 
 | | |
 |---|---|
-| `de` | "from" — always precedes your own call: `W1ABC de KD3CCO` |
+| `de` | "from" — always precedes your own call: `NOCALL de KD3CCO` |
 | `k` | "go ahead, anyone" — invites any station to reply |
 | `kn` | "go ahead, *you only*" — invites the specific station, discourages others |
 | `btu` | "back to you" |
@@ -321,23 +335,23 @@ common and neither is taken literally).
 ## 7. Session two — answering a CQ
 
 Easier than calling CQ, because the other operator is expecting a reply and
-sets the pace. Turn transmit inhibit **off** first: `F1` → `6` → `i`.
+sets the pace. Turn transmit inhibit **off** first: `F1` → `7` → `i`.
 
 **1. Find a CQ.** Watch the transcript for something like:
 
 ```
-CQ CQ CQ de W1ABC W1ABC W1ABC pse k
+CQ CQ CQ de NOCALL NOCALL NOCALL pse k
 ```
 
 **2. Compose while they finish.** This is the habit from section 2. As soon as
 you see their call, start typing — nothing goes on the air yet:
 
 ```
-W1ABC de KD3CCO KD3CCO KD3CCO k
+NOCALL de KD3CCO KD3CCO KD3CCO k
 ```
 
 **3. Send it the moment they stop.** `Ctrl-T`. Your buffered text goes out as
-one block. Then `Ctrl-K` to hand back.
+one block. Then `Ctrl-Y` to hand back.
 
 Keep the first over **short**. You are establishing that you can hear each other
 and nothing more.
@@ -345,27 +359,27 @@ and nothing more.
 **4. They reply with a report.** Something like:
 
 ```
-KD3CCO de W1ABC  Thanks for the call, ur RST 579 579 in Hartford CT.
-Name here is Jim. Rig is a K3 running 30 watts to a dipole. HW? BTU KD3CCO de W1ABC kn
+KD3CCO de NOCALL  Thanks for the call, ur RST 579 579 in Hartford CT.
+Name here is Jim. Rig is a K3 running 30 watts to a dipole. HW? BTU KD3CCO de NOCALL kn
 ```
 
 **5. Your real over.** Compose it while they type. The expected content is a
 mirror of theirs — report, name, location, station:
 
 ```
-W1ABC de KD3CCO  Good evening Jim, tnx fb report. Ur RST 589 here in
+NOCALL de KD3CCO  Good evening Jim, tnx fb report. Ur RST 589 here in
 State College PA. Name is Don. Rig is a Yaesu FTX-1 at 25 watts to a
 wire antenna. First keyboard to keyboard contact for me es this deck is
 homebrew. BTU Jim de KD3CCO kn
 ```
 
-`Ctrl-T` to send, then `Ctrl-K`.
+`Ctrl-T` to send, then `Ctrl-Y`.
 
 **6. Carry on, or close.** Once the mandatory exchange is done the conversation
 is yours. When either of you is ready to finish:
 
 ```
-W1ABC de KD3CCO  Tnx fb qso Jim, hpe cuagn. 73 es gd dx. de KD3CCO sk
+NOCALL de KD3CCO  Tnx fb qso Jim, hpe cuagn. 73 es gd dx. de KD3CCO sk
 ```
 
 ---
@@ -386,7 +400,7 @@ CQ CQ CQ de KD3CCO KD3CCO KD3CCO
 CQ CQ CQ de KD3CCO KD3CCO KD3CCO pse k
 ```
 
-**3.** `Ctrl-T`, then `Ctrl-K`. Now wait — genuinely wait. Give it at least
+**3.** `Ctrl-T`, then `Ctrl-Y`. Now wait — genuinely wait. Give it at least
 fifteen to thirty seconds before calling again. Replies come slower than you
 expect, because the other operator is composing too.
 
@@ -504,12 +518,25 @@ Leave both on unless you have a reason not to.
 
 | Key | Frequency | Band | Notes |
 |---|---|---|---|
-| `1` | 14.070 | 20 m | **The main one.** Busy most daylight hours |
+| `1` | 3.580 | 80 m | Night, regional. **Where this deck made its first contacts** |
 | `2` | 7.070 | 40 m | Best in the evening and overnight |
-| `3` | 3.580 | 80 m | Night, regional |
-| `4` | 10.142 | 30 m | Digital-only band, quiet and reliable |
+| `3` | 10.142 | 30 m | Digital-only band, quiet and reliable |
+| `4` | 14.070 | 20 m | **The main one.** Busy most daylight hours |
 | `5` | 21.070 | 15 m | Daytime, needs good conditions |
 | `6` | 28.120 | 10 m | Sporadic — brilliant when open, dead otherwise |
+| `7` | 50.290 | 6 m | PSK31 calling frequency. Sporadic-E in season |
+| `8` | 144.144 | 2 m | PSK31 calling frequency; activity runs to 144.150 |
+| `9` | 432.200 | 70 cm | PSK31 calling frequency. Thin, but it is there |
+
+Listed low to high. A band this radio cannot reach is shown marked
+`(not supported)` rather than hidden, so the list does not quietly change with
+the hardware.
+
+**VHF and UHF are different in practice.** Those three are calling frequencies
+in the weak-signal SSB segments, not the busy watering holes the HF entries
+are. Activity is sparse and often arranged in advance or during a band
+opening — the radio must be in **USB**, not FM, which `RIG_MODE = PKTUSB`
+takes care of.
 
 Activity sits in the ~2 kHz **above** each of these. Park the VFO on the listed
 frequency and move the audio carrier to hunt, as in section 5.
@@ -575,30 +602,38 @@ shrinks.
 | `F3` | Mode menu |
 | `F4` | Next color scheme |
 | `Ctrl-T` | **Start the over** — send the buffer, key the radio |
-| `Ctrl-K` | **Hand back** — finish the over, return to receive |
+| `Ctrl-Y` | **Hand back** — finish the over, return to receive |
 | `Ctrl-C` | **Abort** — drop PTT immediately |
 | `Ctrl-I` | Transmit inhibit on/off — **`Tab` does this too**, see below |
+| `Ctrl-X` | Clear the transcript |
 | `Ctrl-L` | Redraw the screen |
 | `Ctrl-Q` | Quit |
 | `←` `→` | Move the cursor in the line you are typing |
 | `↑` `↓` | Recall previous overs |
 | `Home` / `End` | Start / end of the line |
-| `F5` `F6` | Carrier ∓10 Hz — **tune while watching the decode** |
-| `F7` `F8` | Search for the next signal, down / up |
+| `Ctrl-A` `Ctrl-D` | Carrier −10 / +10 Hz — **tune while watching the decode** |
+| `Ctrl-W` `Ctrl-S` | Search for the next signal, up / down |
+| `F5`–`F12` | Insert a message memory at the cursor |
+| `Ctrl-Z` | Undo the last memory insert |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Enter` | Newline — **does not send** |
 | `Backspace` | Delete from the compose buffer |
+
+The four tuning keys are not on the hint line at the bottom of the screen —
+there was not room, and they are listed in **Tune Settings** (`F1` → `2`)
+instead.
 
 ### Menu (`F1`)
 
 | Key | Submenu | Contents |
 |---|---|---|
-| `1` | Mode | `a` AUTO (RSID) · the eleven modes above · `m` for all |
-| `2` | Tuning | `a` AFC · `s` squelch · `r` RSID · `x` TXID · `v` reverse · `+`/`-` squelch level · `c` park carrier |
-| `3` | Radio | `1`–`6` band frequencies |
+| `1` | Mode | `a` AUTO (RSID) · the twelve modes above · `m` for all |
+| `2` | Tune Settings | `a` AFC · `s` squelch · `+`/`-` level · `r` RSID · `x` TXID · `v` reverse · `c` park carrier |
+| `3` | Band | `1`–`9`, 80 m up to 70 cm |
 | `4` | Display | `1` Matrix · `2` Deckard · `3` Hal · `4` Tron · `t` timestamps |
-| `5` | Station | Read-only; edit `cyberdeck.conf` |
-| `6` | System | `i` inhibit · `c` clear transcript · `q` quit |
+| `5` | Memories | The eight message memories; `Enter` edits one in place |
+| `6` | Station | Callsign, name, QTH, grid, rig — `Enter` edits one in place |
+| `7` | System | `i` inhibit · `c` clear transcript · `q` quit |
 
 **The line you type edits like a terminal.** `←` `→` move the cursor and
 typing inserts at it, `Backspace` deletes before it, `Home` and `End` jump to
@@ -610,9 +645,47 @@ None of that applies **mid-over**: once `Ctrl-T` is pressed, characters go out
 as you type them and cannot be recalled. That is how keyboard modes have always
 worked and is not a fault.
 
-**Tuning from this screen is on `F5`–`F8`**, not the arrows. The Linux console
-cannot report a modified arrow at all, so `Ctrl-←` is indistinguishable from
-`←` on the panel and the arrows had to do one job each.
+**Tuning from this screen is on `Ctrl-W` `Ctrl-A` `Ctrl-S` `Ctrl-D`** — the
+WASD cluster, under the left hand while the right stays on the text. `Ctrl-A`
+and `Ctrl-D` move the carrier ten hertz; `Ctrl-W` and `Ctrl-S` search for the
+next signal.
+
+Not `Ctrl`+arrows: the Linux console cannot report a modified arrow at all, so
+`Ctrl-←` is indistinguishable from `←` on the panel. It would have worked over
+SSH from a terminal emulator and silently failed on the deck.
+
+### Message memories
+
+`F5` to `F12` insert stored text **at the cursor**, so a memory can go into the
+middle of a line you are already composing. `Ctrl-Z` takes the last insert back
+out, cursor and all.
+
+The defaults cover a contact's shape — a CQ, a call, name and QTH, the station
+description, a sign-off:
+
+| Token | Filled in from |
+|---|---|
+| `{call}` | Callsign |
+| `{name}` | Name |
+| `{qth}` | QTH |
+| `{grid}` | Locator |
+| `{rig}` | Rig |
+
+Those come from **Station** (`F1` → `6`), which lists each field beside its
+token — so the place you look up what `{grid}` is set to is also where you
+learn that `{grid}` exists. Changing your callsign does not mean rewriting
+every memory.
+
+**To edit one:** `F1` → `5`, arrow to a slot, `Enter`. The memory opens in a
+line editor with its current text loaded: type, `←` `→` `Home` `End` to move,
+`Backspace` and `Delete`, `Ctrl-U` to clear the whole line, `Enter` to save,
+`Esc` to discard. Saving an empty line marks the slot `(empty)`.
+
+**Station fields are edited the same way**, from `F1` → `6`. Both are kept
+across restarts, and both override whatever `cyberdeck.conf` started with.
+
+Mid-over a memory is **sent immediately** rather than inserted, like any other
+typing, and cannot be undone. The far end has already seen it.
 
 **Navigating menus.** Either way works:
 
@@ -636,12 +709,16 @@ and guessing.
 
 | Key | Action | Does the radio move? |
 |---|---|---|
-| `←` `→` | Carrier ∓10 Hz | **No** |
+| `←` `→` | Carrier −10 / +10 Hz | **No** |
 | `↑` `↓` | **Search for the next signal** up or down | **No** |
-| `,` `.` | VFO ∓100 Hz | Yes |
-| `<` `>` | VFO ∓1 kHz | Yes |
+| `,` `.` | VFO −100 / +100 Hz | Yes |
+| `<` `>` | VFO −1 / +1 kHz | Yes |
 | `a` `s` `r` `x` `v` | AFC · squelch · RSID · TXID · reverse | No |
+| `+` `-` | Squelch level, 2 at a time | No |
 | `F2` or `Esc` | Back to the conversation | — |
+
+Command keys here are **case-folded**, so they work with Caps Lock on — which
+is how you will be operating on RTTY.
 
 **The third column matters and it surprises people.** `←` `→` `↑` `↓` move
 fldigi's **carrier** — where inside the received audio it listens. The radio is
@@ -724,7 +801,7 @@ trusted, so it should reconnect on its own; if not, SSH in and
 
 1. Check the status line reads `INH` — transmit starts inhibited
 2. `F3` `1` — BPSK31
-3. `F1` `3` `1` — 14.070, and set the radio to **USB**
+3. `F1` `3` `4` — 14.070, and set the radio to **USB**
 4. `F1` `2` `s` — squelch off; confirm the screen fills with noise
 5. `F1` `2` `s` — squelch back on
 6. `F2`, then `↑`/`↓` to land on a real signal; `Esc`

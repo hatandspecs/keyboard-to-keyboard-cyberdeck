@@ -26,6 +26,14 @@ CHAT, TUNE = "chat", "tune"
 
 
 
+class _Memories(dict):
+    """format_map helper: an unknown {token} is left alone rather than
+    raising, so a memory with a typo in it still inserts."""
+
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
 class Deck:
     def __init__(self, stdscr, settings):
         self.scr = stdscr
@@ -39,10 +47,18 @@ class Deck:
         self.menu = None
         self.menu_page = 0
         self.menu_sel = 0
+        # When a field is being edited in place:
+        #   {"key": "MEMORY_7" | "CALLSIGN", "title": str, "text": str,
+        #    "cursor": int}
+        self.edit = None
         self._page_keys = {}
         self.status_note = ""
         self._tx_seen = False
         self._tx_echo = ""
+        # The last of what has been decoded, for the tuning screen's preview.
+        # Held separately from the transcript because it has to survive the
+        # transcript being cleared and has to be cheap to take the tail of.
+        self._rx_tail = ""
         self.fldigi = Fldigi(url=settings["FLDIGI_URL"])
         self.session = Session(
             callsign=settings["CALLSIGN"],
@@ -92,13 +108,14 @@ class Deck:
         # its read position, and leaving the echo in place would deliver the
         # whole over in one lump the moment we returned to receive.
         #
-        # fldigi's own TX state decides this, not the session's. Ctrl-K ends
+        # fldigi's own TX state decides this, not the session's. Ctrl-Y ends
         # the over immediately but fldigi keeps sending until its buffer
         # drains, and the echo keeps arriving for that whole tail.
         text = self.fldigi.poll_rx()
         sending = self.fldigi.trx_state() != "RX"
         if text and not sending:
             self.session.receive(text)
+            self._rx_tail = (self._rx_tail + text)[-400:]
             self.scroll = 0
         elif text:
             # Our own transmission, echoed back by fldigi as it goes out.
@@ -113,7 +130,7 @@ class Deck:
             self._tx_seen = True
         elif self._tx_seen:
             # fldigi has finished draining and dropped back to receive. This
-            # is the moment the over is really over: Ctrl-K only stops adding
+            # is the moment the over is really over: Ctrl-Y only stops adding
             # to the buffer.
             self._tx_seen = False
             self._tx_echo = ""
@@ -156,7 +173,9 @@ class Deck:
             scr.refresh()
             return
 
-        if self.menu:
+        if self.edit is not None:
+            self._draw_edit(h, w)
+        elif self.menu:
             self._draw_menu(h, w)
         elif self.screen == TUNE:
             self._draw_tune(h, w)
@@ -218,6 +237,7 @@ class Deck:
             "rsid": f.rsid(),
             "txid": f.txid(),
             "reverse": f.reverse(),
+            "preview": self._rx_tail,
         }, w)
         for i, text in enumerate(rows):
             if 2 + i < h - 4:
@@ -245,11 +265,13 @@ class Deck:
             return menus.tuning_menu(f.afc(), f.squelch(), f.squelch_level(),
                                      f.rsid(), f.txid(), f.reverse())
         if m == "radio":
-            return menus.RADIO
+            return menus.band_menu(self._supported_bands())
         if m == "system":
             return menus.SYSTEM
         if m == "station":
             return menus.station_menu(self.cfg)
+        if m == "memories":
+            return menus.memories_menu(self.cfg)
         if m == "mode":
             return menus.mode_menu(f.modem(), auto=f.rsid())
         if m == "modes_all":
@@ -287,6 +309,9 @@ class Deck:
         if ch == -1:
             return True
 
+        if self.edit is not None:
+            return self._handle_edit(ch)
+
         if self.menu:
             return self._handle_menu(ch)
 
@@ -306,7 +331,7 @@ class Deck:
             if text is not None:
                 self._tx_echo = ""
                 self.fldigi.start_over(text)
-        elif ch == 11:                       # Ctrl-K
+        elif ch == 25:                       # Ctrl-Y
             if self.session.hand_back():
                 self.fldigi.hand_back()
         elif ch == 3:                        # Ctrl-C
@@ -322,18 +347,13 @@ class Deck:
             self._tx_echo = ""
         elif ch == 12:                       # Ctrl-L
             self.scr.clearok(True)
-        elif ch == 9:                        # Ctrl-I: inhibit toggle
-            self.session.inhibit(not self.session.inhibited)
-            self.fldigi.receive_only(self.session.inhibited)
+        elif ch == 9:                        # Ctrl-I, and Tab: same byte
+            self._toggle_inhibit()
+        elif ch == 24:                       # Ctrl-X
+            self._clear_transcript()
         # On the conversation screen the arrows edit the line, as they would
         # in any terminal: left and right move the cursor, up and down recall
         # what was sent before.
-        #
-        # Tuning lives on F5-F8 here rather than on Ctrl+arrows, because the
-        # Linux console cannot send a modified arrow at all — TERM=linux
-        # defines no kUP5/kLFT5, so ncurses sees a plain KEY_UP whether or not
-        # Ctrl is held. Binding it would have worked over SSH from an xterm
-        # and silently not on the panel, which is worse than not offering it.
         elif ch == curses.KEY_LEFT:
             self.session.move(-1)
         elif ch == curses.KEY_RIGHT:
@@ -346,14 +366,25 @@ class Deck:
             self.session.home()
         elif ch == curses.KEY_END:
             self.session.end()
-        elif ch == curses.KEY_F5:
+
+        # Tuning without leaving the transcript, on the WASD cluster under the
+        # left hand. NOT on Ctrl+arrows: the Linux console cannot send a
+        # modified arrow at all — TERM=linux defines no kUP5 or kLFT5, so
+        # ncurses sees a plain KEY_UP whether or not Ctrl is held. That would
+        # have worked over SSH from an xterm and silently not on the panel.
+        elif ch == 1:                        # Ctrl-A
             self.fldigi.nudge_carrier(-10)
-        elif ch == curses.KEY_F6:
+        elif ch == 4:                        # Ctrl-D
             self.fldigi.nudge_carrier(10)
-        elif ch == curses.KEY_F7:
-            self._search(self.fldigi.search_down, "down")
-        elif ch == curses.KEY_F8:
+        elif ch == 23:                       # Ctrl-W
             self._search(self.fldigi.search_up, "up")
+        elif ch == 19:                       # Ctrl-S
+            self._search(self.fldigi.search_down, "down")
+        elif ch == 26:                       # Ctrl-Z
+            if not self.session.undo():
+                self.session.note("nothing to undo")
+        elif curses.KEY_F5 <= ch <= curses.KEY_F12:
+            self._insert_memory(ch - curses.KEY_F0)
         elif ch == curses.KEY_PPAGE:
             self.scroll += 5
         elif ch == curses.KEY_NPAGE:
@@ -366,6 +397,12 @@ class Deck:
             self._typed(chr(ch))
         elif ch == 17:                       # Ctrl-Q quits
             return False
+        else:
+            # Same reasoning as the tuning screen: a key that appears dead is
+            # otherwise indistinguishable from one whose handler ran and did
+            # nothing visible. Caps Lock cost an hour that way.
+            name = curses.keyname(ch).decode(errors="replace") if ch >= 0 else "?"
+            print(f"chat: unhandled key {ch} ({name})", file=sys.stderr)
         return True
 
     # -- remembered state --------------------------------------------------
@@ -401,6 +438,16 @@ class Deck:
             return          # absent or corrupt: the configured defaults stand
         if state.get("timestamps") in ("yes", "no"):
             self.cfg["TIMESTAMPS"] = state["timestamps"]
+        for slot, text in (state.get("memories") or {}).items():
+            if slot.isdigit() and 5 <= int(slot) <= 12:
+                # A memory set on the deck wins over cyberdeck.conf's default,
+                # which is only a starting point.
+                self.cfg[f"MEMORY_{int(slot)}"] = text
+        known = {k for k, _l, _t in menus.STATION_FIELDS}
+        for field, value in (state.get("station") or {}).items():
+            if field in known:
+                self.cfg[field] = value
+        self.session.callsign = self.cfg.get("CALLSIGN") or "LOCAL"
         scheme = state.get("color")
         if scheme in colors.SCHEMES:
             self.scheme = scheme
@@ -422,6 +469,10 @@ class Deck:
             "timestamps": self.cfg["TIMESTAMPS"],
             "mode": self.fldigi.modem() if self.fldigi.connected else None,
             "carrier": self.fldigi.carrier() if self.fldigi.connected else None,
+            "memories": {str(n): self.cfg.get(f"MEMORY_{n}", "")
+                         for n in range(5, 13)},
+            "station": {k: self.cfg.get(k, "")
+                        for k, _label, _token in menus.STATION_FIELDS},
         }
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -513,7 +564,8 @@ class Deck:
 
         if m == "root":
             dest = {"1": "mode", "2": "tuning", "3": "radio",
-                    "4": "display", "5": "station", "6": "system"}.get(key)
+                    "4": "display", "5": "memories", "6": "station",
+                    "7": "system"}.get(key)
             if dest:
                 self._open_menu(dest)
             return True
@@ -579,20 +631,34 @@ class Deck:
         if m == "radio":
             hz = menus.BAND_FREQUENCIES.get(key)
             if hz:
-                self._set_vfo(hz, label=render.frequency(hz))
-                self._set_rig_mode()
+                label = next(lbl for k, lbl, _d, _h in menus.BANDS if k == key)
+                allowed = self._supported_bands()
+                if allowed is not None and label not in allowed:
+                    self.session.note(f"{label} is not supported by this radio")
+                else:
+                    self._set_vfo(hz, label=render.frequency(hz))
+                    self._set_rig_mode()
                 self._close_menu()
+            return True
+
+        if m == "memories":
+            if key.isdigit() and 1 <= int(key) <= 8:
+                slot = int(key) + 4
+                self._open_editor(f"MEMORY_{slot}", f"F{slot}")
+            return True
+
+        if m == "station":
+            if key.isdigit() and 1 <= int(key) <= len(menus.STATION_FIELDS):
+                field_key, label, _token = menus.STATION_FIELDS[int(key) - 1]
+                self._open_editor(field_key, label)
             return True
 
         if m == "system":
             if key == "i":
-                self.session.inhibit(not self.session.inhibited)
-                f.receive_only(self.session.inhibited)
+                self._toggle_inhibit()
                 self._close_menu()
             elif key == "c":
-                self.session.entries.clear()
-                f.clear_rx()
-                self.session.note("transcript cleared")
+                self._clear_transcript()
                 self._close_menu()
             elif key == "q":
                 return False
@@ -627,6 +693,113 @@ class Deck:
                           f"{render.frequency(got)}")
         return False
 
+    # -- editing a message memory in place --------------------------------
+
+    def _toggle_inhibit(self):
+        self.session.inhibit(not self.session.inhibited)
+        self.fldigi.receive_only(self.session.inhibited)
+
+    def _clear_transcript(self):
+        """Empty the transcript and fldigi's receive buffer together.
+
+        The decode preview keeps its own tail, so the tuning screen does not
+        go blank just because the conversation was cleared — they answer
+        different questions.
+        """
+        self.session.entries.clear()
+        self.fldigi.clear_rx()
+        self.scroll = 0
+        self.session.note("transcript cleared")
+
+    def _open_editor(self, key, title):
+        text = self.cfg.get(key, "") or ""
+        self.edit = {"key": key, "title": title, "text": text,
+                     "cursor": len(text)}
+
+    def _draw_edit(self, h, w):
+        e = self.edit
+        self._put(0, 0, [(f" EDIT  {e['title']}".ljust(w), "reverse")], w)
+        self._put(1, 0, render.rule(w), w)
+
+        body_h = max(1, h - 5)
+        lines, (crow, ccol) = render.compose_lines(
+            e["text"], "", w, body_h, cursor=e["cursor"])
+        for i, line in enumerate(lines):
+            self._put(2 + i, 0, line, w)
+
+        self._put(h - 3, 0, render.rule(w), w)
+        self._put(h - 2, 0, [(render.EDIT_HINT[:w - 1], "dim")], w)
+        if e["key"].startswith("MEMORY_"):
+            self._put(h - 1, 0, [(render.EDIT_TOKENS_HINT[:w - 1], "dim")], w)
+        try:
+            curses.curs_set(1)
+            self.scr.move(2 + crow, ccol)
+        except curses.error:
+            pass
+
+    def _handle_edit(self, ch):
+        e = self.edit
+        if ch == 27:                                   # Esc: discard
+            self.edit = None
+        elif ch in (10, 13, curses.KEY_ENTER):         # Enter: store
+            text = e["text"].strip()
+            self.cfg[e["key"]] = text
+            if e["key"] == "CALLSIGN":
+                # The transcript attributes our own overs by callsign, so the
+                # session has to be told rather than reading it once at start.
+                self.session.callsign = text or "LOCAL"
+            self._save_state()
+            self.session.note(f"{e['title']} "
+                              + ("cleared" if not text else "saved"))
+            self.edit = None
+        elif ch == 21:                                 # Ctrl-U: clear the line
+            e["text"], e["cursor"] = "", 0
+        elif ch in (curses.KEY_BACKSPACE, 127, 8):
+            if e["cursor"] > 0:
+                e["text"] = e["text"][:e["cursor"] - 1] + e["text"][e["cursor"]:]
+                e["cursor"] -= 1
+        elif ch == curses.KEY_DC:                      # Delete: forwards
+            e["text"] = e["text"][:e["cursor"]] + e["text"][e["cursor"] + 1:]
+        elif ch == curses.KEY_LEFT:
+            e["cursor"] = max(0, e["cursor"] - 1)
+        elif ch == curses.KEY_RIGHT:
+            e["cursor"] = min(len(e["text"]), e["cursor"] + 1)
+        elif ch == curses.KEY_HOME:
+            e["cursor"] = 0
+        elif ch == curses.KEY_END:
+            e["cursor"] = len(e["text"])
+        elif ch == 17:                                 # Ctrl-Q
+            return False
+        elif 32 <= ch < 127:
+            e["text"] = e["text"][:e["cursor"]] + chr(ch) + e["text"][e["cursor"]:]
+            e["cursor"] += 1
+        return True
+
+    def _insert_memory(self, slot):
+        """Put message memory `slot` in at the cursor.
+
+        The station's own details are substituted rather than written into
+        each memory, so changing the callsign does not mean rewriting them.
+        """
+        raw = (self.cfg.get(f"MEMORY_{slot}") or "").strip()
+        if not raw:
+            self.session.note(f"F{slot} is empty — set it from F1 5")
+            return
+        text = raw.format_map(_Memories({
+            "call": self.cfg.get("CALLSIGN", ""),
+            "name": self.cfg.get("NAME", ""),
+            "qth": self.cfg.get("QTH", ""),
+            "grid": self.cfg.get("LOCATOR", ""),
+            # {locator} kept as an alias: memories written before the token
+            # was renamed still work rather than inserting a literal brace.
+            "locator": self.cfg.get("LOCATOR", ""),
+            "rig": self.cfg.get("RIG", ""),
+        }))
+        out = self.session.insert(text)
+        if out:
+            self.fldigi.send_more(out)
+        self.scroll = 0
+
     def _search(self, fn, direction):
         """Run fldigi's signal search and say what happened.
 
@@ -644,6 +817,20 @@ class Deck:
         else:
             self.session.note(f"search {direction}: nothing found above the "
                               f"squelch; still {after} Hz")
+
+    def _supported_bands(self):
+        """Band labels this radio covers, or None for all of them.
+
+        Configured rather than probed. hamlib can report a rig's frequency
+        ranges through dump_caps, which would make this automatic — but the
+        deck has no reason to trust a range list it has never tested against,
+        and a wrong answer here silently hides a band the operator can
+        actually use.
+        """
+        raw = (self.cfg.get("RIG_BANDS") or "").strip()
+        if not raw:
+            return None
+        return {part.strip() for part in raw.split(",") if part.strip()}
 
     def _set_rig_mode(self):
         """Put the radio into the sideband digital work needs.
@@ -711,6 +898,12 @@ class Deck:
             on = not f.reverse()
             f.set_reverse(on)
             self.session.note(f"mark/space reversed {'on' if on else 'off'}")
+        elif key == "+" or key == "=":
+            # '=' too: it is the unshifted key, and squelch is adjusted often
+            # enough that reaching for shift each time is a nuisance.
+            f.set_squelch_level(min(100.0, f.squelch_level() + 2))
+        elif key == "-":
+            f.set_squelch_level(max(0.0, f.squelch_level() - 2))
         elif key == ",":
             self._set_vfo(f.frequency() - 100)
         elif key == ".":

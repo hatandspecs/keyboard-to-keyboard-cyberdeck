@@ -1,4 +1,4 @@
-"""Full-screen menus, selected by a single key (docs/design_doc.md §5.7).
+"""Full-screen menus, selected by a single key (docs/design_doc.md §5.8).
 
 No pointer, no cursor to move, no nesting deeper than two: a menu is a list of
 labeled keys and pressing one does the thing. That is the fastest interface
@@ -52,11 +52,12 @@ ROOT = {
     "title": "MENU",
     "items": [
         ("1", "Mode"),
-        ("2", "Tuning"),
-        ("3", "Radio"),
+        ("2", "Tune Settings"),
+        ("3", "Band"),
         ("4", "Display"),
-        ("5", "Station"),
-        ("6", "System"),
+        ("5", "Memories"),
+        ("6", "Station"),
+        ("7", "System"),
     ],
     "footer": "Esc back to the conversation   ↑↓ move   Enter select",
 }
@@ -83,7 +84,7 @@ def tuning_menu(afc, squelch, level, rsid, txid, reverse=False):
         return "ON " if v else "off"
 
     return {
-        "title": "TUNING",
+        "title": "TUNE SETTINGS",
         "items": [
             ("a", f"AFC         {onoff(afc)}"),
             ("s", f"Squelch     {onoff(squelch)}"),
@@ -93,51 +94,100 @@ def tuning_menu(afc, squelch, level, rsid, txid, reverse=False):
             ("x", f"TXID        {onoff(txid)}   send one before our overs"),
             ("v", f"Reverse     {onoff(reverse)}   mark/space sense, for RTTY"),
             ("c", "Park carrier at the configured offset"),
+            (" ", ""),
+            (" ", "From the conversation screen, without coming here:"),
+            (" ", "  Ctrl-A / Ctrl-D   carrier -10 / +10 Hz"),
+            (" ", "  Ctrl-W / Ctrl-S   search for a signal, up / down"),
         ],
         "footer": "Esc back   ↑↓ move   Enter select   F2 live tuning",
     }
 
-RADIO = {
-    "title": "RADIO",
-    "items": [
-        ("1", "14.070  20 m"),
-        ("2", "7.070   40 m"),
-        ("3", "3.580   80 m"),
-        ("4", "10.142  30 m"),
-        ("5", "21.070  15 m"),
-        ("6", "28.120  10 m"),
-    ],
-    "footer": "Esc back   ↑↓ move   Enter select   sets VFO and mode",
-}
+# Low to high. The HF entries are the long-standing PSK31 watering holes; the
+# VHF and UHF ones are the PSK31 calling frequencies — 6 m 50.290, 2 m 144.144
+# (activity runs 144.144-144.150), 70 cm 432.200.
+BANDS = (
+    ("1", "80 m", "3.580", 3_580_000),
+    ("2", "40 m", "7.070", 7_070_000),
+    ("3", "30 m", "10.142", 10_142_000),
+    ("4", "20 m", "14.070", 14_070_000),
+    ("5", "15 m", "21.070", 21_070_000),
+    ("6", "10 m", "28.120", 28_120_000),
+    ("7", "6 m", "50.290", 50_290_000),
+    ("8", "2 m", "144.144", 144_144_000),
+    ("9", "70 cm", "432.200", 432_200_000),
+)
 
-BAND_FREQUENCIES = {
-    "1": 14_070_000, "2": 7_070_000, "3": 3_580_000,
-    "4": 10_142_000, "5": 21_070_000, "6": 28_120_000,
-}
+BAND_FREQUENCIES = {key: hz for key, _label, _display, hz in BANDS}
+
+
+def band_menu(supported=None):
+    """The band list, marking what this radio cannot reach.
+
+    `supported` is a set of band labels, or None meaning every band listed.
+    A band the radio does not cover is shown rather than hidden: knowing the
+    deck knows about 70 cm, and that this radio will not do it, is more useful
+    than a list that quietly varies with the hardware.
+    """
+    items = []
+    for key, label, display, _hz in BANDS:
+        if supported is not None and label not in supported:
+            items.append((key, f"{display:<8} {label:<6} (not supported)"))
+        else:
+            items.append((key, f"{display:<8} {label}"))
+    return {"title": "BAND", "items": items,
+            "footer": "Esc back   \u2191\u2193 move   Enter select"}
 
 SYSTEM = {
     "title": "SYSTEM",
     "items": [
-        ("i", "Transmit inhibit on/off"),
-        ("c", "Clear the transcript"),
-        ("q", "Quit"),
+        ("i", "Transmit inhibit on/off      Ctrl-I  (also Tab)"),
+        ("c", "Clear the transcript         Ctrl-X"),
+        ("q", "Quit                         Ctrl-Q"),
     ],
     "footer": "Esc back   ↑↓ move   Enter select",
 }
 
 
+def memories_menu(settings):
+    """The eight message memories, and which F-key each sits on.
+
+    Choosing one opens it for editing in place. An empty slot is marked so
+    that a deleted memory is obviously deleted rather than looking like a
+    rendering fault.
+    """
+    items = []
+    for slot in range(5, 13):
+        text = (settings.get(f"MEMORY_{slot}") or "").strip()
+        items.append((str(slot - 4), f"F{slot}  {text if text else '(empty)'}"))
+    return {"title": "MESSAGE MEMORIES", "items": items,
+            "footer": "Esc back   \u2191\u2193 move   Enter edit"}
+
+
+# The station fields, in menu order: key, label, and the token that stands
+# for it inside a message memory.
+STATION_FIELDS = (
+    ("CALLSIGN", "Callsign", "{call}"),
+    ("NAME", "Name", "{name}"),
+    ("QTH", "QTH", "{qth}"),
+    ("LOCATOR", "Locator", "{grid}"),
+    ("RIG", "Rig", "{rig}"),
+)
+
+
 def station_menu(settings):
-    """Read-only: what this station calls itself."""
-    return {
-        "title": "STATION",
-        "items": [
-            (" ", f"Callsign  {settings.get('CALLSIGN') or '(not set)'}"),
-            (" ", f"Name      {settings.get('NAME') or '-'}"),
-            (" ", f"QTH       {settings.get('QTH') or '-'}"),
-            (" ", f"Locator   {settings.get('LOCATOR') or '-'}"),
-        ],
-        "footer": "Esc  back      edit these in cyberdeck.conf",
-    }
+    """What this station calls itself, and the token for each field.
+
+    The tokens are shown because this is where an operator looks when writing
+    a memory: knowing that {qth} exists is most useful at the moment you are
+    reading what QTH is set to.
+    """
+    items = []
+    width = max(len(f"{l} {t}") for _k, l, t in STATION_FIELDS)
+    for i, (key, label, token) in enumerate(STATION_FIELDS, start=1):
+        value = settings.get(key) or "(not set)"
+        items.append((str(i), f"{label} {token}".ljust(width) + f" : {value}"))
+    return {"title": "STATION", "items": items,
+            "footer": "Esc back   \u2191\u2193 move   Enter edit"}
 
 
 def mode_menu(current, extra=None, auto=False):

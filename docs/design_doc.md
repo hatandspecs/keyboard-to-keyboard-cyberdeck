@@ -13,7 +13,7 @@ digital modes.
 a bonded Bluetooth keyboard, fldigi under Xvfb, rig control in both directions,
 and two RTTY contacts to its name — **N3QE** and **K4ZW**, 80 m, 2026-09-19.
 
-Nine modules and six test files, **137 checks**, all passing against a live
+Nine modules and six test files, **197 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`).
 `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
 application through a pseudo-terminal and read the screen back with a terminal
@@ -264,7 +264,7 @@ The cycle:
 |---|---|---|
 | Compose while receiving | — | Text accumulates in the buffer. Nothing is transmitted. `Enter` inserts a newline; it does not send |
 | Start the over | `Ctrl-T` | `text.add_tx` sends the buffer to fldigi, `main.tx` keys the rig. Typing continues to go out live, character by character |
-| Hand back | `Ctrl-K` | Appends fldigi's inline `^r` control, which drops to receive once the buffer has drained rather than cutting it off |
+| Hand back | `Ctrl-Y` | Appends fldigi's inline `^r` control, which drops to receive once the buffer has drained rather than cutting it off |
 | Abort | `Ctrl-C` | `main.abort`, immediately |
 
 The live-typing half of step 2 is the thing that makes this keyboard-to-keyboard
@@ -325,12 +325,40 @@ completion and with the transient line promoted to a real entry; C is removing
 the `_append` from `Session.start_over()` and `Session.type()` and writing the
 echo through a `sent()` method instead.
 
-**How the end of an over is known.** Not `Ctrl-K` — that only stops adding to
+**How the end of an over is known.** Not `Ctrl-Y` — that only stops adding to
 the buffer, and fldigi keeps transmitting until it drains. The signal is
 fldigi's own `main.get_trx_state` returning to `RX`, which is also what gates
 the echo handling. The transcript marks it `sent`.
 
-### 5.6 Key bindings
+### 5.6 Message memories
+
+`F5` to `F12` insert stored text at the cursor. `Ctrl-Z` removes the last
+insert and restores the cursor with it.
+
+**Why at the cursor rather than appended.** A memory is usually part of an
+over, not the whole of it — a callsign dropped into a sentence, a station
+description added after a greeting. Appending would make the operator retype
+around it.
+
+**Why `{call}` rather than the callsign.** Memories are substituted from the
+station settings at insert time, so changing `CALLSIGN` does not mean editing
+eight stored messages. An unknown token is left alone rather than raising: a
+memory with a typo in it still inserts, which is better than a key that does
+nothing.
+
+**Why there is no text-entry screen.** Setting a memory stores whatever is in
+the compose buffer. The operator types the message the ordinary way — with the
+line editing, the history recall and the transcript visible — looks at it, and
+then puts it in a slot. Building a second, worse editor inside a menu to do
+the same job would be the wrong trade on a 66-column screen.
+
+Memories are runtime state: `cyberdeck.conf` provides the starting set, and
+anything stored on the deck overrides it and persists (§11).
+
+Mid-over an insert is **sent**, not buffered, exactly as typing is — and
+therefore cannot be undone. `undo()` refuses rather than pretending.
+
+### 5.7 Key bindings
 
 | Key | Action |
 |---|---|
@@ -338,9 +366,17 @@ the echo handling. The transcript marks it `sent`.
 | `F2` | **Toggle chat screen / tuning screen** |
 | `F3` | Mode picker |
 | `F4` | Cycle color scheme |
+| `F5`–`F12` | Insert message memory 5-12 at the cursor |
 | `Ctrl-T` | Start the over |
-| `Ctrl-K` | Hand back — append `^r`, drop to receive when the buffer drains |
+| `Ctrl-Y` | Hand back — append `^r`, drop to receive when the buffer drains |
 | `Ctrl-C` | Abort transmit immediately |
+| `Ctrl-Z` | Undo the last memory insert |
+| `Ctrl-A` `Ctrl-D` | Carrier −10 / +10 Hz |
+| `Ctrl-W` `Ctrl-S` | Search for the next signal, up / down |
+| `Ctrl-I` | Transmit inhibit — **also `Tab`**, the same byte |
+| `Ctrl-X` | Clear the transcript |
+| `←` `→` `Home` `End` | Move within the composed line |
+| `↑` `↓` | Recall previously sent overs |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-L` | Redraw |
 | `Esc` | Close any panel; from the tuning screen, back to chat |
@@ -349,30 +385,55 @@ the echo handling. The transcript marks it `sent`.
 section 8: on a 66-column panel a tuning display worth reading does not fit
 alongside a conversation worth reading.
 
-Function keys beyond `F4` are unassigned and are the natural home for macros
-(question 8).
+**Tuning on `Ctrl-W/A/S/D`, not on `Ctrl`+arrows.** The Linux console cannot
+report a modified arrow at all — `TERM=linux` defines no `kUP5` or `kLFT5`, so
+ncurses sees a plain `KEY_UP` whether or not Ctrl is held. That binding would
+have worked over SSH from a terminal emulator and silently failed on the
+panel, which is worse than not offering it. The WASD cluster sits under the
+left hand while the right stays on the text.
 
-### 5.7 Menu tree
+**These four are not on the hint line.** There is not room at 66 columns for
+everything, and they are listed in Tune Settings (`F1` → `2`) instead —
+beside the settings they relate to.
+
+**Command keys are case-folded.** RTTY is Baudot and has no lowercase, so
+every RTTY operator works with Caps Lock on; a command key that stops working
+in the mode the deck is most used for is not an edge case. §14 records the
+evening this cost.
+
+### 5.8 Menu tree
 
 ```mermaid
 flowchart LR
-  F1["F1"] --> M1["Mode"]
-  F1 --> M2["Tuning defaults"]
-  F1 --> M3["Radio"]
-  F1 --> M4["Display"]
-  F1 --> M5["Station"]
-  F1 --> M6["Log"]
-  F1 --> M7["System"]
-  M1 --> M1a["PSK / RTTY / Olivia<br/>MFSK / Contestia<br/>THOR / DominoEX / Hell"]
-  M2 --> M2a["Default carrier, AFC,<br/>squelch level, RSID"]
-  M3 --> M3a["Frequency entry<br/>Band presets, sideband"]
-  M4 --> M4a["Color: Matrix / Deckard<br/>Hal / Tron<br/>Font size, timestamps, scrollback"]
-  M5 --> M5a["Callsign, name, QTH, locator"]
-  M6 --> M6a["Save transcript<br/>Recent QSOs"]
-  M7 --> M7a["Restart fldigi<br/>Shutdown, reboot, about"]
+  F1["F1"] --> M1["1 Mode"]
+  F1 --> M2["2 Tune Settings"]
+  F1 --> M3["3 Band"]
+  F1 --> M4["4 Display"]
+  F1 --> M5["5 Memories"]
+  F1 --> M6["6 Station"]
+  F1 --> M7["7 System"]
+  M1 --> M1a["AUTO (RSID)<br/>PSK / RTTY / Olivia / MFSK<br/>Contestia / THOR / DominoEX<br/>Hell / CW · m for all"]
+  M2 --> M2a["AFC, squelch and level,<br/>RSID, TXID, reverse,<br/>park carrier"]
+  M3 --> M3a["80 m to 70 cm, low to high<br/>unreachable bands marked"]
+  M4 --> M4a["Color: Matrix / Deckard<br/>Hal / Tron · timestamps"]
+  M5 --> M5a["Eight memories,<br/>edited in place"]
+  M6 --> M6a["Callsign, name, QTH,<br/>grid, rig — edited in place"]
+  M7 --> M7a["Transmit inhibit<br/>Clear transcript · Quit"]
 ```
 
-Menus are full-screen overlays with single-key selection, not nested pointers.
+Menus are full-screen overlays, not nested pointers. Every entry takes a
+single key, and the arrows walk a `▸` marker with `Enter` to choose — both
+paths dispatch through the same code, so they cannot drift apart.
+
+**Two menus edit in place** rather than sending the operator to a config file:
+Memories and Station both open the same line editor on `Enter`. That editor is
+the deck's only text-entry surface outside the compose line, and it is
+deliberately the same shape: a cursor, `Ctrl-U` to clear, `Enter` to keep,
+`Esc` to discard.
+
+**Station shows each field beside its token** — `Callsign {call} : KD3CCO` —
+because the moment an operator wants to know that `{grid}` exists is the
+moment they are looking at what the grid is set to.
 
 ![The menu, F1](screens/menu.png)
 
@@ -380,7 +441,7 @@ Menus are full-screen overlays with single-key selection, not nested pointers.
 
 ![The full modem list](screens/all-modes.png)
 
-### 5.8 Color schemes
+### 5.9 Color schemes
 
 Four, each a single hue on black:
 
@@ -722,6 +783,60 @@ this decode* — a question the transcript alone does not answer.
 
 ![The tuning screen, F2](screens/tuning.png)
 
+### 8.3 Band presets
+
+Nine, low to high, from 80 m to 70 cm. The HF entries are the long-standing
+PSK31 watering holes; 6 m, 2 m and 70 cm are the PSK31 calling frequencies —
+50.290, 144.144 and 432.200.
+
+**A band the radio cannot reach is shown, marked, not hidden.** A list that
+silently varies with the hardware leaves the operator unable to tell "this
+deck does not know about 70 cm" from "this radio cannot do 70 cm". Which band
+belongs to which is `RIG_BANDS` in `cyberdeck.conf`; empty means all of them,
+which is right for the FTX-1.
+
+**It is configured rather than probed.** hamlib can report a rig's frequency
+ranges through `dump_caps`, which would make this automatic. It is not used:
+the parsing is untested against real hardware, and a wrong answer here hides a
+band the operator can actually use — a failure that looks like the deck being
+broken rather than like a bad guess.
+
+The VHF and UHF entries sit in the weak-signal SSB segments, so the radio must
+be in USB rather than FM. `RIG_MODE = PKTUSB` covers it, which is one more
+reason that setting exists.
+
+### 8.4 The decode preview
+
+The screen's last two lines are a tail of what is being decoded, live. Text
+fills the lower row; when it reaches the edge the row above takes what came
+before and the lower one starts again empty.
+
+Two lines rather than one because half a line of words is not a result. A full
+line either reads as English or it does not, and that judgement is the whole
+purpose of the display.
+
+It exists because the numbers on this screen cannot answer the two questions
+tuning actually poses. Signal quality and S/N say a signal is present and
+strong; they say nothing about whether it is being *demodulated correctly*. On
+RTTY through a DATA-U path the mark and space tones arrive swapped, and the
+result is a confident quality bar over a stream of plausible letters that never
+form words — indistinguishable, by the numbers, from good copy.
+
+So the instrument for that is the text itself:
+
+| What the line shows | What it means |
+|---|---|
+| Words | Tuned, and the sense is right |
+| Plausible letters, no words | Press `v` — mark/space reversed |
+| Noise, or nothing | The carrier is not on a signal; search again |
+
+This also closes the loop on squelch, which `+` and `-` adjust from this screen
+for the same reason: setting it just above the noise floor is what separates
+fragments from copy, and it is far quicker done while watching the decode than
+guessed at from a menu. Both were learned on the air before they were built —
+§14 records the first two contacts, where exactly these two adjustments were
+what made them possible.
+
 The quality bar refreshes several times a second. Almost everything here is a
 readout from fldigi or `rigctld`, with one exception worth naming:
 **signal width is partly computed by the deck**, because `modem.get_bandwidth`
@@ -799,21 +914,42 @@ CALLSIGN = KD3CCO
 NAME = Don
 QTH = State College, PA
 LOCATOR = FN10cs
+RIG = FTX-1
 
 DEFAULT_MODE = BPSK31
 DEFAULT_CARRIER = 1500
 COLOR = matrix          # matrix | deckard | hal | tron
+RIG_MODE = PKTUSB       # the radio's data mode; USB for plain sideband
+RIG_BANDS =             # empty: this radio covers every band listed
 
-RIG_MODEL = 1035
-CAT_DEVICE = /dev/ttyUSB0
-CAT_BAUD = 38400
-PTT_DEVICE = /dev/ttyACM0
-AUDIO_DEVICE = plughw:1,0
+INHIBIT_ON_START = yes
+RSID_ON_START = yes
+REMEMBER_STATE = yes
+STATE_PATH = ~/.local/state/cyberdeck.json
+
+MEMORY_5 = CQ CQ CQ DE {call} {call} {call} PSE K
+MEMORY_6 = DE {call} {call} K
+...                     # through MEMORY_12
 
 TX_TIMEOUT = 180
 SCROLLBACK = 2000
 POLL_MS = 200
 ```
+
+**The file is a starting point, not the source of truth.** Message memories
+and station fields are editable on the deck, and what is set there is written
+to `STATE_PATH` and wins over this file on the next start. The mode, carrier,
+color scheme and timestamp setting are remembered the same way.
+
+That is a deliberate shift. The deck began as a machine configured from a
+laptop and reflashed to change anything; it is becoming one an operator
+configures from its own keyboard. `cyberdeck.conf` describes how a *freshly
+flashed* deck should behave.
+
+**Transmit inhibit is the exception and does not persist.** It re-asserts on
+every power-on regardless of how it was left. A deck that comes out of a bag
+able to key a radio attached to an unknown antenna is the failure this
+prevents, and convenience does not get a vote.
 
 ### 11.1 Repository layout
 
@@ -922,7 +1058,7 @@ from the deck's own panel and Bluetooth keyboard at 5 W. What that exercised,
 end to end and for the first time:
 
 * The over model against a real correspondent: compose while receiving,
-  `Ctrl-T`, `Ctrl-K`.
+  `Ctrl-T`, `Ctrl-Y`.
 * PTT through `rigctld`, and `Ctrl-C` against a live carrier.
 * The `F2` tuning screen, used to find and hold a signal.
 * The **mark/space reverse toggle**, which RTTY through a DATA-U path
@@ -933,6 +1069,40 @@ end to end and for the first time:
 
 The operating technique that worked is the one §8.1 arrived at: set the band,
 leave the VFO alone, and tune with the carrier.
+
+**Built after the first contacts, because operating showed what was missing:**
+
+Everything in this group came from an evening on the air rather than from
+design. It is recorded together because the pattern is the point: none of it
+was obvious from a desk.
+
+* **A decode preview on the tuning screen.** Signal quality and S/N say a
+  signal is present and strong; they say nothing about whether it is being
+  demodulated correctly. On RTTY through a DATA-U path the tones arrive
+  swapped and the result is a confident quality bar over plausible letters
+  that never form words. The text itself is the only instrument for that
+  (§8.4).
+
+* **Squelch adjustment where the tuning happens.** Setting it just above the
+  noise floor is what separated fragments from copy in both contacts, and
+  doing it from a menu while the signal is elsewhere is guesswork.
+
+* **Message memories, edited on the deck.** A contest exchange is repetitive
+  and typing it at 66 columns under time pressure is not the point of the
+  project. They insert at the cursor rather than appending, because a memory
+  is usually part of an over rather than the whole of it (§5.6).
+
+* **Line editing and history recall.** The compose line began as
+  append-and-backspace. A callsign mistyped three characters back cost the
+  whole line.
+
+* **Case-folded command keys.** RTTY is Baudot and has no lowercase, so every
+  RTTY operator works with Caps Lock on — exactly when the tuning controls are
+  wanted. The deck received `65 (A)`, matched nothing, and the keys looked
+  dead while the code was correct. Found by logging unhandled keys rather than
+  by reasoning, which is now permanent on both screens: a key that appears
+  dead is otherwise indistinguishable from one whose handler ran and did
+  nothing visible.
 
 **Discovered on the deck, and not anticipated anywhere in this document:**
 
@@ -970,7 +1140,7 @@ leave the VFO alone, and tune with the carrier.
   Draining rather than skipping matters: `poll_rx()` advances its read
   position, so leaving the echo in place would deliver the whole over in one
   lump on return to receive. The gate is fldigi's `main.get_trx_state`, not
-  the session's state — `Ctrl-K` ends the over immediately while fldigi keeps
+  the session's state — `Ctrl-Y` ends the over immediately while fldigi keeps
   sending until its buffer drains, and the echo arrives for that whole tail.
 
 * **Command keys must be case-folded.** Every letter binding on the tuning
@@ -1013,7 +1183,7 @@ leave the VFO alone, and tune with the carrier.
 | Decision | Resolution | Section |
 |---|---|---|
 | Display | 5" capacitive touch DSI, 800×480, at 12×24 giving a 66×20 grid | 3.3 |
-| Transmit model | Over-based: compose while receiving, `Ctrl-T` to start, `Ctrl-K` to hand back. `Enter` is a newline, not a send | 5.4 |
+| Transmit model | Over-based: compose while receiving, `Ctrl-T` to start, `Ctrl-Y` to hand back. `Enter` is a newline, not a send | 5.4 |
 | Tuning | The radio's own waterfall for RF; a parked audio carrier with AFC and RSID for the modem. No software spectrum | 8 |
 | Color schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.8 |
 | Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
@@ -1131,6 +1301,68 @@ the keyboard bonded and fldigi decoding.
    washed yellow. The corrected version has **not yet been seen on the panel**;
    the PNG screenshots cannot confirm it, since they draw from the hex values
    directly.
+
+**Planned, and gated on two cheap hardware checks:**
+
+The deck is configured from its own keyboard now — memories, station, mode,
+band. The two things still needing SSH are **adding a Bluetooth keyboard** and
+**WiFi**, and both can be brought on-deck.
+
+5. **Pair a keyboard without SSH.** The crux is not the interface: LE bonding
+   requires a passkey *displayed by the host and typed on the keyboard being
+   paired*, which is why `NoInputNoOutput` failed and `KeyboardDisplay`
+   worked. The deck has a screen and the new keyboard types — SSH was never
+   fundamentally needed, only convenient at 2am.
+
+   With nothing bonded, no selection UI is needed either: scan for a device
+   advertising HID, show its name, show the passkey. The user's only input is
+   the passkey, on the device being paired. Adding a second keyboard while one
+   works is a menu item using the same code.
+
+   Not through `bluetoothctl` as a subprocess — each invocation registers an
+   agent that dies with the process, which is the bug that made the original
+   pairing script report success on a keyboard that could not type. The BlueZ
+   D-Bus API delivers the passkey as a method call, which is the whole reason
+   to use it.
+
+6. **WiFi on the deck**, second because adding a network needs a keyboard to
+   type a PSK. `nmcli radio wifi off` persists across reboots, so the deck
+   must *explicitly* enable WiFi at startup rather than relying on a default —
+   and that rule is not a convenience. It is what makes the radio safe to
+   switch off at all: with WiFi off and the keyboard flat, there is no SSH, no
+   keyboard, and a radio in the only USB port. Power-cycling is the recovery,
+   and it only works if WiFi always returns.
+
+7. **Touch**, for transcript scrolling during a contact and as a failover
+   input. A vertical drag on content is a gesture, not a pointer, so it does
+   not contradict §1's premise the way a touch *menu* would.
+
+**Privilege is the design question**, not the interface. Pairing, forgetting a
+bond and toggling WiFi are all privileged, and the terminal runs as `deck` —
+which it should continue to do. A small root helper with a Unix socket
+exposing exactly `scan`, `pair`, `forget`, `list`, `wifi-add`, `wifi-toggle`
+keeps the attack surface to verbs the project controls; polkit rules are less
+code and easier to write too broadly.
+
+**The two checks, before any of it:**
+
+```bash
+ls -l /dev/input/by-path/ ; grep -A5 -i goodix /proc/bus/input/devices
+```
+
+Does the panel's touchscreen enumerate at all? The overlay supports it and
+Waveshare documents `disable_touchscreen=1`, implying it is on by default —
+but it has never been looked at, and §14 has a poor record on assumptions of
+that shape.
+
+```bash
+python3 -c "import gi; gi.require_version('Gio','2.0'); from gi.repository import Gio;
+b=Gio.bus_get_sync(Gio.BusType.SYSTEM); print('system bus OK')"
+busctl --system list | grep -i bluez
+```
+
+Can an unprivileged process reach BlueZ over D-Bus on this image? That answer
+decides between the helper and polkit.
 
 **Worth doing when convenient:**
 

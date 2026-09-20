@@ -52,13 +52,13 @@ def scripted_session():
         e = Entry(who, text, when=base + mins * 60)
         e.closed = True
         s.entries.append(e)
-    at(0, "RX", "KD3CCO de W3TM  good copy, 599 here in State College. "
+    at(0, "RX", "KD3CCO de NOCALL  good copy, 599 here in State College. "
                 "rig is an FTX-1 running 20 watts into a vertical.")
-    at(2, "KD3CCO", "W3TM de KD3CCO  copy 100 percent. this is a pi 3a+ "
+    at(2, "KD3CCO", "NOCALL de KD3CCO  copy 100 percent. this is a pi 3a+ "
                     "running fldigi headless behind a terminal i wrote.")
     at(4, "RX", "that is excellent. what modes does it do?")
     at(5, "--", "mode changed to BPSK63")
-    for c in "W3TM de KD3CCO  all the fldigi keyboard modes — psk, olivia, mfsk, rtty":
+    for c in "NOCALL de KD3CCO  all the fldigi keyboard modes — psk, olivia, mfsk, rtty":
         s.type(c)
     return s
 
@@ -82,9 +82,10 @@ def tuning_screen(width=W, height=H):
         "rig_mode": "PKTUSB",
         "carrier": 1500,
         "width": render.mode_bandwidth("BPSK63", 0),
-        "snr": "18 dB",
-        "imd": "-24 dB",
+        "snr": "S/N 18 dB",
+        "imd": "IMD -24 dB",
         "quality": 62,
+        "preview": "NOCALL DE KD3CCO  GOOD COPY ON 80M RTTY",
         "afc": True,
         "squelch": True,
         "squelch_level": 5,

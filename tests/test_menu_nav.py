@@ -8,21 +8,20 @@ _PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SRC = os.path.join(_PROJECT, "src")
 sys.path.insert(0, _SRC)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harness import check, equals, report
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_screen import run, show
 from fldigi_client import Fldigi
 
 F1, F2, F3, F4 = "\x1bOP", "\x1bOQ", "\x1bOR", "\x1bOS"
-FAIL = []
-def check(name, cond, detail=""):
-    print(f"  {'PASS' if cond else 'FAIL'}  {name}" + ("" if cond else f"\n          {detail}"))
-    if not cond: FAIL.append(name)
 
 f = Fldigi()
 f.set_modem("BPSK31")
 
 body = show("F1 root menu", run(keys=[F1]))
 check("root menu opens", "MENU" in body)
-check("its items are listed", all(w in body for w in ("Mode", "Tuning", "Radio", "Display", "Station", "System")))
+check("its items are listed", all(w in body for w in ("Mode", "Tune Settings", "Band", "Display",
+                                           "Memories", "Station", "System")))
 
 body = show("F1 then 4 -> Display", run(keys=[F1, "4"]))
 check("display menu reached", "DISPLAY" in body)
@@ -59,4 +58,4 @@ after = f.frequency()
 check("VFO moved to 14.070", abs(after - 14_070_000) < 1000, f"{before} -> {after}")
 
 print()
-print("ALL PASS" if not FAIL else f"{len(FAIL)} FAILED: {FAIL}")
+sys.exit(report())

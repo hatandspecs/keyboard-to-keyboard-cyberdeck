@@ -148,9 +148,9 @@ def mode_bandwidth(name, reported=0):
 # every time a control was added, and the published screenshot quietly stopped
 # matching the deck.
 TUNE_HINTS = (
-    "  \u2190 \u2192  carrier \u00b110 Hz      \u2191 \u2193  search signal",
-    "  , .  VFO \u00b1100 Hz         < >  VFO \u00b11 kHz",
-    "  a AFC  s sql  r RSID  x TXID  v REV   F2/Esc back",
+    "  \u2190 \u2192   carrier \u00b110 Hz        \u2191 \u2193   search signal",
+    "  ,  .   VFO \u00b1100 Hz          <  >   VFO \u00b11 kHz",
+    "  a AFC    s squelch    + - level    r RSID    x TXID    v REV",
 )
 
 
@@ -171,8 +171,13 @@ def tune_rows(fields, width):
         f"  rig      {fields.get('freq', '')}  {fields.get('rig_mode', '')}",
         f"  carrier  {fields.get('carrier', 0)} Hz        width  "
         f"{fields.get('width', '')}",
-        f"  S/N      {(fields.get('snr') or '').strip()}",
-        f"  IMD      {(fields.get('imd') or '').strip()}",
+        # Not labelled here. fldigi's two status strings carry their own
+        # labels and change meaning with the mode: under PSK they read
+        # "S/N 6 dB" and "IMD ---", under RTTY the first becomes "45 /170" —
+        # baud and shift — and the second becomes the S/N. Prefixing them
+        # printed "S/N   S/N 6 dB" and lied outright on RTTY.
+        f"  signal   {(fields.get('snr') or '').strip()}"
+        f"   {(fields.get('imd') or '').strip()}",
         "",
         f"  quality  {'\u2588' * filled}{'\u2591' * (bar_w - filled)}  {q:.0f}",
         "",
@@ -181,7 +186,53 @@ def tune_rows(fields, width):
         f"  RSID {onoff(fields.get('rsid'))}"
         f"  TXID {onoff(fields.get('txid'))}"
         f"  REV {onoff(fields.get('reverse'), pad=False)}",
-    ]
+        "",
+    ] + [f"  {'decode' if i == 0 else '      '}   {line}"
+         for i, line in enumerate(
+             preview_lines(fields.get("preview", ""), width - 12, 2))]
+
+
+def preview_lines(text, width, lines=2):
+    """The tail of what is being decoded, as `lines` rows.
+
+    Text fills the bottom row; when it reaches the right-hand edge the row
+    above takes what came before and the bottom starts again empty. That is
+    just the last N lines of the wrapped text, but it reads as a two-line
+    window scrolling under the operator, which is what makes it usable while
+    tuning: a full line of words is a clear result, half a line is not.
+    """
+    flat = _flatten(text)
+    if not flat:
+        return [""] * (lines - 1) + ["\u2014"]
+    wrapped = _wrap(flat, max(1, width)) or [""]
+    out = wrapped[-lines:]
+    return [""] * (lines - len(out)) + out
+
+
+def _flatten(text):
+    """One line of printable characters, runs of whitespace collapsed."""
+    printable = "".join(c if 32 <= ord(c) < 127 else " " for c in (text or ""))
+    return " ".join(printable.split())
+
+
+def preview(text, width):
+    """The tail of what is being decoded, as one line.
+
+    This is the instrument for two questions the numbers cannot answer: is the
+    carrier actually on a signal, and — on RTTY — is the mark/space sense
+    right. Plausible letters that never form words mean `v`; noise means the
+    carrier is not on anything. Both are invisible in S/N and the quality bar.
+    """
+    if width < 4:
+        return ""
+    flat = _flatten(text)
+    return flat[-width:] if flat else "\u2014"
+
+
+EDIT_HINT = "  Enter save   Esc cancel   ^U clear the line"
+# Only shown when editing a message memory: the tokens mean nothing when the
+# field being edited is the callsign they would be filled in from.
+EDIT_TOKENS_HINT = "  {call} {name} {qth} {grid} {rig} are filled in when inserted"
 
 
 def status_line(fields, width):
@@ -287,14 +338,15 @@ def plain(segments):
 # and 50 at the largest one, so the line has to shed bindings rather than be
 # truncated mid-word — a hint that reads "^C abor" is worse than no hint.
 _HINT_TIERS = (
-    " F1 menu  F2 tune  F5/F6 carrier  F7/F8 search  ^T over  ^K hand"
-    "  ^C abort",
-    " F1 menu  F2 tune  F5-F8 tune  ^T over  ^K hand  ^C abort",
-    " F1 menu  F2 tune  F5-F8 tune  ^T over  ^K hand",
-    " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^K hand",
-    " F2 tune  F3 mode  F4 color  ^T over  ^K hand",
-    " F2 tune  ^T over  ^K hand  ^C abort",
-    " ^T over  ^K hand  ^C abort",
+    " F1 menu    F2 tune    F5+ memory    ^T over    ^Y hand    ^C abort",
+    " F1 menu   F2 tune   F5+ memory   ^T over   ^Y hand   ^C abort",
+    " F1 menu  F2 tune  F5+ memory  ^T over  ^Y hand  ^C abort",
+    " F1 menu  F2 tune  ^T over  ^Y hand  ^C abort",
+    " F1 menu  F2 tune  ^T over  ^Y hand",
+    " F1 menu  F2 tune  F3 mode  F4 color  ^T over  ^Y hand",
+    " F2 tune  F3 mode  F4 color  ^T over  ^Y hand",
+    " F2 tune  ^T over  ^Y hand  ^C abort",
+    " ^T over  ^Y hand  ^C abort",
     " ^T/^K/^C",
 )
 

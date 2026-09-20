@@ -27,6 +27,10 @@ SCHEMA = {
     "NAME":            ("", str, "operator name, for macros"),
     "QTH":             ("", str, "location, for macros"),
     "LOCATOR":         ("", str, "Maidenhead grid square"),
+    "RIG":             ("", str, "radio, for memories: {rig}"),
+    "RIG_BANDS":       ("", str, "bands this radio covers, comma separated, "
+                                 "e.g. '80 m, 40 m, 20 m'. Empty means all of "
+                                 "them — the FTX-1 covers every band listed"),
 
     "DEFAULT_MODE":    ("BPSK31", str, "modem selected at startup"),
     "DEFAULT_CARRIER": (1500, int, "audio carrier parked here, in Hz"),
@@ -49,6 +53,19 @@ SCHEMA = {
                                     "and timestamps across restarts"),
     "STATE_PATH":      ("~/.local/state/cyberdeck.json", str,
                         "where that is kept; delete it to start clean"),
+
+    # Message memories, inserted at the cursor by F5-F12. {call}, {name},
+    # {qth}, {grid} and {rig} are replaced from the station settings above, so
+    # a memory does not have to be rewritten when the callsign changes.
+    # Memories edited on the deck are written to STATE_PATH and override these.
+    "MEMORY_5":  ("CQ CQ CQ DE {call} {call} {call} PSE K", str, "F5"),
+    "MEMORY_6":  ("DE {call} {call} K", str, "F6"),
+    "MEMORY_7":  ("NAME HR IS {name} {name}, QTH {qth} {qth}. HW? BTU", str, "F7"),
+    "MEMORY_8":  ("RIG IS {rig} RUNNING 5 W TO A WIRE. ", str, "F8"),
+    "MEMORY_9":  ("TNX FB QSO. 73 ES GD DX. DE {call} SK", str, "F9"),
+    "MEMORY_10": ("", str, "F10"),
+    "MEMORY_11": ("", str, "F11"),
+    "MEMORY_12": ("", str, "F12"),
 }
 
 COLORS = ("matrix", "deckard", "hal", "tron")

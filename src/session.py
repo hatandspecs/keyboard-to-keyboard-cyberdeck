@@ -7,7 +7,7 @@ else with it.
 The transmit model is the over-based one settled in docs/design_doc.md §5.4, which
 is fldigi's norm and HF's norm and is not what intuition suggests:
 
-    compose while receiving  ->  Ctrl-T starts the over  ->  Ctrl-K hands back
+    compose while receiving  ->  Ctrl-T starts the over  ->  Ctrl-Y hands back
 
 Enter inserts a newline into the buffer. It does not transmit. Sending a line
 at a time would key the rig dozens of times per QSO, and every turnaround
@@ -49,6 +49,7 @@ class Session:
         self.cursor = 0
         self.history = []          # previously sent overs, newest first
         self._recall = None        # position while browsing history
+        self._undo = []            # (compose, cursor) before each insert
         self._pending = ""         # what was being typed before browsing
         self.state = RX
         self.tx_timeout = tx_timeout
@@ -132,6 +133,34 @@ class Session:
         return False
 
     # -- line editing ------------------------------------------------------
+
+    def insert(self, text):
+        """Put text in at the cursor, as a message memory does.
+
+        Mid-over there is no cursor and nothing can be taken back: the text is
+        appended and sent, exactly as typing does. While receiving it goes in
+        at the cursor and the previous state is remembered, so undo() can take
+        it back out.
+        """
+        if not text:
+            return ""
+        if self.state == TX:
+            out, self.compose, self.cursor = self.compose + text, "", 0
+            self._append(self.callsign, out)
+            return out
+        self._undo.append((self.compose, self.cursor))
+        del self._undo[:-20]
+        self.compose = self.compose[:self.cursor] + text + self.compose[self.cursor:]
+        self.cursor += len(text)
+        return ""
+
+    def undo(self):
+        """Take back the last insert. Only meaningful while receiving — once
+        an over is running the far end has already seen it."""
+        if self.state != RX or not self._undo:
+            return False
+        self.compose, self.cursor = self._undo.pop()
+        return True
 
     def move(self, delta):
         """Move the cursor within the composed line. True if it moved."""

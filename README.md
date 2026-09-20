@@ -31,7 +31,7 @@ deliberately: a true blue on black is close to unreadable as body text.
 * Conversational keyboard-to-keyboard QSOs in fldigi's digital modes — PSK,
   RTTY, Olivia, MFSK, Contestia, THOR, DominoEX, Feld Hell.
 * An **over-based** transmit model, which is fldigi's norm and HF's norm:
-  compose while receiving, `Ctrl-T` to start the over, `Ctrl-K` to hand back.
+  compose while receiving, `Ctrl-T` to start the over, `Ctrl-Y` to hand back.
   `Enter` inserts a newline; it does not send.
 * Mode switching, carrier tuning and rig control from the keyboard.
 * Four monochrome color schemes, switchable at runtime.
@@ -67,19 +67,34 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | `F2` | Toggle the chat and tuning screens |
 | `F3` | Mode picker, including **AUTO (RSID)** |
 | `F4` | Cycle the color scheme |
-| `←` `→` | Carrier ∓10 Hz — works on both screens |
-| `↑` `↓` | Search for the next signal — works on both screens |
+| `←` `→` `↑` `↓` | Edit the line: cursor, and recall previous overs |
+| `Ctrl-A` `Ctrl-D` | Carrier −10 / +10 Hz, without leaving the transcript |
+| `Ctrl-W` `Ctrl-S` | Search for the next signal, up / down |
+| `F5`–`F12` | Insert a message memory at the cursor; `Ctrl-Z` undoes it |
 | `Ctrl-T` | Start the over — send the buffer and key the rig |
-| `Ctrl-K` | Hand back — drop to receive when the buffer drains |
+| `Ctrl-Y` | Hand back — drop to receive when the buffer drains |
 | `Ctrl-C` | Abort transmit immediately |
 | `Ctrl-I` | Toggle transmit inhibit |
+| `Ctrl-X` | Clear the transcript |
+| `Ctrl-L` | Redraw the screen |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-Q` | Quit |
 | `Esc` | Close a menu |
 
 Menus take arrow keys as well as their single-key shortcuts: `↑` `↓` move a
 `▸` marker, `Enter` chooses. Transmit starts **inhibited** at every power-on;
-`Ctrl-I` arms it.
+`Ctrl-I` arms it. Command keys are case-folded, so they work with Caps Lock on
+— which is how RTTY is operated, since Baudot has no lowercase.
+
+| `F1` | |
+|---|---|
+| `1` Mode | Twelve modes plus **AUTO (RSID)** and the full list |
+| `2` Tune Settings | AFC, squelch and level, RSID, TXID, reverse, park carrier |
+| `3` Band | 80 m to 70 cm, low to high |
+| `4` Display | The four color schemes, timestamps |
+| `5` Memories | Eight message memories, edited in place |
+| `6` Station | Callsign, name, QTH, grid, rig — edited in place |
+| `7` System | Transmit inhibit, clear transcript, quit |
 
 `Ctrl-I` and `Tab` are the same byte — ASCII 9 — so `Tab` also toggles the
 inhibit. Watch the status line if you hit it by accident.
@@ -123,7 +138,7 @@ Nothing else in the repository reaches the deck.
 | [`src/render.py`](src/render.py) | Layout as pure functions, so it can be tested at any width |
 | [`src/menus.py`](src/menus.py) | Menu structure and rendering |
 | [`src/colors.py`](src/colors.py) | The four schemes, console palette and ANSI fallback |
-| [`src/config.py`](src/config.py) | `cyberdeck.conf` — the station's own settings |
+| [`src/config.py`](src/config.py) | `cyberdeck.conf` — the station's own settings, message memories, remembered state |
 | [`src/rigctld_client.py`](src/rigctld_client.py) | Unused. Documents a hamlib bug and a raw-CAT workaround |
 | [`tools/build_deck_image.sh`](tools/build_deck_image.sh) | Builds and flashes the Pi's SD card |
 | [`tools/configure_fldigi.py`](tools/configure_fldigi.py) | Sets fldigi's audio and rig control without its GUI |
@@ -275,7 +290,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-137 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
+197 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
 on functions in isolation.
@@ -310,8 +325,11 @@ Working end to end:
 * The Bluetooth keyboard, after a one-time manual bonding (see below).
 * fldigi 4.2.06 under Xvfb, driven over XML-RPC. Receive proven on real
   signals; transmit proven by the two contacts above.
-* The over model in use: compose while receiving, `Ctrl-T` to send, `Ctrl-K`
+* The over model in use: compose while receiving, `Ctrl-T` to send, `Ctrl-Y`
   to hand back, `Ctrl-C` verified to drop a live carrier.
+* Line editing with history recall, eight message memories with token
+  substitution, and station fields editable on the deck — no SSH, no config
+  file, and both kept across restarts.
 * **Rig control, reads and writes.** Frequency and mode track the radio, and
   the band presets and the tuning screen's VFO keys move the dial — with
   hamlib 4.7.2 built from source and rig model 1051. See below.

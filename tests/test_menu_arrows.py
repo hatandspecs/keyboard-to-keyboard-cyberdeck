@@ -14,22 +14,20 @@ _PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SRC = os.path.join(_PROJECT, "src")
 sys.path.insert(0, _SRC)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harness import check, equals, report
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_screen import run, show
 from fldigi_client import Fldigi
 
 F1, F3 = "\x1bOP", "\x1bOR"
 UP, DOWN, ENTER, ESC = "\x1bOA", "\x1bOB", "\r", "\x1b"
-FAIL = []
-def check(name, cond, detail=""):
-    print(f"  {'PASS' if cond else 'FAIL'}  {name}" + ("" if cond else f"\n          {detail}"))
-    if not cond: FAIL.append(name)
 
 body = show("F1, then Down Down", run(keys=[F1, DOWN, DOWN]))
 check("root menu still open after arrows", "MENU" in body)
 
 print("\n-- Down x2 then Enter should reach the third item, Radio --")
 body = show("F1 Down Down Enter", run(keys=[F1, DOWN, DOWN, ENTER]))
-check("landed on RADIO", "RADIO" in body, body[:400])
+check("landed on BAND", "BAND" in body, body[:400])
 
 print("\n-- Enter on the first item reaches Mode --")
 body = show("F1 Enter", run(keys=[F1, ENTER]))
@@ -48,4 +46,119 @@ print("\n-- arrows still leave the single-key shortcuts working --")
 body = show("F3 then 4 (RTTY)", run(keys=[F3, "4"], settle=1.5))
 check("fldigi on RTTY", Fldigi().modem() == "RTTY", Fldigi().modem())
 
-print("\nALL PASS" if not FAIL else f"\nFAILED: {FAIL}")
+
+print("\n-- message memories are edited in place --")
+CTRL_U, ENTER = "\x15", "\r"
+body = show("F1 5 opens the list", run(keys=[F1, "5"], settle=1.3))
+check("the list names every slot", all(f"F{n}" in body for n in range(5, 13)), body[:300])
+check("empty slots are marked", "(empty)" in body, body[:300])
+
+body = show("F1 5 3 edits F7", run(keys=[F1, "5", "3"], settle=1.4))
+check("the editor opens on the chosen slot", "EDIT  F7" in body, body[:200])
+check("and loads its current text", "NAME HR IS" in body, body[:200])
+
+body = show("clear and save leaves it empty",
+            run(keys=[F1, "5", "3", CTRL_U, ENTER], settle=1.6))
+check("back on the list", "MESSAGE MEMORIES" in body, body[:200])
+check("F7 is now empty", "F7  (empty)" in body, body[:400])
+
+body = show("type and save stores it",
+            run(keys=[F1, "5", "6", CTRL_U] + list("TEST MEMORY") + [ENTER], settle=1.8))
+check("F10 holds the new text", "F10  TEST MEMORY" in body, body[:400])
+
+body = show("Esc discards", run(keys=[F1, "5", "2", CTRL_U] + list("XXX") + ["\x1b"], settle=1.8))
+check("F6 is untouched", "F6  DE {call} {call} K" in body, body[:400])
+
+
+print("\n-- the station fields are editable, and show their tokens --")
+body = show("F1 6 — station", run(keys=[F1, "6"], settle=1.3))
+check("every field carries its token",
+      all(t in body for t in ("{call}", "{name}", "{qth}", "{grid}", "{rig}")), body[:400])
+check("and its current value", "KD3CCO" in body, body[:400])
+
+body = show("F1 6 2 — edit Name", run(keys=[F1, "6", "2"], settle=1.4))
+check("the editor names the field", "EDIT  Name" in body, body[:200])
+check("no memory-token hint here",
+      "filled in when inserted" not in body, body[-200:])
+
+body = show("editing a memory does show the token hint",
+            run(keys=[F1, "5", "1"], settle=1.4))
+check("token hint present for a memory",
+      "filled in when inserted" in body, body[-200:])
+
+body = show("change Name and save",
+            run(keys=[F1, "6", "2", CTRL_U] + list("DONALD") + [ENTER], settle=1.8))
+check("the station list shows the new value", "DONALD" in body, body[:400])
+
+print("\n-- the renamed menu entries --")
+body = show("F1 root", run(keys=[F1], settle=1.2))
+check("Tuning is now Tune Settings", "Tune Settings" in body, body[:300])
+check("Radio is now Band", "Band" in body and "Radio" not in body, body[:300])
+
+
+print("\n-- the band list runs low to high and marks what the rig cannot do --")
+import menus
+labels = [lbl for _k, lbl, _d, _h in menus.BANDS]
+freqs = [hz for _k, _l, _d, hz in menus.BANDS]
+check("nine bands", len(menus.BANDS) == 9, labels)
+check("ordered low to high", freqs == sorted(freqs), freqs)
+check("starts at 80 m", labels[0] == "80 m", labels[0])
+check("ends at 70 cm", labels[-1] == "70 cm", labels[-1])
+check("VHF and UHF are the PSK31 calling frequencies",
+      dict(zip(labels, freqs))["6 m"] == 50_290_000
+      and dict(zip(labels, freqs))["2 m"] == 144_144_000
+      and dict(zip(labels, freqs))["70 cm"] == 432_200_000,
+      dict(zip(labels, freqs)))
+
+hf_only = menus.band_menu({"80 m", "40 m", "30 m", "20 m", "15 m", "10 m"})
+marked = [lbl for _k, lbl in hf_only["items"] if "not supported" in lbl]
+check("an HF-only rig marks the three VHF/UHF entries", len(marked) == 3, marked)
+check("and leaves the HF ones unmarked",
+      sum("not supported" in lbl for _k, lbl in hf_only["items"]) == 3, hf_only["items"])
+check("no radio restriction means nothing is marked",
+      not any("not supported" in lbl for _k, lbl in menus.band_menu()["items"]),
+      menus.band_menu()["items"])
+
+body = show("F1 3 — the band list", run(keys=[F1, "3"], settle=1.3))
+check("titled BAND", "BAND" in body, body[:200])
+check("shows 70 cm", "432.200" in body, body[:400])
+
+
+print("\n-- the ^WASD note lives in Tune Settings, not on the main screen --")
+body = show("conversation screen", run(keys=[], settle=1.3))
+check("the hint line no longer mentions ^WASD", "^WASD" not in body, body[-120:])
+check("but still offers the menu and memories",
+      "F1 menu" in body and "F5+ memory" in body, body[-120:])
+
+body = show("F1 2 — tune settings", run(keys=[F1, "2"], settle=1.4))
+check("the note is here instead", "Ctrl-A / Ctrl-D" in body, body[:500])
+check("and names the search keys", "Ctrl-W / Ctrl-S" in body, body[:500])
+
+tune = menus.tuning_menu(True, True, 30, True, False, False)
+check("the note rows cannot be selected",
+      len(menus.selectable(tune)) == 8, menus.selectable(tune))
+
+
+print("\n-- Ctrl-Y hands back, not Ctrl-K --")
+body = show("hint line", run(keys=[], settle=1.2))
+check("the hint offers ^Y", "^Y hand" in body, body[-120:])
+check("and no longer ^K", "^K hand" not in body, body[-120:])
+
+
+print("\n-- system hotkeys work outside the menu, and are advertised in it --")
+CTRL_X, CTRL_I = "\x18", "\x09"
+body = show("F1 7 — system", run(keys=[F1, "7"], settle=1.3))
+check("the inhibit hotkey is shown", "Ctrl-I" in body, body[:400])
+check("the Tab collision is named", "also Tab" in body, body[:400])
+check("the clear hotkey is shown", "Ctrl-X" in body, body[:400])
+check("quit too", "Ctrl-Q" in body, body[:400])
+
+body = show("Ctrl-X clears", run(keys=[CTRL_X], settle=1.6))
+check("the transcript is emptied", "transcript cleared" in body, body[:300])
+check("and the startup notes are gone", "fldigi 4.2" not in body, body[:300])
+
+body = show("Ctrl-I arms transmit", run(keys=[CTRL_I], settle=1.4))
+check("INH clears from the status line", " INH " not in body, body[:120])
+check("and it is recorded", "transmit enabled" in body, body[:400])
+
+sys.exit(report())

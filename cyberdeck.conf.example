@@ -10,6 +10,7 @@ CALLSIGN = KD3CCO
 NAME = Don
 QTH = State College, PA
 LOCATOR = FN10cs
+RIG = FTX-1
 
 # --- Operating defaults ---
 DEFAULT_MODE = BPSK31

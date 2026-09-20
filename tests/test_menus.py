@@ -7,21 +7,19 @@ import sys
 _PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _SRC = os.path.join(_PROJECT, "src")
 sys.path.insert(0, _SRC)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harness import check, equals, report
 import menus, render
 from render import plain
 from fldigi_client import Fldigi
 
-FAIL = []
-def check(name, cond, detail=""):
-    print(f"  {'PASS' if cond else 'FAIL'}  {name}" + ("" if cond else f"\n          {detail}"))
-    if not cond: FAIL.append(name)
 
 GRIDS = [(66, 20), (80, 24), (50, 15), (100, 30)]
 
 print("-- every menu fits every grid --")
 for name, menu in [("root", menus.ROOT), ("display", menus.DISPLAY),
                    ("tuning", menus.tuning_menu(True, False, 5.0, True, True)),
-                   ("radio", menus.RADIO),
+                   ("radio", menus.band_menu()),
                    ("system", menus.SYSTEM),
                    ("station", menus.station_menu({"CALLSIGN": "KD3CCO", "NAME": "Don"})),
                    ("mode", menus.mode_menu("BPSK31"))]:
@@ -65,4 +63,4 @@ for l in menus.render(menu, 66, 20):
     if t.strip(): print(f"    |{t}|")
 
 print()
-print("ALL PASS" if not FAIL else f"{len(FAIL)} FAILED: {FAIL}")
+sys.exit(report())
