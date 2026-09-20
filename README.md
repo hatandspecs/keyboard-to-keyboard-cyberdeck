@@ -283,18 +283,23 @@ Working end to end:
 * The Bluetooth keyboard, after a one-time manual bonding (see below).
 * fldigi 4.2.06 under Xvfb, driven over XML-RPC; audio decoding confirmed by
   the squelch-off noise test.
-* Rig control **reads**: frequency, mode and signal figures track the radio.
+* **Rig control, reads and writes.** Frequency and mode track the radio, and
+  the band presets and the tuning screen's VFO keys move the dial — with
+  hamlib 4.7.2 built from source and rig model 1051. See below.
 
 **Known limitations**
 
-* **The deck cannot set the radio's frequency.** Hamlib 4.6.2, which is what
-  Raspberry Pi OS Trixie ships, builds a malformed Yaesu frequency command for
-  the FT-991 model — `FA` plus eight digits where the FTX-1's CAT manual
-  specifies nine, zero-padded. The radio discards it silently. Reads are
-  unaffected, which is what made it hard to find. Writing `FA014075000;` to the
-  port by hand moves the VFO immediately. Hamlib 4.6.5 builds the command
-  correctly, so the fix is a hamlib upgrade; `rigctld_client.py` documents the
-  bug and carries a workaround that is **not currently wired in**.
+* **Hamlib has to be built from source**, and the first boot does it. Raspberry
+  Pi OS Trixie ships 4.6.2, which has no FTX-1 backend at all; every model that
+  *does* read this radio sends a frequency command one digit short of what it
+  requires, and the radio discards it without an error — so the deck displays
+  the right frequency while being unable to change it ([Hamlib
+  #2219](https://github.com/Hamlib/Hamlib/issues/2219)). Hamlib 4.7.1 added a
+  native FTX-1 backend, **model 1051**, still marked Beta. The build takes
+  20–30 minutes on a 3A+, which is why a first boot is long.
+* **`rigctld_client.py` is dead code**, kept only until the Beta backend has
+  some hours on it. It documents the bug and carries a raw-CAT workaround that
+  is no longer wired in.
 * **First-time Bluetooth bonding is manual.** An LE keyboard will not deliver
   input over an unbonded link, and bonding needs a passkey displayed by the Pi
   and typed on the keyboard — which cannot be automated. `cyberdeck-btpair`

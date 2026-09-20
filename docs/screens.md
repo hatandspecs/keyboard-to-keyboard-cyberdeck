@@ -97,8 +97,8 @@
 │  9  CONTESTIA                                                    │
 │  0  DOMEX8                                                       │
 │  h  FELDHELL                                                     │
+│  c  CW                                                           │
 │  m  more modes ...                                               │
-│                                                                  │
 │                                                                  │
 │                                                                  │
 │──────────────────────────────────────────────────────────────────│
@@ -112,19 +112,19 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │ ALL MODES  page 1/2                                              │
 │                                                                  │
-│  a BPSK31                         n OLIVIA-16/500                │
-│  b BPSK63                         o OLIVIA-32/1K                 │
-│  c BPSK125                        p MFSK16                       │
-│  d BPSK250                        q MFSK8                        │
-│  e BPSK500                        r MFSK32                       │
-│  f QPSK31                         s MFSK64                       │
-│  g QPSK63                         t CONTESTIA                    │
-│  h QPSK125                        u THOR22                       │
-│  i QPSK250                        v THOR16                       │
-│  j RTTY                           w THOR25                       │
-│  k OLIVIA-8/250                   x THOR50x1                     │
-│  l OLIVIA-8/500                   y DOMEX8                       │
-│  m OLIVIA-4/250                   z DOMEX4                       │
+│  a CW                             n OLIVIA-4/250                 │
+│  b BPSK31                         o OLIVIA-16/500                │
+│  c BPSK63                         p OLIVIA-32/1K                 │
+│  d BPSK125                        q MFSK16                       │
+│  e BPSK250                        r MFSK8                        │
+│  f BPSK500                        s MFSK32                       │
+│  g QPSK31                         t MFSK64                       │
+│  h QPSK63                         u CONTESTIA                    │
+│  i QPSK125                        v THOR22                       │
+│  j QPSK250                        w THOR16                       │
+│  k RTTY                           x THOR25                       │
+│  l OLIVIA-8/250                   y THOR50x1                     │
+│  m OLIVIA-8/500                   z DOMEX8                       │
 │                                                                  │
 │                                                                  │
 │                                                                  │

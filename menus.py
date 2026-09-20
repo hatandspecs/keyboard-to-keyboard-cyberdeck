@@ -24,10 +24,15 @@ MODE_TIER1 = [
     ("9", "CONTESTIA"),
     ("0", "DOMEX8"),
     ("h", "FELDHELL"),
+    ("c", "CW"),
 ]
 
 # Which modems count as conversational, for the "more" list.
-_KEYBOARD_FAMILIES = ("BPSK", "QPSK", "PSK", "RTTY", "OLIVIA", "MFSK",
+# "CW" is in this list because CW is keyboard-to-keyboard operating — it is the
+# original form of it — and fldigi offers it as a modem like any other. Leaving
+# it out made it unreachable from the deck at all, not merely absent from the
+# first tier, while the full list claimed to be complete.
+_KEYBOARD_FAMILIES = ("CW", "BPSK", "QPSK", "PSK", "RTTY", "OLIVIA", "MFSK",
                       "CONTESTIA", "THOR", "DOMEX", "FELDHELL", "HELL")
 
 PAGE_KEYS = "abcdefghijklmnopqrstuvwxyz"

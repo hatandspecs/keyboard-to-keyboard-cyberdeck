@@ -417,9 +417,30 @@ list of everything fldigi supports, paged.
 | `9` | CONTESTIA | Olivia's lighter relative |
 | `0` | DOMEX8 | DominoEX — handles ionospheric wobble well |
 | `h` | FELDHELL | Hellschreiber. Paints letters as images. Nobody needs it; everybody should try it once |
+| `c` | **CW** | Morse, sent and decoded by fldigi. See the caveat below |
 
 The practical rule: **BPSK31 unless you have a reason**. If the path is too
 noisy for it, try Olivia. If you have a strong signal and want speed, BPSK63.
+
+### A caveat about CW
+
+CW is keyboard-to-keyboard operating — the original form of it — and fldigi
+will send and decode it. Two things to know before using it here.
+
+**fldigi's CW decoder is not a trained ear.** It copes with a clean, steady,
+machine-sent signal and struggles with hand-sent fists, QSB and QRM, which is
+most of what is actually on the air. Sending is reliable; copying is the weak
+half.
+
+**The radio stays in its data mode.** The deck sets `RIG_MODE` at startup and
+on band change, not when you change modem, so picking CW here does not put the
+FTX-1 into CW mode. fldigi generates an audio tone that goes out through the
+data path as a sideband signal. That works and is legitimate, but it is not the
+same as the radio's own CW mode: you are not using its CW filters, and your
+signal occupies the sideband path rather than the narrow one.
+
+If you want real CW, set the radio to CW yourself, or set
+`RIG_MODE = CW` in `cyberdeck.conf` for a session spent there.
 
 ### Automatic mode switching
 

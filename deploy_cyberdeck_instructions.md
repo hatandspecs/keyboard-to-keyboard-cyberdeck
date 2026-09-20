@@ -825,26 +825,57 @@ Setting the regulatory domain is **not** enough on its own — `modprobe.d` and
 
 ### The deck reads the radio's frequency but cannot change it
 
-Known, and not your configuration. Hamlib 4.6.2 builds a malformed Yaesu
-frequency command: `FA` plus eight digits, where the FTX-1 needs nine,
-zero-padded. The radio discards it silently.
+The first-boot hamlib build did not complete. Check all three parts, because
+each is individually necessary and each fails silently on its own:
 
-Confirm in one step — this writes the documented form straight to the port:
+```bash
+LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/rigctl --version
+LD_LIBRARY_PATH=/usr/local/lib /usr/local/bin/rigctl -l | grep -i ftx
+systemctl cat cyberdeck-rigctld | grep -E "ExecStart|LD_LIBRARY"
+```
+
+You want `4.7.2`, a line reading `1051 ... FTX-1 ... Beta`, and a unit that
+runs `/usr/local/bin/rigctld -m 1051` with `LD_LIBRARY_PATH` set.
+
+**`rigctl --version` reporting 4.6.2 from the `/usr/local` binary is the
+trap.** `ldconfig` is not enough: the loader's cache lists the multiarch
+directory ahead of `/usr/local/lib`, so a correctly built `rigctl` links the
+old library and offers no FTX-1 model. Everything looks installed.
+
+```bash
+journalctl -u cyberdeck-firstboot | grep -i hamlib
+```
+
+To confirm the radio and cabling are fine regardless, write the documented
+command straight to the port — nine digits, zero-padded:
 
 ```bash
 sudo systemctl stop cyberdeck-rigctld
-stty -F /dev/ttyUSB0 38400 raw -echo
-printf 'FA014075000;' > /dev/ttyUSB0
+CAT=$(ls /dev/serial/by-id/*CP2105*if00* )
+stty -F "$CAT" 38400 raw -echo
+printf 'FA014075000;' > "$CAT"
 sudo systemctl start cyberdeck-rigctld
 ```
 
-If the dial moves, CAT is healthy and the fault is hamlib's formatter. See
-design_doc.md §7.1. Check for a newer package before considering a source
-build:
+If the dial moves, CAT is healthy and the fault is in hamlib. See
+design_doc.md §7.1.
+
+### The radio was power-cycled and rig control stopped
+
+Power-cycling the FTX-1 detaches the CP2105, and the kernel hands out the next
+free device numbers on re-attach — CAT moves from `ttyUSB0` to `ttyUSB1`.
+
+`deck.conf` uses `/dev/serial/by-id/` paths, which survive this. If yours still
+name `/dev/ttyUSB0`, that is why rig control died, and the service will be
+inactive rather than failed because of its `ConditionPathExists`:
 
 ```bash
-apt-cache policy libhamlib-utils libhamlib4
+ls -l /dev/serial/by-id/
+systemctl status cyberdeck-rigctld --no-pager | head -5
 ```
+
+The `-if00` suffix is CAT and `-if01` is the second UART. The serial number in
+the path belongs to one specific radio.
 
 ### No keyboard, no screen, no SSH
 
@@ -875,14 +906,14 @@ first principles.
 | Bluetooth keyboard | After a one-time manual bond — see phase 3 |
 | fldigi on a 3A+'s 512 MB | Runs under Xvfb with the radio attached; fldigi 4.2.06 on Trixie |
 | Receive audio | Confirmed by the squelch-off noise test |
-| Rig control, reads | Frequency, mode and signal figures track the radio |
+| Rig control, reads and writes | Frequency and mode track the radio; band presets and the VFO keys move the dial. Needs hamlib 4.7.2 and model 1051 |
 
 **Not tested:**
 
 | | |
 |---|---|
 | **Transmit, at all** | No PTT, no over, no abort against a live carrier. Every transmit path is unit-tested and none has keyed a radio |
-| **Rig control, writes** | Broken on the shipped hamlib — see §7.1 and the troubleshooting entry above |
+
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
 | `OSC P` palette redefinition | The true-amber path on this panel is unconfirmed |
 | A contact | The deck has never been on the air |

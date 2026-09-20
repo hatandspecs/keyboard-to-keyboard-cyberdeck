@@ -158,7 +158,13 @@ ConditionPathExists=${CFG[DECK_CAT_DEVICE]:-/dev/ttyUSB0}
 [Service]
 Type=simple
 User=${user}
-ExecStart=/usr/bin/rigctld -m ${CFG[DECK_RIG_MODEL]:-1035} \\
+# /usr/local first: Raspberry Pi OS Trixie ships hamlib 4.6.2, which has no
+# FTX-1 backend and builds a malformed frequency command for every model that
+# does read this radio. 4.7.2 is built from source into /usr/local, and the
+# loader's cache lists the multiarch directory ahead of /usr/local/lib — so
+# without this the new binary silently links the old library.
+Environment=LD_LIBRARY_PATH=/usr/local/lib
+ExecStart=${CFG[DECK_RIGCTLD]:-/usr/local/bin/rigctld} -m ${CFG[DECK_RIG_MODEL]:-1051} \\
   -r ${CFG[DECK_CAT_DEVICE]:-/dev/ttyUSB0} -s ${CFG[DECK_CAT_BAUD]:-38400} \\
   -p ${CFG[DECK_PTT_DEVICE]:-/dev/ttyACM0} -P RIG -t 4532
 Restart=on-failure
@@ -185,9 +191,16 @@ WorkingDirectory=${dir}
 TTYPath=/dev/tty1
 StandardInput=tty
 StandardOutput=tty
+# stderr to the journal, NOT to the tty. Without this it inherits
+# StandardOutput, so a traceback paints onto the panel and is wiped by the
+# restart three seconds later — the crash is visible for an instant and
+# unrecoverable afterwards. A terminal that owns the console has nowhere to
+# leave a message except the journal.
+StandardError=journal
 TTYReset=yes
 TTYVHangup=yes
 Environment=TERM=linux
+Environment=PYTHONUNBUFFERED=1
 ExecStartPre=-/usr/bin/setfont ${CFG[DECK_CONSOLE_FONT]:-Uni3-TerminusBold24x12}
 ExecStart=/usr/bin/python3 ${dir}/cyberdeck.py
 Restart=always
@@ -655,6 +668,48 @@ apt-get update -y || exit 1
 apt-get install -y --no-install-recommends \\
   fldigi xvfb libhamlib-utils python3 console-setup fonts-terminus \\
   kbd bluez alsa-utils || exit 1
+
+# --- hamlib from source ------------------------------------------------
+#
+# Raspberry Pi OS Trixie ships hamlib 4.6.2, which has NO FTX-1 backend, and
+# every model that does read this radio (FT-991, FT-710, FTDX-10) sends a
+# frequency command one digit short of what the radio requires. The radio
+# discards it silently — reads keep working, so the deck displays the right
+# frequency while being unable to change it. Hamlib issue #2219.
+#
+# 4.7.1 added a native FTX-1 backend (model 1051). Installing it from apt is
+# not an option, so it is built here. This adds 20-30 minutes to a first boot
+# on a 3A+ and is worth every minute of it: the alternative is a deck whose
+# rig control looks healthy and is not.
+#
+# Set DECK_HAMLIB_VERSION empty in deck.conf to skip and use the packaged one.
+HAMLIB_VER="${CFG[DECK_HAMLIB_VERSION]:-4.7.2}"
+HAMLIB_SHA="${CFG[DECK_HAMLIB_SHA256]:-ae1fcf2dbc80ea0786ea8f047b09399c3f7737d1930442f61a031708ed33e88f}"
+if [[ -n "\$HAMLIB_VER" ]]; then
+  echo "Building hamlib \${HAMLIB_VER} (this takes a while)..."
+  apt-get install -y --no-install-recommends \\
+    build-essential pkg-config libusb-1.0-0-dev || exit 1
+  cd /usr/local/src || exit 1
+  tarball="hamlib-\${HAMLIB_VER}.tar.gz"
+  if curl -fLo "\$tarball" \\
+      "https://github.com/Hamlib/Hamlib/releases/download/\${HAMLIB_VER}/\${tarball}"; then
+    # Refuse to build something that is not what upstream published.
+    if echo "\${HAMLIB_SHA}  \${tarball}" | sha256sum -c --status; then
+      tar xf "\$tarball" && cd "hamlib-\${HAMLIB_VER}" \\
+        && ./configure --prefix=/usr/local --with-python-binding=no \\
+        && make -j2 \\
+        && make install \\
+        && echo /usr/local/lib > /etc/ld.so.conf.d/usrlocal.conf \\
+        && ldconfig \\
+        && echo "hamlib \${HAMLIB_VER} installed to /usr/local"
+    else
+      echo "hamlib checksum mismatch - NOT building; rig control will be limited" >&2
+    fi
+  else
+    echo "hamlib download failed - skipping; rig control will be limited" >&2
+  fi
+  cd / || true
+fi
 
 HOME_DIR="\$(getent passwd ${user} | cut -d: -f6)"
 if [[ -f /etc/cyberdeck/authorized_keys && -n "\$HOME_DIR" ]]; then

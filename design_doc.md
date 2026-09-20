@@ -19,8 +19,10 @@ application through a pseudo-terminal and read the screen back with a terminal
 emulator, so the tests assert on what the deck looks like rather than on
 functions in isolation.
 
-One thing blocks normal operation: **hamlib 4.6.2 cannot set this radio's
-frequency** (§7.1). Reads are unaffected, which is what made it hard to find.
+Rig control is complete: the band presets and the tuning keys move the radio's
+VFO. That needed hamlib 4.7.2 built from source and its native FTX-1 backend,
+model 1051 — the packaged 4.6.2 has neither, and the nearest models cannot tune
+this radio at all (§7.1).
 
 Section 14 separates what has been verified on the hardware from what is still
 assumed, and records three faults that cost real time and are easy to hit
@@ -383,9 +385,28 @@ dim.
   from dim to bright, which carries the same information without depending on
   how a console renders an attribute.
 
+* **The palette redefinition was addressing nothing.** `apply()` wrote the
+  `OSC P` sequences for slots 8 and 9, then built its color pairs out of
+  `scheme["ansi"]` — so nothing ever drew with the slots it had just defined.
+  Every scheme rendered as its ANSI approximation. Matrix, Hal and Tron
+  survived that, because ANSI green, red and cyan are close enough to the
+  intent; **Deckard did not**, because amber is precisely the hue ANSI cannot
+  approximate. This document predicted that outcome as the fallback behaviour
+  and then the code delivered it everywhere. The pairs now name slots 8 and 9
+  directly when the console reports 16 colors, and the intensity attributes
+  are dropped in that mode — on a Linux console `A_BOLD` shifts the foreground
+  into the 8-15 range, which would move text straight back off the slot the
+  scheme had just defined.
+
 The general rule the panel taught: on a console whose attribute handling is not
 under test, encode state in *characters and intensity*, and use filled bars
 only where the contrast is defined explicitly.
+
+A second rule, from all three of these: **the PNG screenshots cannot catch
+them.** `capture_png.py` draws with the schemes' hex values directly, so it
+renders what was intended rather than what the console produces. It is a
+design record, not a test. Every one of these three faults was invisible in the
+screenshots and obvious on the panel.
 
 Each scheme redefines two Linux console palette entries — one bright, one dim —
 with `OSC P` escape sequences (`\033]P<index><rrggbb>`), leaving black as
@@ -405,8 +426,21 @@ the rest reachable under "more":
 
 | Tier | Modems | Rationale |
 |---|---|---|
-| First | BPSK31, BPSK63, QPSK31, RTTY, Olivia 8/250, Olivia 8/500, MFSK16, THOR22, Contestia, DominoEX (DOMEX8), Feld Hell | Covers ordinary HF keyboard work |
-| More | The remaining 54, grouped by family | Complete, and never in the way |
+| First | BPSK31, BPSK63, QPSK31, RTTY, Olivia 8/250, Olivia 8/500, MFSK16, THOR22, Contestia, DominoEX (DOMEX8), Feld Hell, CW | Covers ordinary HF keyboard work |
+| More | The rest, grouped by family | Complete, and never in the way |
+
+**CW was missing from both tiers and that was a bug, not a choice.** The family
+filter that builds the full list had no `CW` prefix, so the mode was
+unreachable from the deck at all while "more modes" claimed to be the complete
+conversational set. CW is keyboard-to-keyboard operating — the original form of
+it — and fldigi offers it as a modem like any other.
+
+Selecting it does **not** put the radio into CW mode: `RIG_MODE` is applied at
+startup and on band change, not on modem change, so fldigi sends an audio tone
+through the data path. That is workable and common, but it does not use the
+radio's CW filters. Making a modem change drive the rig mode is a plausible
+future behaviour and is deliberately not done yet — it would mean the deck
+reaching for the radio's controls on every menu selection.
 
 Mode changes take effect immediately via `modem.set_by_name` and are recorded in
 the transcript as a marker line, since a mode change mid-QSO is part of the
@@ -422,7 +456,7 @@ This reuses a configuration already proven on this radio, keeps the two-port PTT
 arrangement in one place, and means the terminal can read frequency through
 fldigi rather than opening a second connection to the radio.
 
-### 7.1 Reads work; writes are broken on the shipped hamlib
+### 7.1 The shipped hamlib cannot tune this radio — resolved
 
 Reading is sound: frequency, mode and the signal figures track the radio, and
 turning the VFO knob moves the deck's display.
@@ -441,17 +475,45 @@ fighting the radio rather than as a malformed command.
 Every frequency path is affected — the band presets, the tuning screen's VFO
 keys, and anything fldigi attempts through hamlib.
 
-Hamlib 4.6.5 builds the command correctly, so the fix is a hamlib upgrade
-rather than a different rig model. Three models were checked on 4.6.5 — FT-991,
-FT-710, FTDX-10 — and all build nine digits.
+This is [Hamlib issue #2219](https://github.com/Hamlib/Hamlib/issues/2219).
+The cause is that `width_frequency` falls back to 0 when lazy initialization
+through `newcat_get_vfo_mode()` fails — and on this radio it does fail, with a
+protocol error, immediately before the malformed command. Models 1042 and 1049
+are affected identically, which is why trying the FT-710 changed nothing.
 
-`rigctld_client.py` carries a workaround: rigctld's `w` (send_cmd) forwards a
-raw CAT string, so the deck can send the documented nine-digit form while
-rigctld keeps sole ownership of the serial port. It is **not wired in**. An
-upgrade fixes the cause for every hamlib consumer on the machine, including
-fldigi's own rig control and anything added later; the workaround fixes one
-call on one code path. The file exists because it documents the bug precisely
-and because it is the fallback if a build on a 512 MB board proves impractical.
+**The fix is hamlib 4.7.1 or later, and a different model.** 4.7.1 added a
+native FTX-1 backend — `rigs/yaesu/ftx1.c`, **model 1051**, still marked Beta —
+with separate modules for frequency, mode, filters, memory and the clarifier.
+4.7.2 carries further FTX-1 fixes. Neither is packaged for Trixie, so §13's
+first-boot step builds 4.7.2 from source.
+
+Confirmed on the deck: `rigctl -m 1051` sets the frequency and the dial moves,
+and `F1 3 1` from the deck's own keyboard now tunes the radio.
+
+Three things were each individually necessary and each silently ineffective
+alone:
+
+* **The binary.** `/usr/bin/rigctld` is still the packaged 4.6.2.
+* **`LD_LIBRARY_PATH=/usr/local/lib`.** `ldconfig` is not enough: the cache
+  lists the multiarch directory ahead of `/usr/local/lib`, so a freshly built
+  `rigctl` reported `4.6.2` and offered no FTX-1 model until the path was
+  forced. This is the easiest of the three to miss, because everything looks
+  installed.
+* **The model.** 1051 does not exist before 4.7.1.
+
+**A footnote on how this was nearly mis-diagnosed.** An early test on hamlib
+4.6.5 against a simulated rig produced a correctly padded command, which looked
+like evidence that any newer version would do. It was not: the simulator
+answered `newcat_get_vfo_mode()` successfully, and that success is exactly what
+the real radio does not provide. The lesson is narrow and worth keeping — a
+test fixture that does not reproduce the failing condition proves nothing about
+the failure.
+
+`rigctld_client.py` carries a workaround from before the backend was found:
+rigctld's `w` (send_cmd) forwards a raw CAT string, so the deck could send the
+documented nine-digit form itself. It is **not wired in** and should be deleted
+once 1051 has some hours on it. It is kept for now only because the FTX-1
+backend is Beta.
 
 ## 8. Tuning
 
@@ -740,15 +802,21 @@ Separated deliberately, because the difference decides what can break late.
   The script also ran each `bluetoothctl` command as a separate process, so the
   agent it registered was gone before pairing began.
 
-* **Hamlib 4.6.2 cannot set this radio's frequency.** With model 1035
-  (FT-991), the closest model that reads the FTX-1 correctly, `newcat_set_freq`
-  builds `FA14075000;` — `FA` plus eight digits. The FTX-1 CAT manual specifies
-  nine, zero-padded, and the radio's own replies use nine
-  (`FA014070000;`). The malformed command is discarded with no error. Writing
-  `FA014075000;` to the port by hand moves the VFO immediately. Hamlib 4.6.5
-  builds it correctly, so this is a version bug, not a model mismatch. §7 is
-  written on the assumption that hamlib can set frequency; that assumption is
-  false on the shipped version.
+* **Hamlib 4.6.2 cannot tune this radio, and has no backend for it.** With
+  model 1035 (FT-991), the closest model that reads the FTX-1 correctly,
+  `newcat_set_freq` builds `FA14075000;` — eight digits where the CAT manual
+  specifies nine, zero-padded. Discarded with no error; reads unaffected.
+  Models 1049 and 1042 fail identically. Resolved by building hamlib 4.7.2,
+  whose native FTX-1 backend is model 1051 (§7.1). Three separate things had to
+  be right — the binary, the library search path, and the model — and each was
+  silently ineffective alone.
+
+* **Power-cycling the radio renumbers its serial ports.** The CP2105 detaches
+  and the kernel assigns the next free numbers on re-attach, so CAT moves from
+  `ttyUSB0` to `ttyUSB1`. Every path in this project now uses
+  `/dev/serial/by-id/`, where `-if00` and `-if01` also distinguish the two
+  otherwise identical UARTs — something matching on USB vendor:product cannot
+  do.
 
 **Still assumed, and not yet tested:**
 
@@ -871,33 +939,23 @@ been answered. The panel works, the overlay is `vc4-kms-dsi-7inch`, the panel
 draws its 1.2 W from the DSI connector, and the deck boots to its terminal with
 the keyboard bonded and fldigi decoding.
 
-**The one thing blocking normal operation:**
+**Nothing is blocked. In order:**
 
-1. **Hamlib cannot set the radio's frequency** (§7.1). Reads work; the set
-   command is malformed on the shipped 4.6.2. Check whether a newer hamlib is
-   available as a package before considering a source build:
-
-   ```bash
-   apt-cache policy libhamlib-utils libhamlib4
-   ```
-
-   If a build is needed, `build_deck_image.sh` has to reproduce it, or the next
-   reflash silently restores the broken version — which would be a bad thing to
-   rediscover from the symptom.
-
-**Then, in order, none of it blocked:**
-
-2. **Make a contact.** Nothing has been transmitted from this deck. The over
+1. **Make a contact.** Nothing has been transmitted from this deck. The over
    model, PTT, the transmit time-out and `Ctrl-C` against a live carrier are
    all written and unit-tested and none has keyed a radio. Test into a dummy
    load first, and confirm `Ctrl-C` unkeys before relying on it.
-3. **Confirm the transmit audio path.** Receive is proven; transmit is not.
+2. **Confirm the transmit audio path.** Receive is proven; transmit is not.
    Set the radio to its data mode, set drive for zero ALC, and check IMD.
-4. **The remaining console-font question:** 10×20 and 16×32 at runtime via
+3. **The remaining console-font question:** 10×20 and 16×32 at runtime via
    `setfont`, without disturbing the running curses application. The 12×24
    default renders correctly.
-5. **`OSC P` palette redefinition** on this panel, for a true amber rather than
-   the ANSI approximation.
+4. **Verify the color schemes on the panel — Deckard especially.** The palette
+   redefinition was addressing nothing until it was corrected (§5), so every
+   scheme was rendering as its ANSI approximation and the amber came out as a
+   washed yellow. The corrected version has **not yet been seen on the panel**;
+   the PNG screenshots cannot confirm it, since they draw from the hex values
+   directly.
 
 **Worth doing when convenient:**
 
