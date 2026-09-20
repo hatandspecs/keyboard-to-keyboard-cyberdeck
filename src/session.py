@@ -89,6 +89,17 @@ class Session:
         callsign of the other operator is whatever they type."""
         self._append("RX", text)
 
+    @property
+    def last_note(self):
+        """The most recent marker, for screens that do not show the transcript.
+
+        The tuning screen reports what a search did — found a signal, found
+        nothing — and those notes were invisible there, because notes live in
+        the transcript and that screen hides it. The one screen where a tuning
+        message matters was the one screen that could not show it.
+        """
+        return self.notices[-1] if self.notices else ""
+
     def note(self, text):
         """A marker in the transcript: a mode change, a warning. Closed
         immediately, so nothing else joins it."""

@@ -74,7 +74,7 @@ DISPLAY = {
     "footer": "Esc back   ↑↓ move   Enter select",
 }
 
-def tuning_menu(afc, squelch, level, rsid, txid, reverse=False):
+def tuning_menu(afc, squelch, level, rsid, txid, reverse=False, rx_hold=0):
     """Tuning options with their current state shown.
 
     The static version of this menu gave no feedback: pressing `s` toggled
@@ -94,6 +94,8 @@ def tuning_menu(afc, squelch, level, rsid, txid, reverse=False):
             ("x", f"TXID        {onoff(txid)}   send one before our overs"),
             ("v", f"Reverse     {onoff(reverse)}   mark/space sense, for RTTY"),
             ("c", "Park carrier at the configured offset"),
+            ("[", f"RX hold after an over  down    ({rx_hold} ms)"),
+            ("]", f"RX hold after an over  up      ({rx_hold} ms)"),
             (" ", ""),
             (" ", "From the conversation screen, without coming here:"),
             (" ", "  Ctrl-A / Ctrl-D   carrier -10 / +10 Hz"),

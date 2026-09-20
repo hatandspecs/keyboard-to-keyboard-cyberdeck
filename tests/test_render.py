@@ -95,4 +95,17 @@ back = plain(render.transcript_lines(s3.entries, 66, 5, scroll=10)[-1])
 check("scrolling shows older text", "39" in tail and "29" in back, f"{tail!r} / {back!r}")
 
 print()
+
+print("\n-- the tuning screen repeats the last note --")
+rows = render.tune_rows({"note": "search up: carrier 1500 -> 1832 Hz"}, 66)
+joined = "\n".join(rows)
+check("the note appears on the screen",
+      "search up: carrier 1500 -> 1832 Hz" in joined, joined)
+rows = render.tune_rows({}, 66)
+check("no note leaves a blank row rather than an error",
+      any(r.strip() == "" for r in rows), rows)
+check("a long note is truncated to the width",
+      all(len(r) <= 66 for r in render.tune_rows({"note": "x" * 200}, 66)),
+      [len(r) for r in render.tune_rows({"note": "x" * 200}, 66)])
+
 sys.exit(report())

@@ -41,6 +41,9 @@ SCHEMA = {
     "POLL_MS":         (200, int, "how often to ask fldigi for new text"),
     "SCROLLBACK":      (2000, int, "transcript lines kept in memory"),
     "TX_TIMEOUT":      (180, int, "seconds before an over is aborted; 0 disables"),
+    "RX_HOLD_MS":      (1000, int, "ignore decodes for this long after an over "
+                                   "ends; the receiver recovering from transmit "
+                                   "decodes as garbage. 0 disables"),
     "TIMESTAMPS":      ("yes", str, "yes | no"),
     "INHIBIT_ON_START": ("yes", str, "yes | no — start with transmit inhibited"),
     "RIG_MODE":        ("PKTUSB", str, "rig mode set at startup and on band "

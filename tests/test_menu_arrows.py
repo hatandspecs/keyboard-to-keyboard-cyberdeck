@@ -135,8 +135,11 @@ check("the note is here instead", "Ctrl-A / Ctrl-D" in body, body[:500])
 check("and names the search keys", "Ctrl-W / Ctrl-S" in body, body[:500])
 
 tune = menus.tuning_menu(True, True, 30, True, False, False)
-check("the note rows cannot be selected",
-      len(menus.selectable(tune)) == 8, menus.selectable(tune))
+note_rows = [i for i, (key, _lbl) in enumerate(tune["items"]) if not key.strip()]
+check("the note rows exist", len(note_rows) >= 3, note_rows)
+check("and none of them can be selected",
+      not set(note_rows) & set(menus.selectable(tune)),
+      (note_rows, menus.selectable(tune)))
 
 
 print("\n-- Ctrl-Y hands back, not Ctrl-K --")
@@ -160,5 +163,15 @@ check("and the startup notes are gone", "fldigi 4.2" not in body, body[:300])
 body = show("Ctrl-I arms transmit", run(keys=[CTRL_I], settle=1.4))
 check("INH clears from the status line", " INH " not in body, body[:120])
 check("and it is recorded", "transmit enabled" in body, body[:400])
+
+
+print("\n-- RX hold after an over is adjustable from Tune Settings --")
+body = show("F1 2", run(keys=[F1, "2"], settle=1.4))
+check("the setting is listed with its value",
+      "RX hold after an over" in body and "ms)" in body, body[:600])
+body = show("] raises it twice", run(keys=[F1, "2", "]", "]"], settle=1.7))
+check("stepped up by 250 ms each press", "(1500 ms)" in body, body[:600])
+body = show("[ lowers it", run(keys=[F1, "2", "[", "[", "[", "["], settle=1.9))
+check("and down again", "(0 ms)" in body, body[:600])
 
 sys.exit(report())

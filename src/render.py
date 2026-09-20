@@ -189,7 +189,13 @@ def tune_rows(fields, width):
         "",
     ] + [f"  {'decode' if i == 0 else '      '}   {line}"
          for i, line in enumerate(
-             preview_lines(fields.get("preview", ""), width - 12, 2))]
+             preview_lines(fields.get("preview", ""), width - 12, 2))] + [
+        "",
+        # The last transcript marker, repeated here because this screen hides
+        # the transcript — and a search that found nothing has to say so
+        # somewhere the operator is looking when they press the key.
+        f"  {(fields.get('note') or '')[:width - 4]}",
+    ]
 
 
 def preview_lines(text, width, lines=2):

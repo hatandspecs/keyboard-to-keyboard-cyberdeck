@@ -55,6 +55,8 @@ class Deck:
         self.status_note = ""
         self._tx_seen = False
         self._tx_echo = ""
+        # When the last over finished, for the post-transmit receive hold.
+        self._tx_ended = 0.0
         # The last of what has been decoded, for the tuning screen's preview.
         # Held separately from the transcript because it has to survive the
         # transcript being cleared and has to be cheap to take the tail of.
@@ -113,7 +115,18 @@ class Deck:
         # drains, and the echo keeps arriving for that whole tail.
         text = self.fldigi.poll_rx()
         sending = self.fldigi.trx_state() != "RX"
-        if text and not sending:
+
+        # For a moment after PTT drops, the radio is recovering — the receiver
+        # unmutes, AGC settles — and the modem decodes that transient as text.
+        # It is real audio and fldigi is right to decode it; it is just not
+        # anybody's transmission. Any residual echo of our own over lands in
+        # the same window, since fldigi's echo and its TX state do not change
+        # over atomically.
+        hold = self.cfg.get("RX_HOLD_MS", 0) / 1000.0
+        holding = (not sending and hold > 0
+                   and time.monotonic() - self._tx_ended < hold)
+
+        if text and not sending and not holding:
             self.session.receive(text)
             self._rx_tail = (self._rx_tail + text)[-400:]
             self.scroll = 0
@@ -134,6 +147,7 @@ class Deck:
             # to the buffer.
             self._tx_seen = False
             self._tx_echo = ""
+            self._tx_ended = time.monotonic()
             self.session.note("sent")
         if self.session.tx_timed_out():
             self.fldigi.abort()
@@ -238,6 +252,7 @@ class Deck:
             "txid": f.txid(),
             "reverse": f.reverse(),
             "preview": self._rx_tail,
+            "note": self.session.last_note,
         }, w)
         for i, text in enumerate(rows):
             if 2 + i < h - 4:
@@ -263,7 +278,8 @@ class Deck:
             return menus.DISPLAY
         if m == "tuning":
             return menus.tuning_menu(f.afc(), f.squelch(), f.squelch_level(),
-                                     f.rsid(), f.txid(), f.reverse())
+                                     f.rsid(), f.txid(), f.reverse(),
+                                     self.cfg.get("RX_HOLD_MS", 0))
         if m == "radio":
             return menus.band_menu(self._supported_bands())
         if m == "system":
@@ -448,6 +464,9 @@ class Deck:
             if field in known:
                 self.cfg[field] = value
         self.session.callsign = self.cfg.get("CALLSIGN") or "LOCAL"
+        hold = state.get("rx_hold_ms")
+        if isinstance(hold, int) and 0 <= hold <= 5000:
+            self.cfg["RX_HOLD_MS"] = hold
         scheme = state.get("color")
         if scheme in colors.SCHEMES:
             self.scheme = scheme
@@ -473,6 +492,7 @@ class Deck:
                          for n in range(5, 13)},
             "station": {k: self.cfg.get(k, "")
                         for k, _label, _token in menus.STATION_FIELDS},
+            "rx_hold_ms": self.cfg.get("RX_HOLD_MS", 0),
         }
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -621,6 +641,12 @@ class Deck:
                 f.set_squelch_level(min(100.0, f.squelch_level() + 5))
             elif key == "-":
                 f.set_squelch_level(max(0.0, f.squelch_level() - 5))
+            elif key in ("[", "]"):
+                step = 250 if key == "]" else -250
+                value = max(0, min(5000, self.cfg.get("RX_HOLD_MS", 0) + step))
+                self.cfg["RX_HOLD_MS"] = value
+                self._save_state()
+                self.session.note(f"RX hold {value} ms")
             elif key == "c":
                 f.set_carrier(self.cfg["DEFAULT_CARRIER"])
                 self.session.note(f"carrier parked at {self.cfg['DEFAULT_CARRIER']} Hz")

@@ -176,4 +176,16 @@ equals("held at the limit", len(s6.entries), 100)
 equals("oldest dropped, newest kept", s6.entries[-1].text, "line 499")
 
 print()
+
+print("\n-- last_note, for screens that hide the transcript --")
+n = Session(callsign="KD3CCO")
+equals("nothing yet", n.last_note, "")
+n.note("search up: nothing found")
+equals("the most recent note", n.last_note, "search up: nothing found")
+n.note("mode changed to RTTY")
+equals("and it follows the newest", n.last_note, "mode changed to RTTY")
+n.entries.clear()
+equals("clearing the transcript does not erase it",
+       n.last_note, "mode changed to RTTY")
+
 sys.exit(report())
