@@ -416,3 +416,7 @@ Working end to end:
 * The status bar rendered as an unreadable solid block: `A_REVERSE` combined
   with `A_BOLD` put the bold intensity on the background. Reverse-video pairs
   are now defined as black-on-hue outright.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, change it, no warranty.
