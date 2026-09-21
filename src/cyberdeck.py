@@ -993,8 +993,29 @@ class Deck:
         self.session.note(f"rig mode {current or '?'} -> {want}")
 
     def _set_mode(self, name):
+        """Change modem, keeping the carrier where it is.
+
+        fldigi resets the carrier to its sweet spot when the modem changes.
+        That is right when starting fresh and wrong for the job this screen
+        mostly does: identifying an unknown signal by trying modes against it.
+        The operator has already tuned onto the signal, and throwing that away
+        on every attempt means re-tuning before each guess — with the added
+        trap that a mode which *would* have decoded fails because it is now
+        pointed at empty spectrum.
+
+        So the carrier is read before the change and written back after.
+        `c` on the Tune Settings page parks it deliberately, which is the
+        other half of the behaviour and stays available.
+        """
+        was = self.fldigi.carrier()
         self.fldigi.set_modem(name)
-        self.session.note(f"mode changed to {self.fldigi.modem()}")
+        # Only if it actually moved, and only to somewhere sane: a failed read
+        # returns 0, and writing that back would park the modem at DC.
+        now = self.fldigi.carrier()
+        if was and now != was:
+            self.fldigi.set_carrier(was)
+            now = self.fldigi.carrier()
+        self.session.note(f"mode changed to {self.fldigi.modem()} at {now} Hz")
         self._save_state()
         self._close_menu()
 
