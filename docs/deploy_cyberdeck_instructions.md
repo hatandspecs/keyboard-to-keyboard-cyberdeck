@@ -877,7 +877,7 @@ Check them in that order.
 
 ### Nothing installed, no keyboard, no hostname, wrong clock
 
-Four symptoms, one cause, and worth recognising immediately because it looks
+Four symptoms, one cause, and worth recognizing immediately because it looks
 like four separate faults: **both radios ship rfkill-blocked** on a Pi 3.
 
 ```bash
@@ -1150,10 +1150,10 @@ program that can key a radio should not be able to do so the instant it starts.
 
 ### What differs from the deck
 
-* **Colour.** The four schemes set true hues through the `PIO_CMAP` ioctl,
+* **Color.** The four schemes set true hues through the `PIO_CMAP` ioctl,
   which works only on a Linux virtual console. In a terminal emulator or over
   SSH the ioctl fails, the failure is caught, and the schemes render as their
-  ANSI approximations — recognisable, not exact. Nothing breaks.
+  ANSI approximations — recognizable, not exact. Nothing breaks.
 * **Size.** The layout is designed for the deck's 66×20. It adapts, and the
   hint line sheds bindings rather than truncating, down to a floor of 30×8
   below which it prints `terminal too small` and waits. A larger window is
@@ -1190,7 +1190,7 @@ time goes.
 
 ## What has and has not been tested
 
-Recorded honestly so that a failure is recognised rather than debugged from
+Recorded honestly so that a failure is recognized rather than debugged from
 first principles.
 
 **Proven, on the real deck:**

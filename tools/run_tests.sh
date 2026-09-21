@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run every test and summarise. Each file is a standalone script that prints
+# Run every test and summarize. Each file is a standalone script that prints
 # its own checks and ends with ALL PASS, so this reports per file rather than
 # collecting assertions.
 #

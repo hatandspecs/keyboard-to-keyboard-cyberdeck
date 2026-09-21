@@ -171,7 +171,7 @@ def tune_rows(fields, width):
         f"  rig      {fields.get('freq', '')}  {fields.get('rig_mode', '')}",
         f"  carrier  {fields.get('carrier', 0)} Hz        width  "
         f"{fields.get('width', '')}",
-        # Not labelled here. fldigi's two status strings carry their own
+        # Not labeled here. fldigi's two status strings carry their own
         # labels and change meaning with the mode: under PSK they read
         # "S/N 6 dB" and "IMD ---", under RTTY the first becomes "45 /170" —
         # baud and shift — and the second becomes the S/N. Prefixing them

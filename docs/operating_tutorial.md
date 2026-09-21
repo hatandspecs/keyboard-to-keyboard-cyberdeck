@@ -217,7 +217,7 @@ Yes — **the dial marker belongs to the left of the signal.** With the carrier
 parked at 1500 Hz, a signal you want should sit about **1.5 kHz to the right**
 of your dial frequency on the radio's display.
 
-If you centre the radio's marker on the signal, you have put that signal at 0 Hz
+If you center the radio's marker on the signal, you have put that signal at 0 Hz
 audio, at the very bottom edge of the window, and fldigi will not hear it at
 all.
 

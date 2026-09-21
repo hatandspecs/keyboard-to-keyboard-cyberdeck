@@ -500,10 +500,10 @@ dim.
 
 **Two corrections from running it on the panel**, both the same mistake:
 
-* Reverse video must be a colour pair defined outright as **black on the hue**,
+* Reverse video must be a color pair defined outright as **black on the hue**,
   not a normal pair plus `A_REVERSE`, and never with `A_BOLD`. Combining the
   two puts the bold intensity on what becomes the background, and the status
-  line renders as a solid block of colour with text the same hue as the bar it
+  line renders as a solid block of color with text the same hue as the bar it
   sits on — unreadable, and indistinguishable from an empty bar.
 * **Menu selection is not reverse video.** Even done correctly it disappeared
   into its own highlight on this panel. Selection is a `▸` marker plus a step
@@ -550,7 +550,7 @@ dim.
   The working mechanism is the **`PIO_CMAP` ioctl**, which is what
   `setvtrgb(1)` uses. It takes all sixteen entries at once as 48 bytes of
   R,G,B, so `colors.py` reads the current table, replaces three entries and
-  writes it back. `OSC P` is kept as a fallback for a console that honours it.
+  writes it back. `OSC P` is kept as a fallback for a console that honors it.
 
   §14 listed "OSC P palette redefinition works on this panel's console" as
   assumed and untested. It is now tested, and it was false.
@@ -625,7 +625,7 @@ Selecting it does **not** put the radio into CW mode: `RIG_MODE` is applied at
 startup and on band change, not on modem change, so fldigi sends an audio tone
 through the data path. That is workable and common, but it does not use the
 radio's CW filters. Making a modem change drive the rig mode is a plausible
-future behaviour and is deliberately not done yet — it would mean the deck
+future behavior and is deliberately not done yet — it would mean the deck
 reaching for the radio's controls on every menu selection.
 
 Mode changes take effect immediately via `modem.set_by_name` and are recorded in
@@ -1340,7 +1340,7 @@ the keyboard bonded and fldigi decoding.
    near 100% duty cycle, so the first higher-power session wants the ALC at
    zero and an eye on the finals.
 2. **A long session away from mains.** The longest run to date is an evening,
-   always on a wall supply. Neither thermal behaviour nor current draw has been
+   always on a wall supply. Neither thermal behavior nor current draw has been
    measured, and portability is a claim the deck has not yet been asked to
    support.
 

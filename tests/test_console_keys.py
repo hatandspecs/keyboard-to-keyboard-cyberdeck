@@ -72,7 +72,7 @@ if __name__ == "__main__":
           f"kspd={cap('kspd')!r} — if this is None the premise has changed")
     check("xterm terminfo does not", cap("kspd", "xterm") is None)
 
-    # And the behaviour, driven through the real program under TERM=linux.
+    # And the behavior, driven through the real program under TERM=linux.
     inserted = run(keys=[f5], term="linux")
     check("F5 inserts a memory on the console",
           CQ in compose_of(inserted), compose_of(inserted))

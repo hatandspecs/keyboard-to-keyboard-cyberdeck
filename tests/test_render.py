@@ -58,7 +58,7 @@ check("both fit", len(with_ts) <= 66 and len(without) <= 66)
 
 print("\n-- compose region: indicator right-aligned, cursor after the text --")
 lines, (row, col) = render.compose_lines("NOCALL de KD3CCO  all the fldigi modes", "[RX 36]", 66, 2)
-check("height honoured", len(lines) == 2, len(lines))
+check("height honored", len(lines) == 2, len(lines))
 # The indicator sits on the last *used* row, not on the padding below it.
 check("indicator present", any("[RX 36]" in plain(l) for l in lines))
 check("indicator is on the cursor row", "[RX 36]" in plain(lines[row]))
@@ -81,7 +81,7 @@ equals("drops control characters",
 equals("narrow width returns nothing rather than garbage",
        render.preview("anything", 2), "")
 
-print("\n-- signal readouts are not relabelled --")
+print("\n-- signal readouts are not relabeled --")
 rows = render.tune_rows({"snr": "45 /170", "imd": "s/n -22 dB"}, 66)
 signal = [r for r in rows if r.startswith("  signal")][0]
 check("RTTY's baud/shift survives verbatim", "45 /170" in signal, signal)

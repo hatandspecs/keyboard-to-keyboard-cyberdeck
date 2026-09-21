@@ -190,7 +190,7 @@ class Deck:
           consecutive polls. A decaying transient does not sustain; a
           correspondent answering does;
         * give up at ``RX_HOLD_MAX_MS``, so a band with nothing on it returns
-          to normal behaviour instead of blanking indefinitely.
+          to normal behavior instead of blanking indefinitely.
 
         ``RX_HOLD_MAX_MS = 0`` disables the quality gate and leaves exactly the
         fixed ``RX_HOLD_MS`` window, which is what this did before.

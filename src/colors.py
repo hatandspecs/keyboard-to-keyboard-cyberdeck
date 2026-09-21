@@ -166,7 +166,7 @@ def apply(scheme_key):
         })
         if not _direct_palette:
             # Harmless where it is ignored, and correct on a console that
-            # honours it — a VGA text console, or this code running somewhere
+            # honors it — a VGA text console, or this code running somewhere
             # other than the deck.
             try:
                 os.write(1, (_osc_palette(bright_slot, scheme["bright"])
