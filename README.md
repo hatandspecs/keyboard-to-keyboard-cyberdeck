@@ -321,7 +321,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-216 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
+221 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
 on functions in isolation.
@@ -348,6 +348,10 @@ Center, Minnesota, and a ragchew with **KC3FL** in Inverness, Florida. PSK31 is
 the mode the deck was designed around, and these were the first overs sent in
 it. Both were found with `Ctrl-W` / `Ctrl-S` rather than a waterfall — §8's
 premise, tested against a live band.
+
+Then **DX**: **FM4TI** in **Martinique**, 40 m BPSK31 on 7.070 MHz,
+2026-09-21 at 0246Z, answering his CQ DX at 20 W — about 2,100 miles from
+central Pennsylvania, and the first contact made above QRP.
 
 That closes the loop the project set out to prove: a Pi 3A+, a 5" panel, a
 Bluetooth keyboard and an FTX-1, with no window manager, no mouse and nothing
@@ -391,9 +395,10 @@ Working end to end:
   `bluetoothctl` session, documented in the deployment runbook.
 * `main.rx_only` does not inhibit fldigi's `main.tune`; the transmit inhibit is
   enforced in the terminal instead.
-* Transmit is proven on the air but lightly exercised: four contacts across
-  two sessions, RTTY on 80 m and BPSK31 on 20 m, all at 5 W. Nothing has been
-  sent at more than QRP power, and the longest session so far is an evening.
+* Transmit is proven on the air but lightly exercised: five contacts across
+  three sessions, on 80, 40 and 20 m, in RTTY and BPSK31, at 5 W and 20 W. The
+  longest session so far is an evening, and nothing is known about how the deck
+  behaves over hours or away from mains.
 
 **Fixed along the way**, recorded because each cost real time:
 

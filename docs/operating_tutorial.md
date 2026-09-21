@@ -101,8 +101,24 @@ entire over, and an over can be minutes long.
 **ALC must read zero.** Digital audio drive is set by the sound card level, not
 by the radio's mic gain. If the ALC meter moves at all, you are overdriving:
 the transmitted signal grows sidebands, splatters across other contacts, and
-your IMD reading goes bad. Turn audio drive **down** until ALC is at rest, then
-leave it.
+your IMD reading goes bad. Turn audio drive **down** until ALC is at rest.
+
+**Find the point by measuring, one step at a time.** On the FTX-1 the control
+is `USB MOD GAIN`, 0–100, default 50. Key up into a dummy load or a matched
+antenna and take it down a single count at a time until the ALC stops moving,
+then take one or two more for margin. Do not try to guess the setting from how
+it behaves further down the range: on this radio 50 deflects, **49 is clean,
+and 48 is clean with full output** — while 45 gives no ALC movement and only
+4 W. The useful region is about three counts wide, and a low reading well below
+the knee tells you nothing about where the knee is.
+
+Leave the other gain stages alone while you do it. There are three in series —
+fldigi's transmit level, the sound card's playback mixer, and the radio's
+`USB MOD GAIN` — and moving more than one makes the result impossible to
+attribute.
+
+Re-check it when you change band, antenna or power supply. The ALC threshold
+moves with all three; it is not a number you set once for good.
 
 The deck shows an **IMD** figure in the status line when the other station's
 signal permits it. Better than **−25 dB** is good; worse than **−20 dB** means
@@ -777,9 +793,9 @@ someone. Read the notice line: a search that finds nothing tells you the
 carrier did not move, which means the next keystroke should be another search
 rather than a call.
 
-**Answering a CQ beats calling one** at 5 W. Both contacts here came from
-searching, reading a `kn`, and replying — never from calling CQ into the band
-and waiting.
+**Answering a CQ beats calling one** at low power. Both contacts here came
+from searching, reading a `kn`, and replying — never from calling CQ into the
+band and waiting. The DX contact below came the same way.
 
 **Have your station description in a memory.** A ragchew asks for name, QTH,
 rig and antenna within the first two overs, and typing that out while the other
@@ -789,6 +805,27 @@ through `F12`, inserted at the cursor, `Ctrl-Z` if the wrong one goes in.
 **Watch the transcript, not the clock.** Seven minutes of free text in both
 directions scrolls past; `PgUp` and `PgDn` reach anything that has gone by,
 and the transcript keeps what was sent as well as what arrived.
+
+### 13.3 DX, and the first contact above QRP
+
+**FM4TI**, Martinique, 40 m BPSK31 on 7.070 MHz, 2026-09-21 at 0246Z, at
+**20 W** — about 2,100 miles, again by answering a CQ rather than calling one.
+
+What it took that the earlier sessions did not:
+
+**Drive set so the ALC never moves, at a power that matters.** The procedure in
+section 2 above, done properly: 20 W out with the meter at rest. 5 W had been
+enough for everything until then, and would probably have been enough for this.
+
+**Watch the finals at that power.** PSK31 is continuous key-down, so 20 W of it
+loads the radio far harder than 20 W of voice. Put the **final amplifier
+temperature** on the radio's meter for the duration of the contact rather than
+looking at it afterwards.
+
+**A DX station's overs are short, and often formulaic.** `Hello dear digimode
+friend rst 5nn solid copy btu` is a complete over. Match the register: send the
+report, send your location, hand it back. Save the ragchew for someone working
+you rather than working the world.
 
 ## 14. When something goes wrong
 

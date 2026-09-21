@@ -796,8 +796,14 @@ Before transmitting:
   host holds the radio keyed, and the radio's own timer is the only backstop.
 * **Check `Ctrl-C` aborts** before relying on it. Verified against a live
   carrier.
-* **Reduce power.** RTTY and PSK are near 100% duty cycle, unlike SSB. The
-  contacts above were made at **5 W**.
+* **Reduce power.** RTTY and PSK are near 100% duty cycle, unlike SSB, so a
+  given wattage heats the finals far harder than the same figure on voice.
+  Contacts have been made at **5 W** and at **20 W**; 5 W is enough far more
+  often than it looks. At the higher setting, put the **final amplifier
+  temperature** on the radio's meter for the duration rather than checking it
+  afterwards.
+* **Set the drive so the ALC never moves.** See §7.2 of the design document for
+  the procedure and for why the setting is so sharp-edged.
 * **`Ctrl-I` to arm.** Transmit starts inhibited at every power-on; the status
   line shows `INH` until you clear it.
 
@@ -1197,7 +1203,7 @@ first principles.
 
 | | |
 |---|---|
-| **Two-way contacts** | N3QE and K4ZW, 80 m RTTY, 2026-09-19; N0DLR and KC3FL, 20 m BPSK31, 2026-09-20. All 5 W, from the deck's own panel and keyboard |
+| **Two-way contacts** | N3QE and K4ZW, 80 m RTTY, 2026-09-19, 5 W; N0DLR and KC3FL, 20 m BPSK31, 2026-09-20, 5 W; **FM4TI, Martinique**, 40 m BPSK31, 2026-09-21, 20 W. All from the deck's own panel and keyboard |
 | `tools/build_deck_image.sh build` and `flash` | Run end to end; the card verifies before boot (phase 2 step 4) |
 | The Waveshare 5" DSI panel on a Pi 3A+ | Console at 66×20, `vc4-kms-dsi-7inch`, powered from the DSI connector |
 | Terminus 12×24 | Renders on the panel |
@@ -1214,11 +1220,11 @@ first principles.
 
 | | |
 |---|---|
-| **Anything above 5 W** | RTTY and PSK are near 100% duty cycle; watch ALC and the finals |
+| **20 W on a 100% duty cycle mode** | One BPSK31 contact at 20 W with the ALC clear. Nothing longer than a few minutes at that power, and no temperature data |
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
 | A long session | Longest run so far is an evening; no thermal or memory data |
 | Off-mains operation | Never run off anything but a wall supply. The deck holds no battery by design — it takes 5 V over USB from whatever powers the station, a USB power bank or a LiFePO4 box. Its draw from one has not been measured |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **216 checks**
+over model, line editing, the color schemes — is covered by **221 checks**
 against a live fldigi (`tools/run_tests.sh`).

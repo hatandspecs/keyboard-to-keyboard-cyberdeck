@@ -11,10 +11,12 @@ digital modes.
 
 **Status: working, and on the air.** The deck boots on a Pi 3A+ with its panel,
 a bonded Bluetooth keyboard, fldigi under Xvfb, rig control in both directions,
-and four contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19,
-and **N0DLR** and **KC3FL** on 20 m BPSK31, 2026-09-20.
+and five contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19;
+**N0DLR** and **KC3FL** on 20 m BPSK31, 2026-09-20; and **FM4TI** in
+Martinique on 40 m BPSK31, 2026-09-21 — the first DX, and the first contact
+above QRP.
 
-Nine modules and seven test files, **216 checks**, all passing against a live
+Nine modules and seven test files, **221 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`).
 `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
 application through a pseudo-terminal and read the screen back with a terminal
@@ -30,6 +32,54 @@ Section 14 separates what has been verified on the hardware from what is still
 assumed, and records three faults that cost real time and are easy to hit
 again. Section 15 records the decisions already made and the ones still open.
 Section 16 is where to start when this is picked back up.
+
+---
+
+## Contents
+
+- [1. Purpose](#1-purpose)
+- [2. Scope](#2-scope)
+- [3. Hardware](#3-hardware)
+  - [3.1 The Raspberry Pi 3A+ and its one USB port](#31-the-raspberry-pi-3a-and-its-one-usb-port)
+  - [3.2 The radio](#32-the-radio)
+  - [3.3 Display](#33-display)
+  - [3.4 Keyboard](#34-keyboard)
+  - [3.5 Power](#35-power)
+- [4. Software architecture](#4-software-architecture)
+  - [4.1 Why fldigi runs under Xvfb](#41-why-fldigi-runs-under-xvfb)
+  - [4.2 The XML-RPC boundary](#42-the-xml-rpc-boundary)
+  - [4.3 The terminal front end](#43-the-terminal-front-end)
+- [5. The interface](#5-the-interface)
+  - [5.1 Layout](#51-layout)
+  - [5.2 Status line fields](#52-status-line-fields)
+  - [5.3 Transcript](#53-transcript)
+  - [5.4 Compose, and how an over works](#54-compose-and-how-an-over-works)
+  - [5.5 Showing a transmission as it goes out](#55-showing-a-transmission-as-it-goes-out)
+  - [5.6 Message memories](#56-message-memories)
+  - [5.7 Key bindings](#57-key-bindings)
+  - [5.8 Menu tree](#58-menu-tree)
+  - [5.9 Color schemes](#59-color-schemes)
+- [6. Modes](#6-modes)
+- [7. Rig control](#7-rig-control)
+  - [7.1 The shipped hamlib cannot tune this radio — resolved](#71-the-shipped-hamlib-cannot-tune-this-radio--resolved)
+  - [7.2 Transmit drive, and why the ALC setting is sharper than it looks](#72-transmit-drive-and-why-the-alc-setting-is-sharper-than-it-looks)
+- [8. Tuning](#8-tuning)
+  - [8.1 That technique does not survive contact with the radio](#81-that-technique-does-not-survive-contact-with-the-radio)
+  - [8.2 The tuning screen](#82-the-tuning-screen)
+  - [8.3 Band presets](#83-band-presets)
+  - [8.4 The decode preview](#84-the-decode-preview)
+- [9. Transmit safety](#9-transmit-safety)
+- [10. Boot and service model](#10-boot-and-service-model)
+- [11. Configuration](#11-configuration)
+  - [11.1 Repository layout](#111-repository-layout)
+- [12. Failure modes](#12-failure-modes)
+- [13. Build phases](#13-build-phases)
+- [14. Verified, and assumed](#14-verified-and-assumed)
+- [15. Decisions and open questions](#15-decisions-and-open-questions)
+  - [15.1 Settled](#151-settled)
+  - [15.1a Found while building](#151a-found-while-building)
+  - [15.2 Open](#152-open)
+- [16. Picking this back up](#16-picking-this-back-up)
 
 ---
 
@@ -705,6 +755,64 @@ documented nine-digit form itself. It is **not wired in** and should be deleted
 once 1051 has some hours on it. It is kept for now only because the FTX-1
 backend is Beta.
 
+### 7.2 Transmit drive, and why the ALC setting is sharper than it looks
+
+The deck does not set transmit drive. fldigi's audio goes out through the USB
+codec and into the radio's modulator, and how hard it drives is a radio
+setting. It is recorded here because getting it wrong produces a signal that
+looks fine from this end and is splattering at the far end, and because the
+adjustment turned out to behave in a way that misleads.
+
+**The arrangement.** In DATA-U the FTX-1 takes audio over USB. Three gain
+stages sit in series: fldigi's own transmit level, the ALSA playback mixer for
+the C-Media codec, and the radio's `USB MOD GAIN` (range 0–100, default 50).
+Adjusting more than one of them at a time makes the result impossible to
+attribute, so the first two stay at their defaults and `USB MOD GAIN` is the
+control that is moved.
+
+**The target is no ALC movement at all.** ALC is a limiter. Any deflection
+means the radio is clamping because drive exceeds what it can produce cleanly
+at the current `RF POWER`, and clamping a phase-modulated signal produces
+intermodulation — splatter into the adjacent few hundred hertz, which on a
+band segment as crowded as 14.070 lands on somebody. RF POWER sets a ceiling;
+drive sets what is actually produced.
+
+**What was expected, and was wrong.** Reasoning from a single measurement —
+`USB MOD GAIN` 45 giving 4 W with no ALC movement — suggested the two goals
+were in tension: that clean meant low power, and that reaching 20 W would
+necessarily mean accepting some ALC action. The response curve was assumed to
+be gentle.
+
+**What the radio actually does.** The knee is sharp and sits within one or two
+counts of the default:
+
+| `USB MOD GAIN` | Result |
+|---|---|
+| 50 (default) | ALC deflects |
+| 49 | No ALC movement |
+| 48 | No ALC movement, with margin — and full output |
+| 45 | No ALC movement, 4 W |
+
+So the clean setting is not a compromise. It is two counts below the default,
+it delivers the power asked for, and the 4 W at 45 was not the shape of a
+trade-off but a point far down the curve past the knee.
+
+**The rule that follows:** find the knee by measurement, not by inference.
+Reduce `USB MOD GAIN` one count at a time from the default until ALC movement
+stops, then take one or two more counts as margin. A curve cannot be
+extrapolated from a single point on it, and on this radio the interesting
+region is three counts wide.
+
+**The setting is not permanent.** The ALC threshold moves with band, antenna
+impedance and supply voltage, so it is worth re-checking on a band change or a
+different power source rather than treating one number as settled.
+
+**Duty cycle is the other half.** RTTY and PSK are near 100% duty cycle where
+SSB voice averages perhaps a quarter of peak, so a given wattage heats the
+finals far harder than the same figure on voice suggests. The radio can display
+**final amplifier temperature**; at 20 W on a continuous mode that belongs on
+the meter during the contact, not consulted after it.
+
 ## 8. Tuning
 
 Two different things get tuned, and conflating them is what made this look like
@@ -1107,6 +1215,19 @@ added over the RTTY one:
 * **Lowercase.** BPSK31 is not Baudot, so the session ran without Caps Lock —
   the opposite of the RTTY case the command keys were case-folded for (§9.4).
 
+**Proven on the air, 2026-09-21:**
+
+One BPSK31 contact on 40 m at 7.070 MHz — **FM4TI**, Martinique, roughly 2,100
+miles — answering a CQ DX at **20 W**. What this session added:
+
+* **Operation above QRP**, with the drive set so the ALC never moves (§7.2).
+  Everything before it had been at 5 W.
+* **A third band**, and the band presets used to get there rather than the
+  radio's own dial.
+* **Nothing new in the terminal.** The contact exercised no path the two
+  earlier sessions had not, which is the result worth recording: the deck was
+  not the thing being tested by then.
+
 The operating technique that worked is the one §8.1 arrived at: set the band,
 leave the VFO alone, and tune with the carrier.
 
@@ -1213,8 +1334,10 @@ was obvious from a desk.
   does.** Four contacts were made from the deck across two sessions, and
   `Ctrl-C` was verified against a live carrier.
 * ~~Whether PSK31 — the design target — works on the air~~ — **answered: it
-  does.** Two BPSK31 contacts on 2026-09-20 (§14). What remains untested is
-  power: nothing has been sent above 5 W.
+  does.** Two BPSK31 contacts on 2026-09-20, and DX on 2026-09-21 (§14).
+* ~~Whether the deck is usable above QRP~~ — **answered: it is**, at 20 W with
+  the ALC clear (§7.2). What remains untested is duration: nothing has run at
+  that power for longer than a few minutes, and no temperature was recorded.
 
 ---
 
@@ -1336,9 +1459,11 @@ the keyboard bonded and fldigi decoding.
 
 **Nothing is blocked. In order:**
 
-1. **Operate above QRP.** Everything so far has been at 5 W. RTTY and PSK are
-   near 100% duty cycle, so the first higher-power session wants the ALC at
-   zero and an eye on the finals.
+1. **A sustained transmission at 20 W.** One DX contact has been made at that
+   power with the ALC clear (§7.2), but only for a few minutes and with no
+   temperature reading taken. RTTY and PSK are near 100% duty cycle, so what
+   is unknown is thermal rather than electrical: put the final amplifier
+   temperature on the radio's meter and work a long one.
 2. **A long session away from mains.** The longest run to date is an evening,
    always on a wall supply. Neither thermal behavior nor current draw has been
    measured, and portability is a claim the deck has not yet been asked to
