@@ -16,13 +16,21 @@ sys.path.insert(0, _SRC)
 import pyte
 
 
-def run(keys=(), cols=66, rows=20, settle=1.2):
+def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm"):
+    """Drive the real application in a pty and return the reconstructed screen.
+
+    `term` is a parameter because it is not cosmetic. The deck runs on the
+    framebuffer console as TERM=linux, whose terminfo maps some keys
+    differently from xterm's — kspd=^Z above all, which turns Ctrl-Z into
+    KEY_SUSPEND. Tests that only ever run under xterm cannot see that class of
+    fault; test_console_keys.py runs under linux for exactly that reason.
+    """
     screen = pyte.Screen(cols, rows)
     stream = pyte.ByteStream(screen)
 
     pid, fd = os.forkpty()
     if pid == 0:
-        os.environ["TERM"] = "xterm"
+        os.environ["TERM"] = term
         # No remembered state: every run starts from the configured defaults,
         # or a mode chosen by one test would leak into the next.
         os.environ["CYBERDECK_STATE_PATH"] = ""

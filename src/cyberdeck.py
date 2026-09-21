@@ -24,6 +24,13 @@ from session import Entry, Session, RX, TX
 
 CHAT, TUNE = "chat", "tune"
 
+# Releasing the post-over receive hold. Not configuration: these describe how
+# a decaying transient is told apart from a station answering, which is a
+# property of the problem rather than a preference. See
+# Deck._settling_after_over.
+SETTLE_POLLS = 2        # consecutive good polls before decodes are trusted
+SETTLE_QUALITY = 20.0   # 0-100, used only when fldigi's squelch is off
+
 
 
 class _Memories(dict):
@@ -57,6 +64,10 @@ class Deck:
         self._tx_echo = ""
         # When the last over finished, for the post-transmit receive hold.
         self._tx_ended = 0.0
+        # Whether that hold is currently running, and how many consecutive
+        # polls have reported a signal worth releasing it for.
+        self._settling = False
+        self._settle_good = 0
         # The last of what has been decoded, for the tuning screen's preview.
         # Held separately from the transcript because it has to survive the
         # transcript being cleared and has to be cheap to take the tail of.
@@ -116,29 +127,11 @@ class Deck:
         text = self.fldigi.poll_rx()
         sending = self.fldigi.trx_state() != "RX"
 
-        # For a moment after PTT drops, the radio is recovering — the receiver
-        # unmutes, AGC settles — and the modem decodes that transient as text.
-        # It is real audio and fldigi is right to decode it; it is just not
-        # anybody's transmission. Any residual echo of our own over lands in
-        # the same window, since fldigi's echo and its TX state do not change
-        # over atomically.
-        hold = self.cfg.get("RX_HOLD_MS", 0) / 1000.0
-        holding = (not sending and hold > 0
-                   and time.monotonic() - self._tx_ended < hold)
-
-        if text and not sending and not holding:
-            self.session.receive(text)
-            self._rx_tail = (self._rx_tail + text)[-400:]
-            self.scroll = 0
-        elif text:
-            # Our own transmission, echoed back by fldigi as it goes out.
-            # Held here rather than written to the transcript: it is drawn as
-            # a transient TX line under the over while sending, and dropped
-            # when the over completes. See docs/design_doc.md §5.5 for why this is
-            # transient rather than permanent.
-            self._tx_echo += text
-            self.scroll = 0
-
+        # The end of the over is established before anything is done with
+        # `text`, because the poll in which trx_state flips to RX still
+        # carries the tail of our own echo: fldigi's echo and its TX state do
+        # not change over atomically. Deciding delivery first delivered that
+        # tail to the transcript as though a correspondent had sent it.
         if sending:
             self._tx_seen = True
         elif self._tx_seen:
@@ -148,11 +141,93 @@ class Deck:
             self._tx_seen = False
             self._tx_echo = ""
             self._tx_ended = time.monotonic()
+            self._settling = True
+            self._settle_good = 0
             self.session.note("sent")
+
+        holding = self._settling_after_over(sending)
+
+        if text and not sending and not holding:
+            self.session.receive(text)
+            self._rx_tail = (self._rx_tail + text)[-400:]
+            self.scroll = 0
+        elif text and sending:
+            # Our own transmission, echoed back by fldigi as it goes out.
+            # Held here rather than written to the transcript: it is drawn as
+            # a transient TX line under the over while sending, and dropped
+            # when the over completes. See docs/design_doc.md §5.5 for why this is
+            # transient rather than permanent.
+            self._tx_echo += text
+            self.scroll = 0
+        # Text arriving while holding falls through to neither branch and is
+        # dropped. Discarding it is the point; accumulating it into the echo
+        # would carry the transient over into the next over's TX line.
+
         if self.session.tx_timed_out():
             self.fldigi.abort()
             self.session.abort()
             self.session.note(f"transmit timed out after {self.cfg['TX_TIMEOUT']}s")
+
+    def _settling_after_over(self, sending):
+        """True while decodes arriving after an over should be discarded.
+
+        RTTY is the mode that needs this. Baudot has no error detection at
+        all — five bits between a start and a stop bit — so any noise that
+        fits the frame decodes as a character. When PTT drops the receiver
+        unmutes and the AGC recovers, and the modem turns that transient into
+        text. It is real audio and fldigi is right to decode it; it is simply
+        not anybody's transmission. The tail of our own echo lands in the same
+        window.
+
+        A fixed timer is the obvious instrument and the wrong one on its own.
+        Long enough to cover the transient on a quiet band is long enough to
+        swallow the opening characters of a fast reply in a contest, and a
+        timer cannot tell those apart. So the timer is only the floor:
+
+        * below ``RX_HOLD_MS``, always discard — at PTT drop even the quality
+          metric is still settling, so there is nothing trustworthy to gate on;
+        * after that, discard until the modem reports a real signal on two
+          consecutive polls. A decaying transient does not sustain; a
+          correspondent answering does;
+        * give up at ``RX_HOLD_MAX_MS``, so a band with nothing on it returns
+          to normal behaviour instead of blanking indefinitely.
+
+        ``RX_HOLD_MAX_MS = 0`` disables the quality gate and leaves exactly the
+        fixed ``RX_HOLD_MS`` window, which is what this did before.
+
+        Nothing is cleared. ``poll_rx()`` drains and this discards, so the
+        chunk delivered on release holds only what arrived since the last
+        poll. Calling ``clear_rx()`` on release would throw away the opening
+        of the very reply that ended the hold.
+        """
+        if not self._settling or sending:
+            return False
+
+        elapsed = time.monotonic() - self._tx_ended
+        floor = self.cfg.get("RX_HOLD_MS", 0) / 1000.0
+        ceiling = self.cfg.get("RX_HOLD_MAX_MS", 0) / 1000.0
+
+        if elapsed < floor:
+            return True
+        if ceiling <= 0 or elapsed >= ceiling:
+            self._settling = False
+            return False
+
+        # fldigi's squelch level is the operator's own statement of what
+        # counts as a signal here, so it is the right threshold when squelch
+        # is on. With squelch off no such statement exists and a constant
+        # stands in. Either way the transient has to hold above it rather than
+        # merely touch it, which is what the consecutive-poll count is for.
+        threshold = (self.fldigi.squelch_level() if self.fldigi.squelch()
+                     else SETTLE_QUALITY)
+        if self.fldigi.quality() >= threshold:
+            self._settle_good += 1
+        else:
+            self._settle_good = 0
+        if self._settle_good >= SETTLE_POLLS:
+            self._settling = False
+            return False
+        return True
 
     # -- rendering ---------------------------------------------------------
 
@@ -279,7 +354,8 @@ class Deck:
         if m == "tuning":
             return menus.tuning_menu(f.afc(), f.squelch(), f.squelch_level(),
                                      f.rsid(), f.txid(), f.reverse(),
-                                     self.cfg.get("RX_HOLD_MS", 0))
+                                     self.cfg.get("RX_HOLD_MS", 0),
+                                     self.cfg.get("RX_HOLD_MAX_MS", 0))
         if m == "radio":
             return menus.band_menu(self._supported_bands())
         if m == "system":
@@ -339,6 +415,12 @@ class Deck:
         elif ch == curses.KEY_F3:
             self._open_menu("mode")
         elif ch == curses.KEY_F2:
+            # The preview starts empty on every visit. Carrying the last
+            # visit's decodes in means the first thing the screen shows is
+            # text from a different frequency, which is worse than showing
+            # nothing: the preview exists to confirm that what is being tuned
+            # *now* is producing copy.
+            self._rx_tail = ""
             self.screen = TUNE
         elif ch == curses.KEY_F4:
             self._apply_scheme(colors.cycle(self.scheme))
@@ -396,7 +478,15 @@ class Deck:
             self._search(self.fldigi.search_up, "up")
         elif ch == 19:                       # Ctrl-S
             self._search(self.fldigi.search_down, "down")
-        elif ch == 26:                       # Ctrl-Z
+        # Ctrl-Z arrives as one of two different values depending on the
+        # terminal, and the panel gets the one that is easy to miss.
+        # TERM=linux defines kspd=^Z, so ncurses consumes byte 26 and returns
+        # KEY_SUSPEND (407) instead; TERM=xterm defines no kspd and the byte
+        # comes through as 26. Matching only 26 works over SSH and silently
+        # does nothing on the deck — which is how this shipped. kspd is the
+        # only such capability in the linux entry, so Ctrl-Z is the only
+        # command key affected; kbs=^? is already handled with backspace.
+        elif ch in (26, curses.KEY_SUSPEND):  # Ctrl-Z
             if not self.session.undo():
                 self.session.note("nothing to undo")
         elif curses.KEY_F5 <= ch <= curses.KEY_F12:
@@ -464,9 +554,11 @@ class Deck:
             if field in known:
                 self.cfg[field] = value
         self.session.callsign = self.cfg.get("CALLSIGN") or "LOCAL"
-        hold = state.get("rx_hold_ms")
-        if isinstance(hold, int) and 0 <= hold <= 5000:
-            self.cfg["RX_HOLD_MS"] = hold
+        for key, field in (("rx_hold_ms", "RX_HOLD_MS"),
+                           ("rx_hold_max_ms", "RX_HOLD_MAX_MS")):
+            hold = state.get(key)
+            if isinstance(hold, int) and 0 <= hold <= 5000:
+                self.cfg[field] = hold
         scheme = state.get("color")
         if scheme in colors.SCHEMES:
             self.scheme = scheme
@@ -493,6 +585,7 @@ class Deck:
             "station": {k: self.cfg.get(k, "")
                         for k, _label, _token in menus.STATION_FIELDS},
             "rx_hold_ms": self.cfg.get("RX_HOLD_MS", 0),
+            "rx_hold_max_ms": self.cfg.get("RX_HOLD_MAX_MS", 0),
         }
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -641,12 +734,28 @@ class Deck:
                 f.set_squelch_level(min(100.0, f.squelch_level() + 5))
             elif key == "-":
                 f.set_squelch_level(max(0.0, f.squelch_level() - 5))
-            elif key in ("[", "]"):
-                step = 250 if key == "]" else -250
-                value = max(0, min(5000, self.cfg.get("RX_HOLD_MS", 0) + step))
-                self.cfg["RX_HOLD_MS"] = value
+            elif key in ("[", "]", "{", "}"):
+                # The lower bound is always discarded; the upper bound caps
+                # how long the quality gate may keep waiting. Kept ordered on
+                # every change rather than validated on use, so the pair
+                # cannot be left describing an impossible window.
+                up = key in ("]", "}")
+                which = "RX_HOLD_MS" if key in ("[", "]") else "RX_HOLD_MAX_MS"
+                step = 250 if up else -250
+                value = max(0, min(5000, self.cfg.get(which, 0) + step))
+                self.cfg[which] = value
+                if which == "RX_HOLD_MS":
+                    most = self.cfg.get("RX_HOLD_MAX_MS", 0)
+                    if most and most < value:
+                        self.cfg["RX_HOLD_MAX_MS"] = value
+                elif value and value < self.cfg.get("RX_HOLD_MS", 0):
+                    self.cfg["RX_HOLD_MS"] = value
                 self._save_state()
-                self.session.note(f"RX hold {value} ms")
+                least = self.cfg.get("RX_HOLD_MS", 0)
+                most = self.cfg.get("RX_HOLD_MAX_MS", 0)
+                self.session.note(
+                    f"RX hold {least} ms"
+                    + (f" to {most} ms" if most else " (fixed window)"))
             elif key == "c":
                 f.set_carrier(self.cfg["DEFAULT_CARRIER"])
                 self.session.note(f"carrier parked at {self.cfg['DEFAULT_CARRIER']} Hz")

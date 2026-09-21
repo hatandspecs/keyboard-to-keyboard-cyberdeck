@@ -14,7 +14,7 @@ a bonded Bluetooth keyboard, fldigi under Xvfb, rig control in both directions,
 and four contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19,
 and **N0DLR** and **KC3FL** on 20 m BPSK31, 2026-09-20.
 
-Nine modules and six test files, **208 checks**, all passing against a live
+Nine modules and seven test files, **216 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`).
 `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
 application through a pseudo-terminal and read the screen back with a terminal
@@ -80,7 +80,7 @@ same radio and board:
 
 | Function | Device | Setting |
 |---|---|---|
-| CAT | `/dev/ttyUSB0` (CP2105) | 38400 baud, hamlib rig model 1035 |
+| CAT | `/dev/ttyUSB0` (CP2105) | 38400 baud, hamlib rig model 1051 (§7.1) |
 | PTT | `/dev/ttyACM0` | separate port from CAT |
 | Audio codec | `plughw:1,0` (C-Media) | mono capture and playback |
 
@@ -140,9 +140,22 @@ headless appliance with no pointer:
 
 ### 3.5 Power
 
-Undecided; see question 4. A 3A+ with a DSI panel and Bluetooth draws
-appreciably more than the iGate build, and a portable deck implies a battery and
-a shutdown path that does not corrupt the card.
+5 V over USB, from whatever is already powering the station. The deck carries
+no cell of its own.
+
+A 3A+ with a DSI panel and Bluetooth draws appreciably more than the iGate
+build, which is an argument for sizing the source rather than for putting a
+source inside the deck. In the field the radio is already fed by a USB power
+bank or a LiFePO4 box; the deck shares it, so a portable setup has one source
+to charge, monitor and replace instead of one per device. A deck with an
+internal pack would also have to be declared as a lithium cell in luggage,
+where a panel and a board are neither.
+
+What this defers rather than solves is the shutdown path. An external source
+can be disconnected as abruptly as an internal one can go flat, so the card
+still has to survive losing power without warning — a filesystem question, and
+one nothing in this document currently answers. The deck writes little (config,
+remembered state), which reduces the exposure without removing it.
 
 ## 4. Software architecture
 
@@ -621,9 +634,13 @@ conversation.
 
 ## 7. Rig control
 
-`rigctld` runs as a separate service on `127.0.0.1:4532` with rig model 1035, CAT
-on `/dev/ttyUSB0` at 38400, and PTT on `/dev/ttyACM0`. fldigi connects to it as
-hamlib "NET rigctl" rather than opening the serial ports itself.
+`rigctld` runs as a separate service on `127.0.0.1:4532` with rig model 1051,
+CAT on `/dev/ttyUSB0` at 38400, and PTT on `/dev/ttyACM0`. fldigi connects to it
+as hamlib "NET rigctl" rather than opening the serial ports itself.
+
+The model was 1035, the FT-991 backend, until frequency writes were found to
+fail silently under it. §7.1 records why, and why 1051 needs hamlib built from
+source.
 
 This reuses a configuration already proven on this radio, keeps the two-port PTT
 arrangement in one place, and means the terminal can read frequency through
@@ -1032,7 +1049,8 @@ Separated deliberately, because the difference decides what can break late.
 
 * The FTX-1 enumerates on a Pi 3A+'s single USB port and presents CAT on
   `/dev/ttyUSB0`, PTT on `/dev/ttyACM0`, and audio on `plughw:1,0`.
-* hamlib rig model 1035 drives it.
+* hamlib rig model 1035 reads it. It cannot set its frequency — §7.1, and the
+  reason model 1051 and a source build of hamlib are required.
 * The 3A+'s OTG port is sensitive to adapters and cannot power some devices.
 
 **Verified on the deck itself, on the first build:**
@@ -1212,7 +1230,8 @@ was obvious from a desk.
 | Color schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.8 |
 | Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
 | Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
-| Rig control | `rigctld`, model 1035, reusing the iGate's proven FTX-1 configuration | 7 |
+| Rig control | `rigctld` on 127.0.0.1:4532, bridging the FTX-1's separate CAT and PTT ports. Model **1051**, which supersedes the 1035 the iGate used: 1035 reads but cannot tune | 7, 7.1 |
+| Power | 5 V over USB from the station's own source — a power bank or LiFePO4 box — and no internal battery | 3.5 |
 
 ### 15.1a Found while building
 
@@ -1226,6 +1245,17 @@ startup is an open question.
 
 **`main.rx_only` does not inhibit `main.tune`.** See §9 and §14; the inhibit is
 now enforced in the terminal instead.
+
+**The terminal type the tests run under is part of what they test.** `Ctrl-Z`
+shipped dead on the panel: `TERM=linux` defines `kspd=^Z`, so ncurses consumes
+byte 26 and returns `KEY_SUSPEND` (407), while `TERM=xterm` — what a pty test
+and an SSH session provide — defines no `kspd` and delivers 26. `undo()` was
+correct and the dispatch never reached it. The pty tests all ran under xterm,
+so the suite could not see it. `tests/test_console_keys.py` runs the
+application under `linux` and reads the capabilities from terminfo rather than
+hard-coding escape sequences. `kspd` is the only capability in that entry which
+captures a control byte the deck binds, and `kbs=^?` is already handled, so the
+exposure is bounded — but it was invisible from xterm.
 
 **The hint line has to shed bindings, not be truncated.** At 66 columns the
 full list of seven overflows by one character and renders as `^C abor`, which
@@ -1249,52 +1279,49 @@ worth having it for — scrolling the transcript, or a keyboard-free abort?
 Baking a pairing into the image is simpler; a pairing screen is more useful if the
 keyboard is ever replaced away from home.
 
-**4. Battery or mains?** A battery changes the design: a charge indicator in the
-status line, a low-battery shutdown, and a case that holds a pack.
-
 #### Interface
 
-**5. Is a local chat variant wanted?** On VHF simplex with a strong signal,
+**4. Is a local chat variant wanted?** On VHF simplex with a strong signal,
 turnarounds are cheap and Enter-sends-immediately is a reasonable way to work —
 closer to messaging than to an HF QSO. Worth a switchable behavior, or does one
 model for everything keep it honest?
 
-**6. Is 1500 Hz the right parking offset?** It is the common default and sits
+**5. Is 1500 Hz the right parking offset?** It is the common default and sits
 comfortably inside any SSB passband. A fixed offset is what makes the
 radio's-waterfall technique work, so it wants choosing once and leaving alone.
 
-**7. Should the transcript separate the two stations into columns, or interleave
+**6. Should the transcript separate the two stations into columns, or interleave
 them?** Interleaved with a callsign column is proposed. A split screen — remote
 above, own below — is the other tradition, and is easier to read at a glance on a
 small display.
 
-**8. Macros.** `F5`–`F12` are free. Worth defining CQ, a signal report, a brag
+**7. Macros.** `F5`–`F12` are free. Worth defining CQ, a signal report, a brag
 tape, and a sign-off? If so, what text, and should they be editable on the deck or
 only in the configuration file?
 
-**9. What belongs in the status line at 66 columns?** Section 5.2 currently cuts
+**8. What belongs in the status line at 66 columns?** Section 5.2 currently cuts
 sideband and IMD to fit. What gets cut next if something else has to go in?
 
 #### Operation
 
-**10. Should the deck log QSOs?** A plain text transcript per QSO is cheap. ADIF
+**9. Should the deck log QSOs?** A plain text transcript per QSO is cheap. ADIF
 that can be merged into a main log is more work and implies capturing callsign,
 RST and times, which implies fields to fill in, which implies more interface.
 
-**11. Band and frequency control.** Should the menu carry presets for the usual
+**10. Band and frequency control.** Should the menu carry presets for the usual
 digital watering holes — 14.070, 7.070, 3.580, 10.142, 21.070 — or is direct
 numeric entry enough?
 
-**12. Transmit time-out.** What limit? 180 seconds is proposed, which is long for
+**11. Transmit time-out.** What limit? 180 seconds is proposed, which is long for
 a keyboard QSO and short enough to matter if something hangs.
 
 #### Scope
 
-**13. Does the deck need WiFi at all once built?** Leaving it off is one less
+**12. Does the deck need WiFi at all once built?** Leaving it off is one less
 radio in the case and one less attack surface; leaving it on means updates and
 SSH without opening anything.
 
-**14. Is a second radio ever in scope?** The design assumes the FTX-1 exclusively.
+**13. Is a second radio ever in scope?** The design assumes the FTX-1 exclusively.
 Making the radio a profile, as the iGate does, costs little now and a great deal
 later.
 
@@ -1312,10 +1339,17 @@ the keyboard bonded and fldigi decoding.
 1. **Operate above QRP.** Everything so far has been at 5 W. RTTY and PSK are
    near 100% duty cycle, so the first higher-power session wants the ALC at
    zero and an eye on the finals.
-2. **A long session, and battery operation.** The longest run to date is an
-   evening, always on mains. Neither thermal behaviour nor current draw has
-   been measured, and portability is a claim the deck has not yet been asked
-   to support.
+2. **A long session away from mains.** The longest run to date is an evening,
+   always on a wall supply. Neither thermal behaviour nor current draw has been
+   measured, and portability is a claim the deck has not yet been asked to
+   support.
+
+   The deck takes no battery of its own, deliberately. It draws 5 V over USB
+   and is intended to share whatever is already powering the station — a USB
+   power bank or a LiFePO4 box — so that a field setup has one source rather
+   than one per device, and so that the deck carries in luggage as a panel and
+   a board with no cell in it. What is unmeasured is therefore not the deck's
+   endurance but its share of the bank's.
 3. **The remaining console-font question:** 10×20 and 16×32 at runtime via
    `setfont`, without disturbing the running curses application. The 12×24
    default renders correctly.

@@ -3,7 +3,7 @@
 # its own checks and ends with ALL PASS, so this reports per file rather than
 # collecting assertions.
 #
-# fldigi must be running: three of these drive the real application through a
+# fldigi must be running: four of these drive the real application through a
 # pseudo-terminal and read the screen back, which needs a modem to talk to.
 set -uo pipefail
 

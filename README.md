@@ -7,6 +7,16 @@ terminal over modern digital modes.
 
 ![The conversation screen](docs/screens/conversation-matrix.png)
 
+**Two ways to use this.** It was built as a dedicated machine — a Raspberry Pi
+3A+ behind a 5" panel, driving a Yaesu FTX-1 — and that is what most of this
+repository describes. But the application itself is an ordinary Python program
+that needs a terminal and a fldigi to talk to, and nothing else. It runs just
+as well **on a laptop, against whatever radio fldigi already works with**, with
+no Pi, no panel and no Bluetooth keyboard involved. If that is what you are
+after, go straight to [Running it on a laptop](#running-it-on-a-laptop-with-your-own-radio)
+or to the fuller walkthrough in
+[the runbook](docs/deploy_cyberdeck_instructions.md#running-it-on-a-laptop-with-your-own-radio).
+
 Full design rationale is in [design_doc.md](docs/design_doc.md).
 
 ### Color schemes
@@ -148,10 +158,23 @@ Nothing else in the repository reaches the deck.
 | [`docs/operating_tutorial.md`](docs/operating_tutorial.md) | How to actually work someone, for a first-timer |
 | `deck.conf` | How to build that card: hostname, panel, keyboard, radio |
 
-## Running it on a laptop with the FTX-1
+## Running it on a laptop, with your own radio
 
 Everything except the panel and the Bluetooth keyboard works on a laptop, over
-SSH or in a terminal window. This is how it is developed.
+SSH or in a terminal window. This is how it is developed, and it is a
+perfectly good way to use it permanently.
+
+**The radio is fldigi's problem, not this program's.** The application opens no
+sound card and no serial port — it talks to fldigi over XML-RPC on the loopback
+interface and nothing else. So any rig fldigi already works with is a
+candidate, and the rule is simple: if fldigi decodes and keys your radio from
+its own window, the terminal inherits that; if it does not, fix that first.
+
+The FTX-1 below is the worked example because it is the radio this was built
+against and the only one it has been run against. Substitute your own ports,
+baud rate and hamlib model. [The runbook has a fuller, radio-agnostic
+walkthrough](docs/deploy_cyberdeck_instructions.md#running-it-on-a-laptop-with-your-own-radio),
+including which parts of this repository you can ignore.
 
 **1. fldigi must have a working configuration directory.** It crashes on an
 empty one — an assertion failure during first-run setup. Run fldigi once on a
@@ -162,7 +185,7 @@ are proven on this radio:
 
 | Function | Device | Setting |
 |---|---|---|
-| CAT | `/dev/ttyUSB0` (CP2105) | 38400 baud, hamlib rig 1035 |
+| CAT | `/dev/ttyUSB0` (CP2105) | 38400 baud, hamlib rig **1051** |
 | PTT | `/dev/ttyACM0` | a separate port from CAT |
 | Audio | `plughw:1,0` (C-Media) | mono in and out |
 
@@ -171,8 +194,16 @@ rig, so `rigctld` bridges both and fldigi connects to it as *Hamlib NET
 rigctl* on `localhost:4532`.
 
 ```bash
-rigctld -m 1035 -r /dev/ttyUSB0 -s 38400 -p /dev/ttyACM0 -P RIG -t 4532 &
+rigctld -m 1051 -r /dev/ttyUSB0 -s 38400 -p /dev/ttyACM0 -P RIG -t 4532 &
 ```
+
+**Model 1051 needs hamlib 4.7.1 or later, built from source on most
+distributions.** Model 1035 is the FT-991 backend and is the obvious thing to
+reach for — it reads the FTX-1 correctly, which is exactly what makes it
+dangerous. It cannot *set* the frequency: it sends a command one digit short of
+what the radio requires and the radio discards it without an error, so the
+display tracks the dial while every band preset silently fails. See Known
+limitations below.
 
 Then point fldigi at it **without using its dialogs** — the deck has no pointer
 and often no screen, so everything that has to be right is set from the command
@@ -290,7 +321,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-208 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
+216 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
 on functions in isolation.
@@ -366,6 +397,14 @@ Working end to end:
 
 **Fixed along the way**, recorded because each cost real time:
 
+* **`Ctrl-Z` reached no handler on the panel while working perfectly over
+  SSH.** `TERM=linux` defines `kspd=^Z`, so ncurses consumes byte 26 and
+  returns `KEY_SUSPEND` (407) instead; `TERM=xterm` defines no `kspd` and the
+  byte arrives as 26. A dispatch written as `ch == 26` is therefore correct on
+  every terminal the tests used and dead on the only one the deck uses.
+  `tests/test_console_keys.py` now runs the application under `TERM=linux` for
+  this class of fault; `kspd` is the only capability in that entry which
+  captures a control byte the deck binds.
 * Raspberry Pi OS ships the Pi 3's WiFi *and* Bluetooth radios rfkill-blocked.
   Setting the regulatory domain does not clear it. The build now unblocks both
   before NetworkManager starts — without that, first boot installs nothing and

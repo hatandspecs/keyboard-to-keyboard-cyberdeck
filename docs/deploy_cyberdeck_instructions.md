@@ -3,20 +3,69 @@
 Blank SD card to a working terminal, in order. Every command is meant to be
 run as written.
 
-**Before starting, read this once:** `tools/build_deck_image.sh build` and `flash`
-have been run end to end once, on 2026-09-19, and the resulting card verifies
-(Phase 2, step 4). Nothing has been *booted* yet — every phase from 3 onward is
-written from the scripts rather than from a working deck, so expect to hit
-something. Phase 6 covers recovery.
+**Not building a deck?** The application runs on an ordinary laptop against an
+ordinary fldigi, with no Pi and no panel. Skip to [Running it on a laptop, with
+your own radio](#running-it-on-a-laptop-with-your-own-radio); everything before
+it is hardware.
 
-**The known risk, flagged at the point it bites:** fldigi's audio device on the
-Pi (Phase 4, step 3). The DSI panel overlay was the other one; Waveshare's
-documentation has since confirmed the shipped default is correct (Phase 0,
-step 4).
+**Before starting, read this once:** the whole sequence has been run. The image
+builds and flashes, the card verifies (Phase 2, step 4), the deck boots, and it
+has made contacts from its own panel and keyboard — RTTY on 2026-09-19 and
+BPSK31 on 2026-09-20. Phase 6 covers recovery from the failures that were hit
+along the way, each of which is recorded where it bites rather than in a list
+at the end.
 
-Phase 0 step 2 has been run against a real FTX-1 on the laptop — the outputs
-shown there are the ones observed, not reconstructed. Everything from Phase 1
-onward is written from the scripts rather than from a completed run.
+**The two that cost the most time:** fldigi's audio device on the Pi (Phase 4,
+step 3), and the radios arriving rfkill-blocked so that WiFi and Bluetooth both
+appeared broken for unrelated-looking reasons (Phase 3). The DSI panel overlay
+looked like a third; Waveshare's documentation confirms the shipped default is
+correct (Phase 0, step 4).
+
+Outputs shown in this document are the ones observed, not reconstructed.
+
+---
+
+## Contents
+
+- [Phase 0 — on the laptop](#phase-0--on-the-laptop)
+  - [1. Find the Bluetooth keyboard's address](#1-find-the-bluetooth-keyboards-address)
+  - [2. Configure fldigi for the deck](#2-configure-fldigi-for-the-deck)
+  - [3. Fill in the two configuration files](#3-fill-in-the-two-configuration-files)
+  - [4. Check the panel overlay](#4-check-the-panel-overlay)
+- [Phase 1 — build the image](#phase-1--build-the-image)
+- [Phase 2 — flash the card](#phase-2--flash-the-card)
+  - [1. Identify the card](#1-identify-the-card)
+  - [2. Unmount it](#2-unmount-it)
+  - [3. Write it](#3-write-it)
+  - [4. Verify the card before booting](#4-verify-the-card-before-booting)
+- [Phase 3 — first boot](#phase-3--first-boot)
+  - [The keyboard: the first bond is manual](#the-keyboard-the-first-bond-is-manual)
+- [Phase 4 — the radio](#phase-4--the-radio)
+  - [1. Devices](#1-devices)
+  - [2. Is fldigi answering?](#2-is-fldigi-answering)
+  - [3. Audio device](#3-audio-device)
+- [Phase 5 — on the air](#phase-5--on-the-air)
+- [Phase 6 — when something fails](#phase-6--when-something-fails)
+  - [The build stopped partway](#the-build-stopped-partway)
+  - [Blank panel, but SSH works](#blank-panel-but-ssh-works)
+  - [The terminal is not running](#the-terminal-is-not-running)
+  - [Nothing installed, no keyboard, no hostname, wrong clock](#nothing-installed-no-keyboard-no-hostname-wrong-clock)
+  - [The deck reads the radio's frequency but cannot change it](#the-deck-reads-the-radios-frequency-but-cannot-change-it)
+  - [The radio was power-cycled and rig control stopped](#the-radio-was-power-cycled-and-rig-control-stopped)
+  - [No keyboard, no screen, no SSH](#no-keyboard-no-screen-no-ssh)
+  - [Start again](#start-again)
+- [Updating the code on a running deck](#updating-the-code-on-a-running-deck)
+- [Running it on a laptop, with your own radio](#running-it-on-a-laptop-with-your-own-radio)
+  - [What the application actually touches](#what-the-application-actually-touches)
+  - [Which parts of the repository are involved](#which-parts-of-the-repository-are-involved)
+  - [1. Get fldigi working with your radio, on its own](#1-get-fldigi-working-with-your-radio-on-its-own)
+  - [2. Start fldigi with XML-RPC listening](#2-start-fldigi-with-xml-rpc-listening)
+  - [3. Set the deck's own settings](#3-set-the-decks-own-settings)
+  - [4. Run it](#4-run-it)
+  - [What differs from the deck](#what-differs-from-the-deck)
+  - [Confirm the install](#confirm-the-install)
+  - [One honest limitation](#one-honest-limitation)
+- [What has and has not been tested](#what-has-and-has-not-been-tested)
 
 ---
 
@@ -663,9 +712,9 @@ A frequency of `0.0` means rig control is not working — check
 that does **not** match the radio's own display means `rigctld` is talking to
 the wrong serial port; the CP2105 presents two, and only one carries CAT.
 
-### 3. Audio device ⚠️
+### 3. Audio device
 
-The seeded configuration names `hw:1,0`, which was the radio **on the laptop**.
+⚠️ **This is the step most likely to bite.** The seeded configuration names `hw:1,0`, which was the radio **on the laptop**.
 The `hw:` index is assigned in enumeration order, and the Pi numbers the same
 codec differently — almost certainly `hw:0,0`. A wrong index does not raise an
 error: fldigi opens whatever is at that name, or nothing, and the deck looks
@@ -961,6 +1010,184 @@ systemctl show cyberdeck-ui -p ExecMainStartTimestamp
 The process start must be **after** the file's timestamp. An hour was lost once
 to debugging a deck that was running the previous copy.
 
+## Running it on a laptop, with your own radio
+
+This runbook builds a dedicated machine. That is not the only way to use the
+project, and it is not the way to start. The application is an ordinary Python
+program: it needs a terminal and a fldigi to talk to, and nothing else. No Pi,
+no panel, no Bluetooth keyboard, no systemd unit.
+
+Anyone who wants the interface without the hardware needs this section and
+none of the phases above it.
+
+### What the application actually touches
+
+One thing: **fldigi, over XML-RPC on the loopback interface.** It does not open
+a sound card and it does not open a serial port. fldigi owns the audio device
+and the rig control, and the deck asks fldigi for text, carrier, mode and
+frequency.
+
+Two consequences, and they decide the whole procedure:
+
+* **A radio fldigi cannot work, the deck cannot work.** There is no separate
+  radio support to configure. If fldigi decodes and keys your rig from its own
+  window, the deck inherits that; if it does not, fix that first and ignore
+  this project until it is fixed.
+* **Any radio fldigi supports is a candidate.** Nothing in `src/` names a
+  radio. The FTX-1 appears in the defaults and in the documentation because it
+  is the one this was built against and the only one it has been run against —
+  see the honesty note at the end of this section.
+
+### Which parts of the repository are involved
+
+| Path | Laptop use |
+|---|---|
+| `src/*.py` | **The application.** All of it, run in place |
+| `cyberdeck.conf` | **The settings.** Copy `cyberdeck.conf.example` and edit |
+| `tools/configure_fldigi.py` | Useful — sets fldigi's audio and rig control without its dialogs |
+| `tools/dev-fldigi.sh` | Optional — runs fldigi headless under Xvfb, if you would rather not see it |
+| `tools/run_tests.sh`, `tests/` | Optional — confirms the install against your own fldigi |
+| `tools/build_deck_image.sh`, `deck.conf` | **Ignore.** SD-card image build only |
+| Phases 0–6 of this runbook | **Ignore.** Pi hardware, panel, Bluetooth bonding |
+
+`deck.conf` is worth calling out because its existence is what makes the
+configuration look monolithic from outside. It is read by the image builder and
+never by the running application. The application's settings are in
+`cyberdeck.conf`, and nothing in that file is Pi-specific.
+
+### 1. Get fldigi working with your radio, on its own
+
+Before this project is in the picture at all. Start fldigi normally, set your
+callsign, choose the sound card, set up rig control, and confirm two things by
+looking at fldigi's own window:
+
+* text decodes off the air;
+* the radio keys and unkeys from fldigi's T/R button.
+
+The two arrangements for rig control, in the order to try them:
+
+* **fldigi straight to hamlib.** One serial port for CAT, PTT by CAT or by a
+  second method. This is most radios and it is the simple case.
+* **fldigi to `rigctld`, over the network.** Needed when a radio presents CAT
+  and PTT on *separate* serial ports, because fldigi's hamlib configuration has
+  room for one. `rigctld` bridges both and fldigi connects to it as *Hamlib NET
+  rigctl* on `localhost:4532`. The FTX-1 is this case:
+
+  ```bash
+  rigctld -m 1051 -r /dev/ttyUSB0 -s 38400 -p /dev/ttyACM0 -P RIG -t 4532 &
+  ```
+
+  Substitute your own model number, ports and baud rate. Pointing fldigi at the
+  CAT port directly *as well* is the mistake to avoid: it and `rigctld` then
+  fight over one device and one of them loses.
+
+**fldigi crashes on a genuinely empty configuration directory** — an assertion
+failure during first-run setup. Running it once as a desktop application, as
+above, is what avoids that, which is why this step comes first.
+
+### 2. Start fldigi with XML-RPC listening
+
+The deck reaches fldigi on `127.0.0.1:7362`. Start fldigi with that turned on
+explicitly rather than assuming the default:
+
+```bash
+fldigi --xmlrpc-server-address 127.0.0.1 --xmlrpc-server-port 7362
+```
+
+Check it answers before going further — this is the one dependency:
+
+```bash
+python3 -c "import xmlrpc.client; print(xmlrpc.client.ServerProxy('http://127.0.0.1:7362/').fldigi.name_version())"
+```
+
+A version string means everything downstream is configuration rather than
+plumbing. A connection error means fldigi is not listening and nothing else
+will work.
+
+To run fldigi without its window taking over the screen, `tools/dev-fldigi.sh`
+starts it against a virtual X display and leaves it running. It seeds its
+configuration directory from an existing install; read the script before using
+it, since it expects one.
+
+### 3. Set the deck's own settings
+
+```bash
+cp cyberdeck.conf.example cyberdeck.conf
+```
+
+Then edit it. The ones that matter on a first run:
+
+| Key | Set it to |
+|---|---|
+| `CALLSIGN` | Yours. The status line and the `{call}` token both use it |
+| `NAME`, `QTH`, `LOCATOR` | Yours — the message memories substitute them |
+| `RIG` | Your radio's name, for the `{rig}` token |
+| `RIG_BANDS` | The bands your radio covers, e.g. `80 m, 40 m, 20 m`. Empty means all of them, which is right for an all-band radio and wrong for anything else — unsupported bands are marked in the `F1` → Band menu rather than hidden |
+| `DEFAULT_MODE` | `BPSK31` unless you would rather start somewhere else |
+| `FLDIGI_URL` | Only if fldigi is not on `127.0.0.1:7362` |
+
+`tools/configure_fldigi.py` sets the fldigi side from the command line, which
+is worth knowing even on a laptop:
+
+```bash
+python3 tools/configure_fldigi.py --show          # what is set now
+python3 tools/configure_fldigi.py --list-audio    # PortAudio's device names
+python3 tools/configure_fldigi.py --audio "USB Audio Device" --call YOURCALL
+python3 tools/configure_fldigi.py --rigctld       # use Hamlib NET rigctl
+```
+
+### 4. Run it
+
+```bash
+python3 src/cyberdeck.py
+```
+
+It takes over the terminal it is started in. `Ctrl-Q` quits.
+
+Transmit starts **inhibited** — the status line reads `INH` — and `Ctrl-I`
+arms it. That is deliberate and it is not a laptop-only inconvenience: a
+program that can key a radio should not be able to do so the instant it starts.
+
+### What differs from the deck
+
+* **Colour.** The four schemes set true hues through the `PIO_CMAP` ioctl,
+  which works only on a Linux virtual console. In a terminal emulator or over
+  SSH the ioctl fails, the failure is caught, and the schemes render as their
+  ANSI approximations — recognisable, not exact. Nothing breaks.
+* **Size.** The layout is designed for the deck's 66×20. It adapts, and the
+  hint line sheds bindings rather than truncating, down to a floor of 30×8
+  below which it prints `terminal too small` and waits. A larger window is
+  simply a larger transcript.
+* **Keys.** The application inherits `TERM` from wherever it runs, and terminal
+  types disagree about what some keystrokes mean. `TERM=linux` maps Ctrl-Z to
+  `KEY_SUSPEND` where `xterm` delivers byte 26; both are handled, and
+  `tests/test_console_keys.py` exists because that difference once cost a
+  working key on the panel and nowhere else. If a key appears dead, run with
+  stderr visible — every unhandled key is logged with its number.
+
+### Confirm the install
+
+With fldigi running:
+
+```bash
+tools/run_tests.sh
+```
+
+The suite drives the real application through a pseudo-terminal against your
+own fldigi, so a pass means the application works on your machine, not merely
+that it imported.
+
+### One honest limitation
+
+This has only ever been run against a Yaesu FTX-1. Nothing in the application
+is specific to it — the radio is fldigi's problem, and the FTX-1 appears only
+in default values and worked examples — but "should work with any rig fldigi
+supports" is an argument from structure, not a report of it having been done.
+Expect the defaults to need changing and the rig-control step to be where the
+time goes.
+
+---
+
 ## What has and has not been tested
 
 Recorded honestly so that a failure is recognised rather than debugged from
@@ -990,8 +1217,8 @@ first principles.
 | **Anything above 5 W** | RTTY and PSK are near 100% duty cycle; watch ALC and the finals |
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
 | A long session | Longest run so far is an evening; no thermal or memory data |
-| Battery operation | Never run off anything but mains |
+| Off-mains operation | Never run off anything but a wall supply. The deck holds no battery by design — it takes 5 V over USB from whatever powers the station, a USB power bank or a LiFePO4 box. Its draw from one has not been measured |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **208 checks**
+over model, line editing, the color schemes — is covered by **216 checks**
 against a live fldigi (`tools/run_tests.sh`).

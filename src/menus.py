@@ -74,7 +74,15 @@ DISPLAY = {
     "footer": "Esc back   ↑↓ move   Enter select",
 }
 
-def tuning_menu(afc, squelch, level, rsid, txid, reverse=False, rx_hold=0):
+def _most(ms):
+    """The upper bound as the menu shows it. 0 is not 'no wait' but 'do not
+    wait at all' — the quality gate is off and the fixed window applies — and
+    printing it as '0 ms' reads as the opposite."""
+    return f"{ms} ms" if ms else "off"
+
+
+def tuning_menu(afc, squelch, level, rsid, txid, reverse=False, rx_hold=0,
+                rx_hold_max=0):
     """Tuning options with their current state shown.
 
     The static version of this menu gave no feedback: pressing `s` toggled
@@ -94,12 +102,12 @@ def tuning_menu(afc, squelch, level, rsid, txid, reverse=False, rx_hold=0):
             ("x", f"TXID        {onoff(txid)}   send one before our overs"),
             ("v", f"Reverse     {onoff(reverse)}   mark/space sense, for RTTY"),
             ("c", "Park carrier at the configured offset"),
-            ("[", f"RX hold after an over  down    ({rx_hold} ms)"),
-            ("]", f"RX hold after an over  up      ({rx_hold} ms)"),
-            (" ", ""),
-            (" ", "From the conversation screen, without coming here:"),
-            (" ", "  Ctrl-A / Ctrl-D   carrier -10 / +10 Hz"),
-            (" ", "  Ctrl-W / Ctrl-S   search for a signal, up / down"),
+            ("[", f"RX hold least  down   ({rx_hold} ms)"),
+            ("]", f"RX hold least  up     ({rx_hold} ms)"),
+            ("{", f"RX hold most   down   ({_most(rx_hold_max)})"),
+            ("}", f"RX hold most   up     ({_most(rx_hold_max)})"),
+            (" ", "On the conversation screen, without coming here:"),
+            (" ", "Ctrl-A / Ctrl-D carrier ±10 Hz  Ctrl-W / Ctrl-S search"),
         ],
         "footer": "Esc back   ↑↓ move   Enter select   F2 live tuning",
     }

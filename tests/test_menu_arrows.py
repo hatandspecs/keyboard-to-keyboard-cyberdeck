@@ -136,7 +136,12 @@ check("and names the search keys", "Ctrl-W / Ctrl-S" in body, body[:500])
 
 tune = menus.tuning_menu(True, True, 30, True, False, False)
 note_rows = [i for i, (key, _lbl) in enumerate(tune["items"]) if not key.strip()]
-check("the note rows exist", len(note_rows) >= 3, note_rows)
+# Two rows, and the count matters: the renderer splits a menu of more than
+# height-6 items into two columns that truncate every label at 27 characters,
+# which mangles this menu. Adding a row here costs a selectable one.
+check("the note rows exist", len(note_rows) >= 2, note_rows)
+check("the menu still fits one column at 66x20",
+      len(tune["items"]) <= 20 - 6, f'{len(tune["items"])} items')
 check("and none of them can be selected",
       not set(note_rows) & set(menus.selectable(tune)),
       (note_rows, menus.selectable(tune)))
@@ -165,13 +170,38 @@ check("INH clears from the status line", " INH " not in body, body[:120])
 check("and it is recorded", "transmit enabled" in body, body[:400])
 
 
-print("\n-- RX hold after an over is adjustable from Tune Settings --")
+print("\n-- The RX hold after an over is adjustable from Tune Settings --")
 body = show("F1 2", run(keys=[F1, "2"], settle=1.4))
-check("the setting is listed with its value",
-      "RX hold after an over" in body and "ms)" in body, body[:600])
-body = show("] raises it twice", run(keys=[F1, "2", "]", "]"], settle=1.7))
-check("stepped up by 250 ms each press", "(1500 ms)" in body, body[:600])
-body = show("[ lowers it", run(keys=[F1, "2", "[", "[", "[", "["], settle=1.9))
-check("and down again", "(0 ms)" in body, body[:600])
+check("both bounds are listed with their values",
+      "RX hold least" in body and "RX hold most" in body, body[:700])
+check("the default window is 1000 to 4000 ms",
+      "(1000 ms)" in body and "(4000 ms)" in body, body[:700])
+
+body = show("] raises the lower bound twice",
+            run(keys=[F1, "2", "]", "]"], settle=1.7))
+check("stepped up by 250 ms each press", "(1500 ms)" in body, body[:700])
+body = show("[ lowers it to zero",
+            run(keys=[F1, "2", "[", "[", "[", "["], settle=1.9))
+check("and down again", "(0 ms)" in body, body[:700])
+
+body = show("} raises the upper bound",
+            run(keys=[F1, "2", "}", "}"], settle=1.7))
+check("the upper bound steps too", "(4500 ms)" in body, body[:700])
+
+# The pair must never describe an impossible window: a lower bound above the
+# upper one would blank for longer than the gate is allowed to wait, which is
+# not a state the operator can reason about. Raising one carries the other.
+body = show("lower bound pushed past the upper one",
+            run(keys=[F1, "2"] + ["{"] * 14 + ["]"] * 2, settle=3.0))
+check("raising least past most carries most up with it",
+      body.count("(1000 ms)") >= 2 or body.count("(1250 ms)") >= 2,
+      body[:700])
+
+# 0 is not a duration here: it turns the quality gate off and leaves the
+# fixed window, so the menu says so rather than printing "0 ms".
+body = show("upper bound at zero",
+            run(keys=[F1, "2"] + ["{"] * 16, settle=3.2))
+check("an upper bound of zero reads as off", "RX hold most   down   (off)" in body,
+      body[:700])
 
 sys.exit(report())
