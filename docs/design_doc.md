@@ -16,12 +16,14 @@ and five contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19;
 Martinique on 40 m BPSK31, 2026-09-21 — the first DX, and the first contact
 above QRP.
 
-Nine modules and seven test files, **221 checks**, all passing against a live
-fldigi (`tools/run_tests.sh`).
-`test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` drive the real
-application through a pseudo-terminal and read the screen back with a terminal
-emulator, so the tests assert on what the deck looks like rather than on
-functions in isolation.
+Nine modules and nine test files, **251 checks**, all passing against a live
+fldigi (`tools/run_tests.sh`). Six of them — `test_screen.py`,
+`test_menu_nav.py`, `test_menu_arrows.py`, `test_console_keys.py`,
+`test_screen_toggles.py` and `test_state.py` — drive the real application
+through a pseudo-terminal and read the screen back with a terminal emulator,
+so the tests assert on what the deck looks like rather than on functions in
+isolation. `test_console_keys.py` runs it under `TERM=linux` rather than
+xterm, and `test_state.py` runs it twice against one state file.
 
 Rig control is complete: the band presets and the tuning keys move the radio's
 VFO. That needed hamlib 4.7.2 built from source and its native FTX-1 backend,
@@ -34,6 +36,7 @@ again. Section 15 records the decisions already made and the ones still open.
 Section 16 is where to start when this is picked back up.
 
 ---
+
 
 ## Contents
 
@@ -68,6 +71,7 @@ Section 16 is where to start when this is picked back up.
   - [8.2 The tuning screen](#82-the-tuning-screen)
   - [8.3 Band presets](#83-band-presets)
   - [8.4 The decode preview](#84-the-decode-preview)
+  - [8.5 The receive hold after an over](#85-the-receive-hold-after-an-over)
 - [9. Transmit safety](#9-transmit-safety)
 - [10. Boot and service model](#10-boot-and-service-model)
 - [11. Configuration](#11-configuration)
@@ -297,6 +301,22 @@ Sideband and IMD are cut to fit 66 columns; both are available in the tuning
 screen, which has room. At 80 or 100 columns they return. Transmit state is the
 one field that changes appearance rather than only content — see section 9.
 
+**The transmit state reports the radio, not this program.** Four values:
+
+| | |
+|---|---|
+| `RX` | Receiving |
+| `TX` | Transmitting, with an over still being composed into it |
+| `DRAIN` | Handed back, and the buffer is still going out — the radio is keyed |
+| `INH` | Transmit inhibited |
+
+`DRAIN` exists because the field used to be derived from the session's state,
+which is a record of what the operator asked for. `Ctrl-Y` does not unkey the
+radio: it marks fldigi's buffer "receive when drained", and everything already
+composed still has to be sent, which at 31 baud is minutes for a long over.
+Showing `RX` for that window told the operator the radio was silent while it
+was transmitting, and made a stuck transmission invisible (§9).
+
 ### 5.3 Transcript
 
 Received text arrives character by character, so a line is rendered as it
@@ -427,8 +447,8 @@ therefore cannot be undone. `undo()` refuses rather than pretending.
 | Key | Action |
 |---|---|
 | `F1` | Menu |
-| `F2` | **Toggle chat screen / tuning screen** |
-| `F3` | Mode picker |
+| `F2` | **Tuning screen, from any screen; again to return to the conversation** |
+| `F3` | **Mode picker, from any screen; again to return to the conversation** |
 | `F4` | Cycle color scheme |
 | `F5`–`F12` | Insert message memory 5-12 at the cursor |
 | `Ctrl-T` | Start the over |
@@ -443,11 +463,31 @@ therefore cannot be undone. `undo()` refuses rather than pretending.
 | `↑` `↓` | Recall previously sent overs |
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-L` | Redraw |
+| `Ctrl-Q` | Restart the terminal, after a confirmation |
 | `Esc` | Close any panel; from the tuning screen, back to chat |
 
 `F2` is a full-screen mode toggle rather than an overlay, for the reason in
 section 8: on a 66-column panel a tuning display worth reading does not fit
 alongside a conversation worth reading.
+
+**The three screens are a flat set, not a tree.** Conversation, tuning and mode
+are reachable from each other in one keystroke, and `F2` and `F3` are each
+their own way back. The operating loop that motivates it is signal
+identification: hear something unfamiliar, tune it, try a mode, look at the
+decode, try another. That is tune → mode → tune → mode, and a navigation where
+each step needs `Esc` first turns a two-key loop into a four-key one. Selecting
+a mode returns to whichever screen the picker was opened from, so the loop
+closes where it started.
+
+**`Ctrl-Q` is a restart, and says so.** On the deck the systemd unit is
+`Restart=always`, so leaving the main loop does not stop anything: the process
+exits, the panel goes dark for `RestartSec`, and the terminal comes back. There
+is no desktop underneath to return to and no way to relaunch from the panel, so
+quitting for good is not something the deck can offer. Unannounced, that is a
+few seconds of blank screen indistinguishable from a crash — it was read as
+one. It now asks for a second `Ctrl-Q` and names what will happen. The
+confirmation read has to set its own timeout: with the main loop's `POLL_MS`
+still in force it returns `-1` within a fifth of a second and cancels itself.
 
 **Tuning on `Ctrl-W/A/S/D`, not on `Ctrl`+arrows.** The Linux console cannot
 report a modified arrow at all — `TERM=linux` defines no `kUP5` or `kLFT5`, so
@@ -937,6 +977,11 @@ The screen's last two lines are a tail of what is being decoded, live. Text
 fills the lower row; when it reaches the edge the row above takes what came
 before and the lower one starts again empty.
 
+**The preview is emptied on every visit to the screen.** Carrying the last
+visit's text in means the first thing shown while tuning is copy from a
+different frequency, which is worse than showing nothing: the point of the
+display is to answer what is being demodulated *now*.
+
 Two lines rather than one because half a line of words is not a result. A full
 line either reads as English or it does not, and that judgement is the whole
 purpose of the display.
@@ -976,6 +1021,42 @@ em dash rather than a number quoted from memory.
 Received text continues to accumulate in the transcript while the tuning screen
 is up, and the transcript is intact on return.
 
+### 8.5 The receive hold after an over
+
+RTTY is the mode that forces this. Baudot has no error detection at all — five
+bits between a start and a stop bit — so any noise that fits the frame decodes
+as a character. When PTT drops the receiver unmutes and the AGC recovers, and
+the modem turns that transient into text. It is real audio and fldigi is right
+to decode it; it is simply nobody's transmission. The tail of the deck's own
+echo lands in the same window.
+
+A fixed timer is the obvious instrument and the wrong one on its own. Long
+enough to cover the transient on a quiet band is long enough to swallow the
+opening characters of a fast reply in a contest, and a timer cannot tell those
+apart. So the timer is only the floor:
+
+* below `RX_HOLD_MS`, always discard — at PTT drop even the quality metric is
+  still settling, so there is nothing trustworthy to gate on;
+* after that, discard until the modem reports a real signal on two consecutive
+  polls. A decaying transient does not sustain; a correspondent answering does;
+* give up at `RX_HOLD_MAX_MS`, so a band with nothing on it returns to normal
+  behavior instead of blanking indefinitely.
+
+`RX_HOLD_MAX_MS = 0` disables the quality gate and leaves exactly the fixed
+window, which is what this did before. Both bounds are adjustable from Tune
+Settings — `[` `]` for the floor, `{` `}` for the ceiling — and are kept
+ordered, so the pair cannot describe a window that is impossible.
+
+The threshold for "a real signal" is fldigi's own squelch level when squelch is
+on, since that is the operator's statement of what counts as one here; a
+constant stands in when it is off. The transient has to hold above it rather
+than merely touch it, which is what the consecutive-poll count is for.
+
+Nothing is cleared when the hold releases. `poll_rx()` drains and this
+discards, so the chunk delivered on release holds only what arrived since the
+last poll. Calling `clear_rx()` there would throw away the opening of the very
+reply that ended the hold.
+
 ## 9. Transmit safety
 
 A keyboard-driven transmitter with no pointer needs its transmit state to be
@@ -998,9 +1079,37 @@ unmistakable and its stop path to be immediate.
 * **Transmit starts inhibited at every power-on.** A deck that lives in a bag
   should not come up able to key a radio attached to an unknown antenna; an
   extra keystroke before the first over is a small price. `INHIBIT_ON_START`.
-* **A transmit time-out.** If transmit has been active longer than a configured
-  limit, the terminal calls `main.abort` and records it. The radio's own
-  time-out timer is the backstop, not the primary.
+* **A transmit time-out, armed until the radio says it stopped.** If transmit
+  has been active longer than `TX_TIMEOUT`, the terminal calls `main.abort` and
+  records it. The radio's own time-out timer is the backstop, not the primary.
+
+  The timer is disarmed by fldigi confirming receive, and by nothing else.
+  Keying it to the session's state — which `hand_back()` sets to `RX`
+  immediately — disarmed it at the exact moment it was needed, because the
+  radio stays keyed through the drain. An over that never finished draining
+  then ran with nothing watching it. The operator's keys say what should
+  happen; only the radio says what did, and only the radio may stop the clock.
+
+* **A hand back that fails is reported.** `Ctrl-Y` appends fldigi's `^r` mark
+  over XML-RPC. That call was made and its result discarded, so a lost mark
+  left the radio keyed, the panel showing receive, and no one told. It now
+  returns whether fldigi took it, and a failure says `Ctrl-C` drops the
+  carrier.
+
+* **A drain that does not end says so.** Twenty seconds after a hand back with
+  the radio still keyed, and at widening intervals after that, the transcript
+  says how long it has been and which key stops it. Deliberately a notice and
+  not an intervention: a long over legitimately takes minutes to go out, and
+  aborting on a timer would cut off real transmissions. `TX_TIMEOUT` remains
+  the thing that acts.
+
+* **The two transmit states are reconciled.** This side's state is set by the
+  operator's keys and fldigi's by the radio, and they can part company — a
+  `start_over()` whose XML-RPC call failed leaves the session transmitting and
+  the radio idle. Every later `Ctrl-T` was then refused, silently, because
+  `start_over()` returned `None` without a word. It now says why, and after
+  five polls of fldigi reporting receive while this side reports transmit, the
+  terminal corrects itself and records it.
 * **Inhibit, enforced locally.** The terminal refuses to key at all while
   inhibited: `start_over` returns without calling fldigi. fldigi's own
   `main.rx_only` is set as well, but is not relied on — it was observed not to
@@ -1048,6 +1157,7 @@ COLOR = matrix          # matrix | deckard | hal | tron
 RIG_MODE = PKTUSB       # the radio's data mode; USB for plain sideband
 RIG_BANDS =             # empty: this radio covers every band listed
 
+TIMESTAMPS = yes        # timestamp column in the transcript
 INHIBIT_ON_START = yes
 RSID_ON_START = yes
 REMEMBER_STATE = yes
@@ -1058,6 +1168,8 @@ MEMORY_6 = DE {call} {call} K
 ...                     # through MEMORY_12
 
 TX_TIMEOUT = 180
+RX_HOLD_MS = 1000       # always discard decodes for this long after an over
+RX_HOLD_MAX_MS = 4000   # keep discarding, up to here, until a real signal (§8.5)
 SCROLLBACK = 2000
 POLL_MS = 200
 ```
@@ -1065,12 +1177,31 @@ POLL_MS = 200
 **The file is a starting point, not the source of truth.** Message memories
 and station fields are editable on the deck, and what is set there is written
 to `STATE_PATH` and wins over this file on the next start. The mode, carrier,
-color scheme and timestamp setting are remembered the same way.
+color scheme, timestamp setting and both receive-hold bounds are remembered the
+same way.
+
+**Remembering has to survive a power cut, not just a restart.** The deck is
+switched off by removing its power, so the state file is written to a temporary
+name, `fsync`ed, renamed, and the containing directory `fsync`ed as well.
+Without the flushes the rename lands while the contents are still in the page
+cache: a clean restart restores the setting, because the cache is flushed on
+the way out, and a power cycle loses it. That asymmetry presents as "it
+sometimes remembers", which is a far harder report to act on than "it never
+does".
 
 That is a deliberate shift. The deck began as a machine configured from a
 laptop and reflashed to change anything; it is becoming one an operator
 configures from its own keyboard. `cyberdeck.conf` describes how a *freshly
 flashed* deck should behave.
+
+**`FONT` in this file does nothing.** It is in the schema, it validates, and
+no code reads it. The console font is set by the systemd unit's
+`ExecStartPre=setfont`, from `DECK_CONSOLE_FONT` in `deck.conf` — a build-time
+property of the machine, not a runtime one, because changing the font changes
+the character grid under a running curses application. The key is left in place
+rather than removed only so that an existing `cyberdeck.conf` carrying it still
+loads; it should be deleted once nothing in the wild sets it. A setting that
+appears to work and does not is worse than no setting.
 
 **Transmit inhibit is the exception and does not persist.** It re-asserts on
 every power-on regardless of how it was left. A deck that comes out of a bag
@@ -1081,7 +1212,7 @@ prevents, and convenience does not get a vote.
 
 ```
 src/      the application. Installed FLAT into /opt/cyberdeck
-tests/    standalone scripts; three drive the real program through a pty
+tests/    standalone scripts; six drive the real program through a pty
 tools/    build, flash, development and documentation scripts
 docs/     this document, the runbook, the operating tutorial, screenshots
 refs/     the FTX-1 manuals, including the CAT reference
@@ -1322,6 +1453,45 @@ was obvious from a desk.
   otherwise identical UARTs — something matching on USB vendor:product cannot
   do.
 
+**Found by operating, after the deck was working:**
+
+These were reported as "quirks" across a single evening's use. None was
+reproducible from a test, and all but one turned out to be software.
+
+* **A handed-back over could stay on the air with the panel showing `RX`.**
+  Three faults in series, each of which alone would have been survivable:
+  `hand_back()` cleared the transmit time-out, disarming the backstop for the
+  drain window; the status line reported the session's state rather than
+  fldigi's, so the panel said receive while the transmitter ran; and the `^r`
+  mark was sent without checking whether the call landed. Resolved in §9. The
+  status line's `DRAIN` state exists because of this.
+
+* **`Ctrl-T` did nothing at all, silently, after a CW over.** CW sends far
+  slower than PSK, so the window in which an over looks finished and is not is
+  long. Switching mode inside it left the session transmitting and fldigi not,
+  and `start_over()` refused every subsequent over by returning `None` without
+  a note. Changing mode is now refused while the radio is keyed, the refusal
+  is reported, and the two states are reconciled (§9).
+
+* **The mode was not restored after a power cycle, but was after a restart.**
+  `fsync`, §11.
+
+* **A line wrapped early, once, after a reboot.** `KEY_RESIZE` was unhandled,
+  so a console that changed size after curses started kept the original width
+  for the life of the process. Consistent with the panel or `setfont` settling
+  after the terminal came up, and unreproducible afterwards — which is what a
+  one-shot size change looks like.
+
+* **The deck came up in CW.** Working as designed and arguably wrong: the
+  remembered mode is whatever fldigi was in when state was last written, which
+  includes a mode RSID adopted from a passing signal rather than one the
+  operator chose. Left as it is, and recorded here as a question rather than a
+  fault.
+
+* **`Ctrl-Q` appeared to freeze it.** It did not; `Restart=always` means the
+  panel goes dark for a few seconds and returns. Now confirmed and announced
+  (§5.7).
+
 **Still assumed, and not yet tested:**
 
 * **Terminus 12×24, 10×20 and 16×32 console fonts** switch at runtime with
@@ -1379,6 +1549,37 @@ application under `linux` and reads the capabilities from terminfo rather than
 hard-coding escape sequences. `kspd` is the only capability in that entry which
 captures a control byte the deck binds, and `kbs=^?` is already handled, so the
 exposure is bounded — but it was invisible from xterm.
+
+**A test that passes when the pty closes is not testing the exit path.** The
+harness ended each run by sending `Ctrl-Q` and closing the pseudo-terminal.
+Closing it kills the child regardless, so every test passed whether or not the
+program actually left its main loop — and when `Ctrl-Q` grew a confirmation
+that could never be answered, nothing noticed. The harness now waits on the
+process *before* closing the pty and records whether it exited on its own.
+
+**Two states describing the same thing will drift, and the one that is right
+is the one nearer the hardware.** The session's transmit state and fldigi's
+disagreed in both directions, and each direction had its own fault: the
+session stuck in transmit refused every over in silence, and the session in
+receive while the radio was keyed hid a live transmitter behind an `RX`
+indicator. Both are now resolved the same way — fldigi is asked, and what it
+says is what the operator sees (§9).
+
+**Durability is not the same as atomicity.** The remembered state was written
+to a temporary file and renamed, which is atomic against a crash only once the
+data is on the card. The deck is switched off by pulling its power, so the
+setting survived every clean restart and some power cycles. `fsync` on the
+file and on its directory is the difference (§11).
+
+**ncurses keeps the terminal size it first saw.** Without handling
+`KEY_RESIZE` a console that changes size after startup — a late `setfont`, a
+panel settling at boot — leaves every wrap width wrong for the life of the
+process, which presents as text breaking early for no reason.
+
+**The console palette outlives the process that set it.** `PIO_CMAP` changes
+the kernel's palette, not a property of this program, so quitting left the
+deck's hues on whatever owned tty1 next. The original is now read once and put
+back on exit.
 
 **The hint line has to shed bindings, not be truncated.** At 66 columns the
 full list of seven overflows by one character and renders as `^C abor`, which

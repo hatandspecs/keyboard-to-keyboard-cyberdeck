@@ -121,6 +121,15 @@ if __name__ == "__main__":
     print(frame(menus.render(menus.ROOT, W, H, selected=2)))
     print("```\n")
 
+    print("## Tune Settings — F1 then 2\n")
+    print("```")
+    print(frame(menus.render(
+        menus.tuning_menu(afc=True, squelch=True, level=15.0, rsid=True,
+                          txid=False, reverse=False, rx_hold=1000,
+                          rx_hold_max=4000),
+        W, H)))
+    print("```\n")
+
     print("## The mode picker — F3\n")
     print("```")
     print(frame(menus.render(menus.mode_menu("BPSK63"), W, H)))

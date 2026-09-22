@@ -25,6 +25,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
 
 ---
 
+
 ## Contents
 
 - [Phase 0 — on the laptop](#phase-0--on-the-laptop)
@@ -51,6 +52,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
   - [The terminal is not running](#the-terminal-is-not-running)
   - [Nothing installed, no keyboard, no hostname, wrong clock](#nothing-installed-no-keyboard-no-hostname-wrong-clock)
   - [The deck reads the radio's frequency but cannot change it](#the-deck-reads-the-radios-frequency-but-cannot-change-it)
+  - [The panel says DRAIN and the radio is still keyed](#the-panel-says-drain-and-the-radio-is-still-keyed)
   - [The radio was power-cycled and rig control stopped](#the-radio-was-power-cycled-and-rig-control-stopped)
   - [No keyboard, no screen, no SSH](#no-keyboard-no-screen-no-ssh)
   - [Start again](#start-again)
@@ -943,6 +945,29 @@ sudo systemctl start cyberdeck-rigctld
 If the dial moves, CAT is healthy and the fault is in hamlib. See
 design_doc.md §7.1.
 
+### The panel says DRAIN and the radio is still keyed
+
+Expected, up to a point. `Ctrl-Y` does not unkey the radio: it marks fldigi's
+buffer "return to receive when drained", and everything already composed still
+has to be sent. At 31 baud a long over legitimately takes minutes, and `DRAIN`
+is the status line reporting that honestly rather than showing `RX` while the
+transmitter runs.
+
+It is a fault when it does not end. The transcript begins saying `still
+transmitting Ns after hand back` twenty seconds in and repeats at widening
+intervals; if that number climbs past a minute or two, `Ctrl-C` drops the
+carrier. `TX_TIMEOUT` aborts it regardless, and that timer now stays armed
+through the drain rather than being cleared by the hand back.
+
+If the hand back itself failed — an XML-RPC call that did not land — the
+transcript says `fldigi did not take the hand back`. Check that fldigi is
+answering:
+
+```bash
+systemctl status cyberdeck-fldigi --no-pager
+python3 -c "import xmlrpc.client; print(xmlrpc.client.ServerProxy('http://127.0.0.1:7362/').fldigi.name_version())"
+```
+
 ### The radio was power-cycled and rig control stopped
 
 Power-cycling the FTX-1 detaches the CP2105, and the kernel hands out the next
@@ -1212,6 +1237,7 @@ first principles.
 | fldigi 4.2.06 on a 3A+'s 512 MB | Under Xvfb, with the radio attached |
 | Receive | Real off-air RTTY copy, tuned with `F2` and the reverse toggle |
 | Transmit | PTT, the over model, and `Ctrl-C` against a live carrier |
+| The transmit state the panel shows | `RX`, `TX`, `DRAIN` and `INH`, read from fldigi rather than from the terminal's own intent |
 | **PSK31 on the air** | The mode the deck was designed around. Two contacts on 14.070, both found with `Ctrl-W` / `Ctrl-S` |
 | Rig control, reads and writes | Needs hamlib 4.7.2 and model 1051 |
 | The color schemes | True hues via `PIO_CMAP`; `OSC P` does not work on this panel |
@@ -1223,8 +1249,9 @@ first principles.
 | **20 W on a 100% duty cycle mode** | One BPSK31 contact at 20 W with the ALC clear. Nothing longer than a few minutes at that power, and no temperature data |
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
 | A long session | Longest run so far is an evening; no thermal or memory data |
+| Remembered state across a power cut | The `fsync` that makes it durable is in place and exercised by a clean restart; pulling the power on a freshly changed setting has not been tried |
 | Off-mains operation | Never run off anything but a wall supply. The deck holds no battery by design — it takes 5 V over USB from whatever powers the station, a USB power bank or a LiFePO4 box. Its draw from one has not been measured |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **221 checks**
+over model, line editing, the color schemes — is covered by **251 checks**
 against a live fldigi (`tools/run_tests.sh`).

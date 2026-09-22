@@ -256,14 +256,29 @@ class Session:
         return text
 
     def hand_back(self):
-        """End the over. fldigi drops to receive once the buffer drains."""
+        """End the over. fldigi drops to receive once the buffer drains.
+
+        The transmit timer is deliberately left running. Handing back does not
+        unkey the radio — it appends fldigi's "receive after the buffer" mark,
+        and the radio stays keyed until everything already composed has gone
+        out, which at 31 baud can be minutes. Clearing the timer here, as this
+        did, disarmed the only software backstop for exactly the window in
+        which the transmitter is running unattended. It is cleared when fldigi
+        confirms it has stopped: see confirm_receive().
+        """
         if self.state != TX:
             return False
         self.state = RX
-        self._tx_started = None
         if self.entries and not self.entries[-1].closed:
             self.entries[-1].closed = True
         return True
+
+    def confirm_receive(self):
+        """fldigi has actually stopped transmitting. Disarms the timer.
+
+        The only thing entitled to do so: the operator's keys say what should
+        happen, and the radio says what did."""
+        self._tx_started = None
 
     def resync_to_receive(self):
         """Drop to receive because fldigi is not transmitting after all.
@@ -285,7 +300,7 @@ class Session:
 
     def abort(self):
         """Stop transmitting immediately, mid-word if necessary."""
-        was = self.state == TX
+        was = self.state == TX or self._tx_started is not None
         self.state = RX
         self._tx_started = None
         if was:
@@ -303,7 +318,11 @@ class Session:
         The radio's own timer is the real backstop; this is the software one,
         and it exists because a host that hangs holds PTT asserted.
         """
-        if self.state != TX or not self.tx_timeout:
+        # Armed whenever the radio may be keyed, which is not the same as
+        # the operator still composing: after hand_back() the session is in RX
+        # and the transmitter is still draining. Keying on state here let a
+        # stuck transmission run with nothing watching it.
+        if self._tx_started is None or not self.tx_timeout:
             return False
         return self.tx_elapsed() >= self.tx_timeout
 

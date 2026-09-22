@@ -45,6 +45,9 @@ deliberately: a true blue on black is close to unreadable as body text.
   `Enter` inserts a newline; it does not send.
 * Mode switching, carrier tuning and rig control from the keyboard.
 * Four monochrome color schemes, switchable at runtime.
+* A status line that reports **the radio's** state rather than the program's
+  intent: `RX`, `TX`, `DRAIN` while a handed-back over is still going out,
+  `INH` while transmit is inhibited.
 
 It deliberately does **not** do contest logging, ADIF, weak-signal modes,
 waterfall display, image modes, or packet.
@@ -74,8 +77,8 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | Key | Action |
 |---|---|
 | `F1` | Menu |
-| `F2` | Toggle the chat and tuning screens |
-| `F3` | Mode picker, including **AUTO (RSID)** |
+| `F2` | Tuning screen, from anywhere; again to come back |
+| `F3` | Mode picker, from anywhere, including **AUTO (RSID)**; again to come back |
 | `F4` | Cycle the color scheme |
 | `←` `→` `↑` `↓` | Edit the line: cursor, and recall previous overs |
 | `Ctrl-A` `Ctrl-D` | Carrier −10 / +10 Hz, without leaving the transcript |
@@ -88,7 +91,7 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | `Ctrl-X` | Clear the transcript |
 | `Ctrl-L` | Redraw the screen |
 | `PgUp` / `PgDn` | Scroll the transcript |
-| `Ctrl-Q` | Quit |
+| `Ctrl-Q` | Restart the terminal; asks for confirmation |
 | `Esc` | Close a menu |
 
 Menus take arrow keys as well as their single-key shortcuts: `↑` `↓` move a
@@ -96,10 +99,21 @@ Menus take arrow keys as well as their single-key shortcuts: `↑` `↓` move a
 `Ctrl-I` arms it. Command keys are case-folded, so they work with Caps Lock on
 — which is how RTTY is operated, since Baudot has no lowercase.
 
+**The three screens are a flat set, not a tree.** `F2` and `F3` reach the
+tuning screen and the mode picker from wherever you are, and each key is its
+own way back, so tune → mode → tune is one keystroke each way. Identifying an
+unknown signal is exactly that loop, and a navigation that needs `Esc` between
+each step is the wrong shape for it.
+
+**`Ctrl-Q` does not shut the deck down.** The systemd unit restarts it, so it
+is a restart of the terminal and nothing more — there is no desktop underneath
+to return to. It confirms first, because an unannounced few seconds of dark
+screen is indistinguishable from a crash.
+
 | `F1` | |
 |---|---|
 | `1` Mode | Twelve modes plus **AUTO (RSID)** and the full list |
-| `2` Tune Settings | AFC, squelch and level, RSID, TXID, reverse, park carrier |
+| `2` Tune Settings | AFC, squelch and level, RSID, TXID, reverse, park carrier, the receive hold after an over |
 | `3` Band | 80 m to 70 cm, low to high |
 | `4` Display | The four color schemes, timestamps |
 | `5` Memories | Eight message memories, edited in place |
@@ -130,7 +144,7 @@ flowchart TD
 
 ```
 src/      the application — installed flat into /opt/cyberdeck on the deck
-tests/    standalone scripts; three drive the real program through a pty
+tests/    standalone scripts; six drive the real program through a pty
 tools/    build, flash, development and documentation scripts
 docs/     design, runbook, operating tutorial, screenshots
 refs/     the FTX-1 manuals, including the CAT reference
@@ -153,6 +167,9 @@ Nothing else in the repository reaches the deck.
 | [`tools/build_deck_image.sh`](tools/build_deck_image.sh) | Builds and flashes the Pi's SD card |
 | [`tools/configure_fldigi.py`](tools/configure_fldigi.py) | Sets fldigi's audio and rig control without its GUI |
 | [`tools/dev-fldigi.sh`](tools/dev-fldigi.sh) | fldigi headless under Xvfb, for development |
+| [`tests/test_console_keys.py`](tests/test_console_keys.py) | Keys as `TERM=linux` delivers them, which is not how xterm does |
+| [`tests/test_screen_toggles.py`](tests/test_screen_toggles.py) | `F2` and `F3` moving between the three screens |
+| [`tests/test_state.py`](tests/test_state.py) | What survives a restart |
 | [`tools/run_tests.sh`](tools/run_tests.sh) | The whole suite, one command |
 | [`docs/deploy_cyberdeck_instructions.md`](docs/deploy_cyberdeck_instructions.md) | The full runbook, blank card to on the air |
 | [`docs/operating_tutorial.md`](docs/operating_tutorial.md) | How to actually work someone, for a first-timer |
@@ -321,7 +338,8 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-221 checks. `test_screen.py`, `test_menu_nav.py` and `test_menu_arrows.py` fork
+251 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
+`test_console_keys.py`, `test_screen_toggles.py` and `test_state.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
 on functions in isolation.
@@ -402,6 +420,25 @@ Working end to end:
 
 **Fixed along the way**, recorded because each cost real time:
 
+* **A handed-back over could stay on the air with the screen showing `RX`.**
+  Three faults in series: `Ctrl-Y` set the session to receive and cleared the
+  transmit time-out, disarming the only software backstop for exactly the
+  window in which the radio is still draining; the status line showed the
+  session's state rather than fldigi's, so the panel read `RX` while the
+  transmitter ran; and `hand_back()` never checked whether its XML-RPC call
+  landed, so a lost `^r` unkeyed nothing and told no one. The time-out now
+  runs until fldigi confirms it stopped, the status line shows the radio's
+  own state including `DRAIN`, a failed hand back is reported, and a drain
+  still running after 20 seconds says so in the transcript.
+* **`Ctrl-T` did nothing, silently, whenever the two transmit states drifted
+  apart.** The session's idea of transmitting is set by the operator's keys
+  and fldigi's by the radio; nothing reconciled them, and `start_over()`
+  returned `None` without a word when it thought an over was already running.
+  It now says why, and `poll()` corrects the drift.
+* **A mode chosen minutes before a power cut was lost.** The remembered state
+  was written and renamed but never `fsync`ed, and the deck is switched off by
+  pulling its power — so a clean restart restored it and a power cycle did
+  not, which reads as "sometimes it works".
 * **`Ctrl-Z` reached no handler on the panel while working perfectly over
   SSH.** `TERM=linux` defines `kspd=^Z`, so ncurses consumes byte 26 and
   returns `KEY_SUSPEND` (407) instead; `TERM=xterm` defines no `kspd` and the

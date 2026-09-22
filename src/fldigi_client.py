@@ -142,8 +142,23 @@ class Fldigi:
             self._call("text.add_tx", text)
 
     def hand_back(self):
-        """Finish the over: drop to receive once the buffer has drained."""
+        """Finish the over: drop to receive once the buffer has drained.
+
+        Returns whether fldigi actually took the instruction. This was
+        fire-and-forget, and a failed call is the exact thing that leaves the
+        radio keyed with the terminal showing receive: the mark never arrives,
+        nothing unkeys, and no one is told.
+        """
         self._call("text.add_tx", RX_AFTER_BUFFER)
+        return self.connected
+
+    def receive_now(self):
+        """Unconditional return to receive, without waiting for the buffer.
+
+        The escalation from hand_back(): where `^r` is a mark placed in a
+        stream that may not be moving, this acts on the modem directly."""
+        self._call("main.rx")
+        return self.connected
 
     def abort(self):
         self._call("main.abort")

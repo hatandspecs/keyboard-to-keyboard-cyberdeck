@@ -79,6 +79,33 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+## Tune Settings — F1 then 2
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ TUNE SETTINGS                                                    │
+│                                                                  │
+│  a  AFC         ON                                               │
+│  s  Squelch     ON                                               │
+│  +  Squelch level up       (15)                                  │
+│  -  Squelch level down     (15)                                  │
+│  r  RSID        ON    follow others' identifiers                 │
+│  x  TXID        off   send one before our overs                  │
+│  v  Reverse     off   mark/space sense, for RTTY                 │
+│  c  Park carrier at the configured offset                        │
+│  [  RX hold least  down   (1000 ms)                              │
+│  ]  RX hold least  up     (1000 ms)                              │
+│  {  RX hold most   down   (4000 ms)                              │
+│  }  RX hold most   up     (4000 ms)                              │
+│     On the conversation screen, without coming here:             │
+│     Ctrl-A / Ctrl-D carrier ±10 Hz  Ctrl-W / Ctrl-S search       │
+│                                                                  │
+│                                                                  │
+│──────────────────────────────────────────────────────────────────│
+│ Esc back   ↑↓ move   Enter select   F2 live tuning               │
+└──────────────────────────────────────────────────────────────────┘
+```
+
 ## The mode picker — F3
 
 ```

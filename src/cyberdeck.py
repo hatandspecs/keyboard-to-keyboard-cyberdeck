@@ -37,6 +37,11 @@ SETTLE_QUALITY = 20.0   # 0-100, used only when fldigi's squelch is off
 # the moment it begins.
 TX_IDLE_POLLS = 5
 
+# How long after Ctrl-Y the transmitter may still be draining before the
+# operator is told, and how often to repeat it. Not a limit: a long over at
+# 31 baud takes minutes to go out and that is correct. TX_TIMEOUT is the limit.
+DRAIN_NOTICE_S = 20.0
+
 
 
 class _Memories(dict):
@@ -77,6 +82,14 @@ class Deck:
         # Consecutive polls where fldigi says receive and this side says
         # transmit. See poll().
         self._tx_idle = 0
+        # fldigi's transmit state as of the last poll, for the status line and
+        # for the stuck-transmit check. Read once per poll rather than again
+        # at draw time, so both agree.
+        self._fldigi_sending = False
+        # When Ctrl-Y was pressed, and when the operator was last told the
+        # radio is still keyed despite it. See _watch_drain().
+        self._handed_at = None
+        self._drain_warned = 0.0
         # The last of what has been decoded, for the tuning screen's preview.
         # Held separately from the transcript because it has to survive the
         # transcript being cleared and has to be cheap to take the tail of.
@@ -135,6 +148,7 @@ class Deck:
         # drains, and the echo keeps arriving for that whole tail.
         text = self.fldigi.poll_rx()
         sending = self.fldigi.trx_state() != "RX"
+        self._fldigi_sending = sending
 
         # The end of the over is established before anything is done with
         # `text`, because the poll in which trx_state flips to RX still
@@ -152,6 +166,9 @@ class Deck:
             self._tx_ended = time.monotonic()
             self._settling = True
             self._settle_good = 0
+            self._handed_at = None
+            self._drain_warned = 0.0
+            self.session.confirm_receive()
             self.session.note("sent")
 
         # fldigi is the authority on whether the radio is keyed. This side's
@@ -169,6 +186,8 @@ class Deck:
                 self._tx_idle = 0
         else:
             self._tx_idle = 0
+
+        self._watch_drain(sending)
 
         holding = self._settling_after_over(sending)
 
@@ -220,6 +239,39 @@ class Deck:
         finally:
             self.scr.timeout(self.cfg["POLL_MS"])
         return again != 17
+
+    def _watch_drain(self, sending):
+        """Say something when the radio is still keyed long after a hand back.
+
+        `Ctrl-Y` does not unkey the radio. It appends fldigi's "receive after
+        the buffer" mark, and everything already composed still has to go out
+        — at 31 baud a long over legitimately takes minutes. So a slow drain
+        is not a fault and must not be aborted on a timer.
+
+        What is a fault is a drain that never ends: the mark was lost to a
+        failed call, or fldigi is wedged. The two look identical from here for
+        the first minute, so this does not guess. It reports, at widening
+        intervals, that the transmitter is still running and says which key
+        stops it. TX_TIMEOUT remains the thing that actually intervenes, and
+        it now stays armed across the drain rather than being disarmed by the
+        hand back.
+        """
+        if self._handed_at is None:
+            return
+        if not sending:
+            self._handed_at = None
+            self._drain_warned = 0.0
+            return
+        waited = time.monotonic() - self._handed_at
+        if waited < DRAIN_NOTICE_S:
+            return
+        # Every DRAIN_NOTICE_S, not every poll: five notices a second would
+        # bury the transcript the operator needs to read.
+        if waited - self._drain_warned < DRAIN_NOTICE_S:
+            return
+        self._drain_warned = waited
+        self.session.note(f"still transmitting {int(waited)}s after hand back "
+                          f"— Ctrl-C drops the carrier")
 
     def _settling_after_over(self, sending):
         """True while decodes arriving after an over should be discarded.
@@ -287,9 +339,20 @@ class Deck:
     def status_fields(self):
         f = self.fldigi
         freq = f.frequency()
-        state = "TX" if self.session.state == TX else "RX"
-        if self.session.inhibited:
+        # fldigi's state, not the session's. The session says what the
+        # operator asked for; only the radio knows whether it is keyed. After
+        # Ctrl-Y the session is in RX while the transmitter is still draining,
+        # and showing RX there told the operator the radio was silent while it
+        # was on the air. DRAIN names that window rather than hiding it.
+        keyed = self._fldigi_sending
+        if keyed and self.session.state == TX:
+            state = "TX"
+        elif keyed:
+            state = "DRAIN"
+        elif self.session.inhibited:
             state = "INH"
+        else:
+            state = "RX"
         if not f.connected:
             state = "NO MODEM"
         return {
@@ -496,7 +559,11 @@ class Deck:
                 self.fldigi.start_over(text)
         elif ch == 25:                       # Ctrl-Y
             if self.session.hand_back():
-                self.fldigi.hand_back()
+                self._handed_at = time.monotonic()
+                self._drain_warned = 0.0
+                if not self.fldigi.hand_back():
+                    self.session.note("fldigi did not take the hand back — "
+                                      "Ctrl-C to drop the carrier")
         elif ch == 3:                        # Ctrl-C
             # Record how much actually went out before the abort. This is the
             # one case where intent and reality differ and the difference
@@ -744,6 +811,24 @@ class Deck:
             sel = self.menu_sel if self.menu_sel in opts else opts[0]
             key = menu["items"][sel][0]
             ch = ord(key) if len(key) == 1 else ch
+
+        # F2 and F3 reach every screen, so the three views — conversation,
+        # tuning, mode — form one flat set the operator can move between in a
+        # single keystroke, rather than a tree that has to be climbed back out
+        # of. Hunting an unidentified signal means going tune, mode, tune,
+        # mode; Esc-then-F3 each time is the wrong shape for that.
+        if ch == curses.KEY_F3:
+            if m in ("mode", "modes_all"):  # already here: F3 is the way out
+                self._close_menu()
+                self.screen = CHAT
+            else:
+                self._open_menu("mode")
+            return True
+        if ch == curses.KEY_F2:
+            self._close_menu()
+            self._rx_tail = ""             # a fresh preview, as from the chat screen
+            self.screen = TUNE
+            return True
 
         if ch == 27:                                   # Esc
             self._close_menu() if m in ("root",) else self._open_menu("root")
@@ -1122,6 +1207,9 @@ class Deck:
         # this screen until this was fixed, which looked exactly like the
         # bindings being dead.
         key = chr(ch).lower() if 32 <= ch < 127 else ""
+        if ch == curses.KEY_F3:
+            self._open_menu("mode")
+            return True
         if ch in (curses.KEY_F2, 27):
             self.screen = CHAT
         elif ch == curses.KEY_LEFT:

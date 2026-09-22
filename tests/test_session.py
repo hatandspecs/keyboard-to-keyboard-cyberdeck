@@ -81,6 +81,52 @@ s4 = Session(callsign="KD3CCO", tx_timeout=0, clock=lambda: now[0])
 s4.type("a"); s4.start_over()
 equals("TX_TIMEOUT = 0 never times out", s4.tx_timed_out(), False)
 
+# Ctrl-Y does not unkey the radio. It marks fldigi's buffer "receive when
+# drained", and everything already composed still has to go out — minutes, at
+# 31 baud. Disarming the time-out here left the transmitter running with
+# nothing watching it, which is how an over gets stuck on the air.
+print("\n-- the time-out survives handing back --")
+now2 = [0.0]
+s6 = Session(callsign="KD3CCO", tx_timeout=180, clock=lambda: now2[0])
+s6.type("a"); s6.start_over()
+now2[0] = 5.0
+equals("hand_back reports the over ended", s6.hand_back(), True)
+equals("and the session is receiving", s6.state, RX)
+now2[0] = 181.0
+equals("but the time-out still fires while the radio may be keyed",
+       s6.tx_timed_out(), True)
+
+# Only the radio may disarm it.
+s7 = Session(callsign="KD3CCO", tx_timeout=180, clock=lambda: now2[0])
+now2[0] = 0.0
+s7.type("a"); s7.start_over(); s7.hand_back()
+s7.confirm_receive()
+now2[0] = 181.0
+equals("fldigi confirming receive disarms it", s7.tx_timed_out(), False)
+
+# And an abort during the drain still counts as having stopped something.
+s8 = Session(callsign="KD3CCO", tx_timeout=180, clock=lambda: now2[0])
+now2[0] = 0.0
+s8.type("a"); s8.start_over(); s8.hand_back()
+equals("aborting mid-drain reports it stopped something", s8.abort(), True)
+equals("and disarms the time-out", s8.tx_timed_out(), False)
+
+print("\n-- a refused over says why --")
+s9 = Session(callsign="KD3CCO")
+s9.type("one"); s9.start_over()
+s9.type("two")
+equals("a second start_over is refused", s9.start_over(), None)
+check("and says so rather than doing nothing silently",
+      "already transmitting" in (s9.last_note or ""), s9.last_note)
+
+print("\n-- resync when fldigi was never transmitting --")
+s10 = Session(callsign="KD3CCO")
+s10.type("x"); s10.start_over()
+equals("resync drops to receive", s10.resync_to_receive(), True)
+equals("state is receive", s10.state, RX)
+equals("a second resync is a no-op", s10.resync_to_receive(), False)
+check("an over can be started again", s10.start_over() is not None)
+
 print("\n-- newlines close entries so speakers do not merge --")
 s5 = Session(callsign="KD3CCO")
 s5.receive("one\ntwo\n")

@@ -5,22 +5,41 @@ Every key in this document was read out of the deck's source, not remembered.
 
 ---
 
+
 ## Contents
 
-1. [What keyboard-to-keyboard is](#1-what-keyboard-to-keyboard-is)
-2. [The over: the one idea that matters](#2-the-over-the-one-idea-that-matters)
-3. [Before the first session: protecting the radio](#3-before-the-first-session-protecting-the-radio)
-4. [Session one — listen only](#4-session-one--listen-only)
-5. [Tuning, from the beginning](#5-tuning-from-the-beginning)
-6. [The language: abbreviations and prosigns](#6-the-language-abbreviations-and-prosigns)
-7. [Session two — answering a CQ](#7-session-two--answering-a-cq)
-8. [Session three — calling CQ yourself](#8-session-three--calling-cq-yourself)
-9. [Choosing a mode](#9-choosing-a-mode)
-10. [Where to listen](#10-where-to-listen)
-11. [Reading the status line](#11-reading-the-status-line)
-12. [Full key reference](#12-full-key-reference)
-13. [What worked, the first time out](#13-what-worked-the-first-time-out)
-14. [When something goes wrong](#14-when-something-goes-wrong)
+- [1. What keyboard-to-keyboard is](#1-what-keyboard-to-keyboard-is)
+- [2. The over: the one idea that matters](#2-the-over-the-one-idea-that-matters)
+- [3. Before the first session: protecting the radio](#3-before-the-first-session-protecting-the-radio)
+- [4. Session one — listen only](#4-session-one--listen-only)
+- [5. Tuning, from the beginning](#5-tuning-from-the-beginning)
+  - [What your radio actually gives the computer](#what-your-radio-actually-gives-the-computer)
+  - [What fldigi does with that audio](#what-fldigi-does-with-that-audio)
+  - [The two knobs, and why they are different](#the-two-knobs-and-why-they-are-different)
+  - [Answering your question about the waterfall](#answering-your-question-about-the-waterfall)
+  - [How to actually tune, every time](#how-to-actually-tune-every-time)
+  - [Where the VFO knob is still the right tool](#where-the-vfo-knob-is-still-the-right-tool)
+- [6. The language: abbreviations and prosigns](#6-the-language-abbreviations-and-prosigns)
+- [7. Session two — answering a CQ](#7-session-two--answering-a-cq)
+- [8. Session three — calling CQ yourself](#8-session-three--calling-cq-yourself)
+- [9. Choosing a mode](#9-choosing-a-mode)
+  - [Why RTTY is all capitals](#why-rtty-is-all-capitals)
+  - [Identifying a mode by ear](#identifying-a-mode-by-ear)
+  - [A caveat about CW](#a-caveat-about-cw)
+  - [Automatic mode switching](#automatic-mode-switching)
+- [10. Where to listen](#10-where-to-listen)
+- [11. Reading the status line](#11-reading-the-status-line)
+- [12. Full key reference](#12-full-key-reference)
+  - [Conversation screen](#conversation-screen)
+  - [Menu (`F1`)](#menu-f1)
+  - [Message memories](#message-memories)
+  - [Tuning screen (`F2`)](#tuning-screen-f2)
+- [13. What worked, the first time out](#13-what-worked-the-first-time-out)
+  - [13.1 RTTY in a sprint](#131-rtty-in-a-sprint)
+  - [13.2 PSK31, and an actual conversation](#132-psk31-and-an-actual-conversation)
+  - [13.3 DX, and the first contact above QRP](#133-dx-and-the-first-contact-above-qrp)
+- [14. When something goes wrong](#14-when-something-goes-wrong)
+- [A first session, condensed](#a-first-session-condensed)
 
 ---
 
@@ -575,7 +594,7 @@ narrower, so a narrow font keeps callsign, state and clock.
 | **mode** | The current modem — BPSK31 and so on |
 | **carrier** | Audio offset in Hz: where inside the passband the modem is listening |
 | **two readouts** | **Mode-dependent, and they label themselves.** Under PSK they are `S/N 6 dB` and `IMD ---`. Under RTTY the first becomes `45 /170` — baud rate and shift in Hz — and the second becomes the S/N. Olivia reports neither and they go blank. Read the label, not the position |
-| **state** | RX or TX |
+| **state** | What the **radio** is doing — see below |
 | **clock** | **UTC**, marked `Z`. Always UTC — it is the convention for logging, and it is what the other operator's log will say |
 
 Frequencies read at the radio's own resolution — `14.070.589`, not `14.071` —
@@ -586,8 +605,23 @@ The status row is **a filled bar — black text on the scheme's color**. If it
 ever renders as one solid block of color with no readable text, that is a
 contrast fault in the color pair, not an empty bar.
 
-`INH` in the state field is the transmit inhibit. If you press `Ctrl-T` and
-nothing happens, that is the first place to look.
+The state field reports the radio, not what you asked for:
+
+| | |
+|---|---|
+| `RX` | Receiving |
+| `TX` | Transmitting, and you are still adding to the over |
+| `DRAIN` | You handed back and the buffer is still going out — **the radio is keyed** |
+| `INH` | Transmit inhibited |
+
+`DRAIN` is normal. `Ctrl-Y` does not unkey the radio; it tells fldigi to drop
+to receive once everything already typed has been sent, and at 31 baud a long
+over takes minutes. The field shows `DRAIN` for exactly that window, so you can
+see the transmitter is still running rather than assuming it stopped when you
+pressed the key.
+
+`INH` is the transmit inhibit. If you press `Ctrl-T` and nothing happens, that
+is the first place to look.
 
 **When the deck commands the VFO**, it reads the frequency back and says what
 happened:
@@ -614,8 +648,8 @@ shrinks.
 | Key | Action |
 |---|---|
 | `F1` | Menu |
-| `F2` | Tuning screen |
-| `F3` | Mode menu |
+| `F2` | Tuning screen — press it again to come back |
+| `F3` | Mode menu — press it again to come back |
 | `F4` | Next color scheme |
 | `Ctrl-T` | **Start the over** — send the buffer, key the radio |
 | `Ctrl-Y` | **Hand back** — finish the over, return to receive |
@@ -623,7 +657,7 @@ shrinks.
 | `Ctrl-I` | Transmit inhibit on/off — **`Tab` does this too**, see below |
 | `Ctrl-X` | Clear the transcript |
 | `Ctrl-L` | Redraw the screen |
-| `Ctrl-Q` | Quit |
+| `Ctrl-Q` | Restart the terminal — asks you to press it again to confirm |
 | `←` `→` | Move the cursor in the line you are typing |
 | `↑` `↓` | Recall previous overs |
 | `Home` / `End` | Start / end of the line |
@@ -731,10 +765,33 @@ and guessing.
 | `<` `>` | VFO −1 / +1 kHz | Yes |
 | `a` `s` `r` `x` `v` | AFC · squelch · RSID · TXID · reverse | No |
 | `+` `-` | Squelch level, 2 at a time | No |
+| `[` `]` | Receive hold after an over, least — down / up | No |
+| `{` `}` | Receive hold after an over, most — down / up | No |
 | `F2` or `Esc` | Back to the conversation | — |
+| `F3` | **Straight to the mode picker** | — |
 
 Command keys here are **case-folded**, so they work with Caps Lock on — which
 is how you will be operating on RTTY.
+
+**`F3` goes straight to the mode picker, and `F2` comes straight back.** The
+three screens — conversation, tuning, mode — are reachable from each other in
+one keystroke, because identifying an unfamiliar signal means going round that
+loop: tune it, try a mode, look at the decode, try another. Choosing a mode
+returns you to the screen you opened the picker from, so the loop closes where
+it started.
+
+**The decode preview is cleared every time you arrive.** It shows what is being
+copied *now*, not what was on the last frequency you looked at.
+
+**The receive hold** is what stops the burst of nonsense after your own over.
+When PTT drops the receiver unmutes and the AGC recovers, and RTTY in
+particular decodes that transient as characters — Baudot has no error checking,
+so any noise that fits the frame becomes a letter. `[` `]` set how long
+decodes are *always* discarded; `{` `}` set how long the deck will keep
+discarding while it waits for a real signal. Setting "most" to `off` goes back
+to a plain fixed window. Defaults are 1000 ms and 4000 ms, and they only need
+touching if you still see junk after an over or if the other station's first
+characters go missing.
 
 **The third column matters and it surprises people.** `←` `→` `↑` `↓` move
 fldigi's **carrier** — where inside the received audio it listens. The radio is
@@ -853,6 +910,21 @@ have to set the VFO on the radio's own dial. Check `cyberdeck-rigctld`.
 
 **The radio will not key.** Transmit inhibit is the first thing to check — `F1`
 → `6` → `i`. It is enforced in the deck, so nothing else will override it.
+
+**The status line says `DRAIN`.** That is normal and it is the radio telling
+you the truth: you handed back, and everything you had already typed is still
+going out. `Ctrl-Y` does not unkey the radio — it tells fldigi to drop to
+receive once the buffer empties, and at 31 baud a long over takes minutes to
+send. Wait for it, or `Ctrl-C` if you want it to stop now.
+
+If the transcript starts saying *"still transmitting Ns after hand back"* and
+the number keeps climbing past a minute or two, something is wrong rather than
+slow. `Ctrl-C` drops the carrier.
+
+**`Ctrl-T` does nothing and says "already transmitting".** The deck thinks an
+over is still running. `Ctrl-Y` to hand back, or `Ctrl-C` to abort, and it
+will clear. If fldigi is not actually transmitting the deck notices within a
+second and corrects itself, saying so.
 
 **The radio keys and will not stop.** `Ctrl-C`. If that fails, the radio's
 time-out timer is your backstop — which is why section 3 says to set it. Power
