@@ -339,7 +339,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-295 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
+315 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
 `test_console_keys.py`, `test_screen_toggles.py` and `test_state.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
@@ -421,6 +421,22 @@ Working end to end:
 
 **Fixed along the way**, recorded because each cost real time:
 
+* **A multi-line over corrupted the display while it was going out.** `_wrap`
+  split on spaces only, so a newline — which `Enter` inserts by design —
+  stayed inside the string handed to `addstr` and moved the cursor mid-row.
+  The second line blanked halfway and the third resumed. It struck the
+  transient TX echo, the one path that carries the operator's newlines
+  verbatim rather than split into transcript entries, so it only appeared
+  while transmitting three or more lines.
+* **A restart came back on an old carrier and mode.** The state file was
+  written only from menu actions and recorded whatever was live at that
+  instant; tuning with the search and nudge keys never wrote anything. The
+  restore worked perfectly on a snapshot of the wrong moment. The mode and
+  carrier are now written once they have held still for ten seconds, however
+  they were reached.
+* **A state file that could not be written said nothing.** Every remembered
+  setting appeared to work and then reverted at the next start. Reported on
+  the panel now.
 * **Handing back and immediately starting another over truncated the first.**
   `Ctrl-Y` queues fldigi's "receive when drained" mark, which cannot be
   recalled; a second over queued behind it is split by a mark that is no

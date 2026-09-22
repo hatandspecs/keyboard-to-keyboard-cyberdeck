@@ -26,6 +26,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
 ---
 
 
+
 ## Contents
 
 - [Phase 0 — on the laptop](#phase-0--on-the-laptop)
@@ -53,6 +54,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
   - [Nothing installed, no keyboard, no hostname, wrong clock](#nothing-installed-no-keyboard-no-hostname-wrong-clock)
   - [The deck reads the radio's frequency but cannot change it](#the-deck-reads-the-radios-frequency-but-cannot-change-it)
   - [The panel says DRAIN and the radio is still keyed](#the-panel-says-drain-and-the-radio-is-still-keyed)
+  - [A received RSID moves the carrier, or a mode change resets it to 1500](#a-received-rsid-moves-the-carrier-or-a-mode-change-resets-it-to-1500)
   - [The radio was power-cycled and rig control stopped](#the-radio-was-power-cycled-and-rig-control-stopped)
   - [No keyboard, no screen, no SSH](#no-keyboard-no-screen-no-ssh)
   - [Start again](#start-again)
@@ -968,6 +970,29 @@ systemctl status cyberdeck-fldigi --no-pager
 python3 -c "import xmlrpc.client; print(xmlrpc.client.ServerProxy('http://127.0.0.1:7362/').fldigi.name_version())"
 ```
 
+### A received RSID moves the carrier, or a mode change resets it to 1500
+
+fldigi, not the deck. Two of its settings move the carrier without being asked:
+
+| Key | Set to | Effect |
+|---|---|---|
+| `STARTATSWEETSPOT` | 0 | No reset to the sweet spot when the modem changes |
+| `DISABLERSIDFREQCHANGE` | 1 | A received RSID switches mode but cannot retune |
+
+The card is built with both set. To apply them to a running deck, or after
+restoring a configuration from elsewhere:
+
+```bash
+sudo python3 /opt/cyberdeck/configure_fldigi.py \
+  --config-dir /opt/cyberdeck/fldigi-config --keep-carrier
+sudo systemctl restart cyberdeck-fldigi
+```
+
+Check with `--show`; both values must be as above. The first was observed on
+the air in both directions between two stations — change mode at 700 Hz and
+the other end jumps to 1500 — and the same setting is available in fldigi's
+own interface, under Configure → Modems, for a correspondent running a laptop.
+
 ### The radio was power-cycled and rig control stopped
 
 Power-cycling the FTX-1 detaches the CP2105, and the kernel hands out the next
@@ -1267,5 +1292,5 @@ first principles.
 | Off-mains operation | Never run off anything but a wall supply. The deck holds no battery by design — it takes 5 V over USB from whatever powers the station, a USB power bank or a LiFePO4 box. Its draw from one has not been measured |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **295 checks**
+over model, line editing, the color schemes — is covered by **315 checks**
 against a live fldigi (`tools/run_tests.sh`).

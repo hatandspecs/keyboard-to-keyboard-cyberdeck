@@ -6,6 +6,7 @@ Every key in this document was read out of the deck's source, not remembered.
 ---
 
 
+
 ## Contents
 
 - [1. What keyboard-to-keyboard is](#1-what-keyboard-to-keyboard-is)
@@ -679,7 +680,7 @@ instead.
 |---|---|---|
 | `1` | Mode | `a` AUTO (RSID) · the twelve modes above · `m` for all |
 | `2` | Tune Settings | `a` AFC · `s` squelch · `+`/`-` level · `r` RSID · `x` TXID · `v` reverse · `c` park carrier |
-| `3` | Band | `1`–`9`, 80 m up to 70 cm |
+| `3` | Band | `1`–`9`, `0`, `a` — eleven presets, 80 m up to 70 cm |
 | `4` | Display | `1` Matrix · `2` Deckard · `3` Hal · `4` Tron · `t` timestamps |
 | `5` | Memories | The eight message memories; `Enter` edits one in place |
 | `6` | Station | Callsign, name, QTH, grid, rig — `Enter` edits one in place |
@@ -933,6 +934,16 @@ is sent any sooner for having pressed it, and the only way back is to abort.
 
 **`Ctrl-I` mid-over does not stop the over.** The inhibit blocks the *next*
 one. `Ctrl-C` is the stop.
+
+**The deck remembers where you left it, ten seconds after you stop moving.**
+Mode and carrier are written to the state file once they have held still, so
+a restart or a power cycle comes back where you were — including a carrier you
+reached with `Ctrl-W` / `Ctrl-S` rather than from a menu. Change something and
+power off within a few seconds and the change will not have been recorded.
+
+If the panel ever says **`cannot save settings`**, nothing is being
+remembered: the state file cannot be written, and every setting will revert at
+the next start until that is fixed.
 
 **`Ctrl-T` does nothing and says "already transmitting".** The deck thinks an
 over is still running. `Ctrl-Y` to hand back, or `Ctrl-C` to abort, and it

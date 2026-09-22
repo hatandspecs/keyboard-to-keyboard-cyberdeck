@@ -16,7 +16,7 @@ and five contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19;
 Martinique on 40 m BPSK31, 2026-09-21 — the first DX, and the first contact
 above QRP.
 
-Nine modules and ten test files, **295 checks**, all passing against a live
+Nine modules and ten test files, **315 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`). Six of them — `test_screen.py`,
 `test_menu_nav.py`, `test_menu_arrows.py`, `test_console_keys.py`,
 `test_screen_toggles.py` and `test_state.py` — drive the real application
@@ -36,6 +36,7 @@ again. Section 15 records the decisions already made and the ones still open.
 Section 16 is where to start when this is picked back up.
 
 ---
+
 
 
 
@@ -1199,6 +1200,29 @@ to `STATE_PATH` and wins over this file on the next start. The mode, carrier,
 color scheme, timestamp setting and both receive-hold bounds are remembered the
 same way.
 
+**What is remembered is written when it settles, not when a menu is pressed.**
+`_save_state` originally ran only from discrete actions — a mode change, a
+colour change, a memory edit — and recorded the mode and carrier live at that
+instant. Tuning with the search and nudge keys triggered nothing at all, so the
+file held a snapshot of an unrelated moment: a deck tuned to 1500 Hz and
+restarted came back on a carrier from an hour earlier, with a mode to match.
+It presented as the restore being broken, and the restore was working
+perfectly on the wrong data.
+
+The mode and carrier are now compared against what the file says on every
+poll, and written once they have held still for `STATE_SETTLE_S` — ten
+seconds. Settling rather than saving on every change is what keeps this off
+the card: the carrier moves continuously while a signal is being hunted, and
+only where it comes to rest is worth recording. It also captures a mode or
+carrier reached any other way than a menu, which is the whole point.
+
+**A save that fails says so.** The write was wrapped in a bare `except OSError:
+pass`, so a state file that could not be written — wrong owner, full card —
+made every remembered setting appear to work and then revert at the next
+start, with the deck restoring whatever was last written successfully. The
+failure is now reported on the panel, once per distinct error rather than on
+every save.
+
 **Remembering has to survive a power cut, not just a restart.** The deck is
 switched off by removing its power, so the state file is written to a temporary
 name, `fsync`ed, renamed, and the containing directory `fsync`ed as well.
@@ -1647,6 +1671,22 @@ process, which presents as text breaking early for no reason.
 the kernel's palette, not a property of this program, so quitting left the
 deck's hues on whatever owned tty1 next. The original is now read once and put
 back on exit.
+
+**A renderer has to know about the characters the operator can type.**
+`_wrap` split on spaces only, so a newline stayed inside the string handed to
+`addstr`, which moved the cursor and painted the rest of the buffer over
+whatever was below. `Enter` inserts a newline by design (§5.4), so this was
+reachable from the keyboard on any over of three or more lines. The path it
+actually broke was the transient TX echo: sent and received text reach the
+transcript already split into one entry per line, while the echo is fldigi's
+stream wrapped in a synthetic entry and carries newlines verbatim. Symptom —
+the second line blanking halfway and the third resuming — and only while
+transmitting.
+
+Fixing it required the cursor accounting too: a break swallows the character
+it broke at, whether that is a space or a newline, so `_wrap_spans` reports
+what each line consumed from the source and the caret is placed from that
+rather than from the visible lengths.
 
 **The hint line has to shed bindings, not be truncated.** At 66 columns the
 full list of seven overflows by one character and renders as `^C abor`, which
