@@ -149,6 +149,23 @@ def _set_entries(entries):
 # the intensity attributes must therefore be left off. See apply().
 _direct_palette = False
 
+# The console palette as it was before the first apply(), so it can be put
+# back. Without this the deck's hues outlive the deck: quit or crash, and
+# whatever uses tty1 next — a login prompt, a traceback, fsck — inherits a
+# palette in which entry 5 is the scheme's hue rather than magenta.
+_original_cmap = None
+
+
+def restore():
+    """Put the console palette back as it was found. Safe to call twice, and
+    safe where no palette was ever changed."""
+    global _original_cmap
+    if _original_cmap is None:
+        return False
+    ok = _write_cmap(_original_cmap)
+    _original_cmap = None
+    return ok
+
 
 def apply(scheme_key):
     """Set up curses color pairs for a scheme, redefining the console
@@ -158,6 +175,9 @@ def apply(scheme_key):
     _direct_palette = False
 
     if on_linux_console():
+        global _original_cmap
+        if _original_cmap is None:
+            _original_cmap = _read_cmap()
         dim_slot, bright_slot = _slots(scheme["ansi"])
         _direct_palette = _set_entries({
             bright_slot: scheme["bright"],

@@ -234,6 +234,12 @@ class Session:
             self.note("transmit inhibited — nothing sent")
             return None
         if self.state == TX:
+            # Say so. This returned None in silence, which is indistinguishable
+            # from a dead key — and it is reachable whenever the session's idea
+            # of transmitting has drifted from fldigi's, so the operator gets a
+            # Ctrl-T that does nothing and no reason why. See Deck.poll(),
+            # which reconciles the drift this note reports.
+            self.note("already transmitting — Ctrl-Y to hand back, Ctrl-C to abort")
             return None
         text, self.compose, self.cursor = self.compose, "", 0
         self._recall = None
@@ -251,6 +257,24 @@ class Session:
 
     def hand_back(self):
         """End the over. fldigi drops to receive once the buffer drains."""
+        if self.state != TX:
+            return False
+        self.state = RX
+        self._tx_started = None
+        if self.entries and not self.entries[-1].closed:
+            self.entries[-1].closed = True
+        return True
+
+    def resync_to_receive(self):
+        """Drop to receive because fldigi is not transmitting after all.
+
+        The session's state is set by the operator's keys and fldigi's is set
+        by the radio, and they can part company: a start_over() whose XML-RPC
+        call failed leaves this side transmitting and the radio idle, and from
+        then on every Ctrl-T is refused for a reason the operator cannot see.
+        Distinct from abort() because nothing is being stopped — the discovery
+        is that nothing was running.
+        """
         if self.state != TX:
             return False
         self.state = RX

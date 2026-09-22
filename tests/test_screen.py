@@ -16,7 +16,7 @@ sys.path.insert(0, _SRC)
 import pyte
 
 
-def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm"):
+def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path=""):
     """Drive the real application in a pty and return the reconstructed screen.
 
     `term` is a parameter because it is not cosmetic. The deck runs on the
@@ -31,9 +31,11 @@ def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm"):
     pid, fd = os.forkpty()
     if pid == 0:
         os.environ["TERM"] = term
-        # No remembered state: every run starts from the configured defaults,
-        # or a mode chosen by one test would leak into the next.
-        os.environ["CYBERDECK_STATE_PATH"] = ""
+        # No remembered state by default: every run starts from the configured
+        # defaults, or a mode chosen by one test would leak into the next.
+        # test_state.py passes a path on purpose, to check that it does leak
+        # when it is supposed to.
+        os.environ["CYBERDECK_STATE_PATH"] = state_path
         os.environ["LINES"], os.environ["COLUMNS"] = str(rows), str(cols)
         os.chdir(_PROJECT)          # cyberdeck.conf is read from here
         os.execvp(sys.executable,
@@ -58,10 +60,32 @@ def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm"):
     for k in keys:
         os.write(fd, k if isinstance(k, bytes) else k.encode())
         pump(0.35)
-    os.write(fd, b"\x11")          # Ctrl-Q
+    # Ctrl-Q twice: the first asks for confirmation, the second exits. Sending
+    # one and closing the pty would also end the process, by hanging up its
+    # terminal rather than by leaving the main loop — which would pass while
+    # hiding a broken exit path.
+    os.write(fd, b"\x11")
+    pump(0.4)
+    os.write(fd, b"\x11")
     pump(0.6)
+    # Did it actually exit? waitpid before the pty is closed, so a process
+    # still in the main loop is visibly still there. Recorded on the screen
+    # object rather than asserted here, since most callers do not care.
+    exited = False
+    for _ in range(20):
+        try:
+            done, _status = os.waitpid(pid, os.WNOHANG)
+        except OSError:
+            exited = True
+            break
+        if done:
+            exited = True
+            break
+        pump(0.1)
+    screen.exited_cleanly = exited
     try:
-        os.close(fd); os.waitpid(pid, os.WNOHANG)
+        os.close(fd)
+        os.waitpid(pid, os.WNOHANG)
     except OSError:
         pass
     return screen
@@ -98,8 +122,18 @@ if __name__ == "__main__":
     tune = show("F2 tuning screen", run(keys=["\x1bOQ"]))   # F2 in xterm
     ok.append(("tuning screen reached", "quality" in tune or "TUNING" in tune))
 
-    narrow = show("50x15 grid", run(cols=50, rows=15))
+    narrow_scr = run(cols=50, rows=15)
+    narrow = show("50x15 grid", narrow_scr)
     ok.append(("fits a 50-column deck", "KD3CCO" in narrow))
+
+    # Ctrl-Q confirms, then exits. Asserted because the confirmation read has
+    # to block: written with the main loop's POLL_MS timeout still in force it
+    # returns -1 within 200 ms and cancels itself, and every test above would
+    # still pass — their processes die when the pty closes either way.
+    ok.append(("Ctrl-Q twice leaves the main loop", narrow_scr.exited_cleanly))
+    single = run(keys=[])
+    ok.append(("and the confirmation is actually shown",
+               "Ctrl-Q again" in "\n".join(single.display)))
 
     print()
     for name, good in ok:

@@ -31,6 +31,12 @@ CHAT, TUNE = "chat", "tune"
 SETTLE_POLLS = 2        # consecutive good polls before decodes are trusted
 SETTLE_QUALITY = 20.0   # 0-100, used only when fldigi's squelch is off
 
+# How many polls fldigi may report "not transmitting" while this side thinks it
+# is, before this side is taken to be wrong. trx_state lags a start_over by a
+# poll or two, so believing the first disagreement would abort every over at
+# the moment it begins.
+TX_IDLE_POLLS = 5
+
 
 
 class _Memories(dict):
@@ -68,6 +74,9 @@ class Deck:
         # polls have reported a signal worth releasing it for.
         self._settling = False
         self._settle_good = 0
+        # Consecutive polls where fldigi says receive and this side says
+        # transmit. See poll().
+        self._tx_idle = 0
         # The last of what has been decoded, for the tuning screen's preview.
         # Held separately from the transcript because it has to survive the
         # transcript being cleared and has to be cheap to take the tail of.
@@ -145,6 +154,22 @@ class Deck:
             self._settle_good = 0
             self.session.note("sent")
 
+        # fldigi is the authority on whether the radio is keyed. This side's
+        # state is set by the operator's keys, and the two can part company —
+        # a start_over() whose XML-RPC call failed leaves the session
+        # transmitting and the radio idle, and every later Ctrl-T is then
+        # refused with no visible cause. Give fldigi a couple of polls to
+        # actually key up before believing it, since trx_state lags the
+        # request, then correct this side and say so.
+        if self.session.state == TX and not sending and not self._tx_seen:
+            self._tx_idle += 1
+            if self._tx_idle >= TX_IDLE_POLLS:
+                if self.session.resync_to_receive():
+                    self.session.note("fldigi is not transmitting — back to receive")
+                self._tx_idle = 0
+        else:
+            self._tx_idle = 0
+
         holding = self._settling_after_over(sending)
 
         if text and not sending and not holding:
@@ -167,6 +192,34 @@ class Deck:
             self.fldigi.abort()
             self.session.abort()
             self.session.note(f"transmit timed out after {self.cfg['TX_TIMEOUT']}s")
+
+    def _quit(self):
+        """Ctrl-Q. Returns False to leave the main loop.
+
+        On the deck this is not "quit" in any sense the operator can see.
+        The systemd unit is Restart=always, so the process exits, the screen
+        goes dark for RestartSec, and the terminal comes back with the radio
+        where it was. There is no desktop underneath to return to and no way
+        to start it again from the panel, so exiting for good is not a thing
+        the deck can offer — which makes an unannounced three-second blank
+        screen indistinguishable from a crash. It read as one.
+
+        So it confirms first, and says what is about to happen. Off the deck,
+        run from a shell, it simply exits and the message is harmless.
+        """
+        self.session.note("Ctrl-Q again to restart the terminal, any other key to stay")
+        self.draw()
+        # The main loop runs getch() on a POLL_MS timeout so that fldigi is
+        # polled while nobody is typing. Reading the confirmation with that
+        # still set gives the operator a fifth of a second to answer, which is
+        # no confirmation at all — it returns -1 and cancels before a finger
+        # moves. Block for a few seconds instead, then restore the poll.
+        try:
+            self.scr.timeout(3000)
+            again = self.scr.getch()
+        finally:
+            self.scr.timeout(self.cfg["POLL_MS"])
+        return again != 17
 
     def _settling_after_over(self, sending):
         """True while decodes arriving after an over should be discarded.
@@ -401,6 +454,18 @@ class Deck:
         if ch == -1:
             return True
 
+        # The console can change size after curses has started — a late
+        # setfont, or the panel settling at boot. ncurses keeps the size it
+        # first saw unless told, so every wrap width stays wrong and text
+        # breaks early for the life of the process.
+        if ch == curses.KEY_RESIZE:
+            try:
+                curses.update_lines_cols()
+            except (AttributeError, curses.error):
+                pass
+            self.scr.clearok(True)
+            return True
+
         if self.edit is not None:
             return self._handle_edit(ch)
 
@@ -501,8 +566,8 @@ class Deck:
             self._typed("\n")
         elif 32 <= ch < 127:
             self._typed(chr(ch))
-        elif ch == 17:                       # Ctrl-Q quits
-            return False
+        elif ch == 17:                       # Ctrl-Q
+            return self._quit()
         else:
             # Same reasoning as the tuning screen: a key that appears dead is
             # otherwise indistinguishable from one whose handler ran and did
@@ -588,11 +653,28 @@ class Deck:
             "rx_hold_max_ms": self.cfg.get("RX_HOLD_MAX_MS", 0),
         }
         try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            directory = os.path.dirname(path)
+            os.makedirs(directory, exist_ok=True)
             tmp = path + ".new"
             with open(tmp, "w", encoding="utf-8") as fh:
                 json.dump(state, fh)
-            os.replace(tmp, path)       # atomic: no truncated file after a cut
+                # os.replace is atomic against a crash only once the data it
+                # renames is actually on the card. Without these the rename
+                # can land while the contents are still in the page cache, and
+                # the deck is switched off by pulling its power — so a mode
+                # chosen seconds earlier comes back as whatever was there
+                # before, or as an empty file. Both were reported as "the mode
+                # is not saved", and neither is visible from a clean restart,
+                # where the cache is flushed on the way out.
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+            # And the directory, so the rename itself survives the same cut.
+            dirfd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dirfd)
+            finally:
+                os.close(dirfd)
         except OSError:
             pass
 
@@ -1007,6 +1089,14 @@ class Deck:
         `c` on the Tune Settings page parks it deliberately, which is the
         other half of the behaviour and stays available.
         """
+        # Not mid-over. Changing the modem while the radio is keyed truncates
+        # whatever is going out and leaves the far end with a fragment in one
+        # mode and a carrier in another. CW is the case that provokes it: it
+        # sends far slower than PSK, so there is a long window in which the
+        # over looks finished and is not.
+        if self.session.state == TX or self.fldigi.trx_state() != "RX":
+            self.session.note("still transmitting — Ctrl-Y first, then change mode")
+            return
         was = self.fldigi.carrier()
         self.fldigi.set_modem(name)
         # Only if it actually moved, and only to somewhere sane: a failed read
@@ -1122,6 +1212,13 @@ def main(stdscr, settings):
         # here would mask the one that brought us here.
         try:
             deck.fldigi.abort()
+        except Exception:
+            pass
+        # Put the console palette back. The deck redefines entries in the
+        # kernel's palette, which is a property of the console and not of this
+        # process: without this, whatever owns tty1 next inherits the scheme.
+        try:
+            colors.restore()
         except Exception:
             pass
         try:
