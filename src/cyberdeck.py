@@ -37,6 +37,13 @@ SETTLE_QUALITY = 20.0   # 0-100, used only when fldigi's squelch is off
 # the moment it begins.
 TX_IDLE_POLLS = 5
 
+# How long the mode and carrier must hold still before they are written to the
+# state file. Tuning moves the carrier continuously, and persisting every step
+# would write the card hundreds of times per contact for no benefit; waiting
+# for it to settle records where the operator actually stopped. Overridable so
+# a test can watch a write happen without waiting ten seconds for it.
+STATE_SETTLE_S = float(os.environ.get("CYBERDECK_STATE_SETTLE_S", "10"))
+
 # How long after Ctrl-Y the transmitter may still be draining before the
 # operator is told, and how often to repeat it. Not a limit: a long over at
 # 31 baud takes minutes to go out and that is correct. TX_TIMEOUT is the limit.
@@ -82,6 +89,14 @@ class Deck:
         # Consecutive polls where fldigi says receive and this side says
         # transmit. See poll().
         self._tx_idle = 0
+        # The last state-file write error reported, so a failure that repeats
+        # every save does not repeat in the transcript.
+        self._state_error = None
+        # What the state file last recorded, and when, so that a mode or
+        # carrier reached any other way than a menu is still remembered.
+        self._saved_mode = None
+        self._saved_carrier = None
+        self._saved_at = 0.0
         # fldigi's transmit state as of the last poll, for the status line and
         # for the stuck-transmit check. Read once per poll rather than again
         # at draw time, so both agree.
@@ -111,6 +126,12 @@ class Deck:
 
         # After the configured defaults, so that what was last chosen wins.
         self._load_state()
+        # Baseline for _persist_settled: what the file already says is what is
+        # on screen, so an untouched deck does not rewrite the card at boot.
+        if self.fldigi.connected:
+            self._saved_mode = self.fldigi.modem()
+            self._saved_carrier = self.fldigi.carrier()
+        self._saved_at = time.monotonic()
         if self.fldigi.connected and settings.get("REMEMBER_STATE") == "yes":
             self.session.note(f"resumed {self.fldigi.modem()} at "
                               f"{self.fldigi.carrier()} Hz, "
@@ -187,6 +208,7 @@ class Deck:
         else:
             self._tx_idle = 0
 
+        self._persist_settled()
         self._watch_drain(sending)
 
         holding = self._settling_after_over(sending)
@@ -239,6 +261,31 @@ class Deck:
         finally:
             self.scr.timeout(self.cfg["POLL_MS"])
         return again != 17
+
+    def _persist_settled(self):
+        """Write the mode and carrier once they have stopped changing.
+
+        `_save_state` used to run only from menu actions, so the file held
+        whatever happened to be true at the last colour change or memory edit
+        — a snapshot of an unrelated moment. Tuning with the search and nudge
+        keys never triggered it at all, so a deck tuned to 1500 and restarted
+        came back on a carrier from an hour earlier, and a mode to match. It
+        looked like the restore was broken; it was recording the wrong instant.
+
+        Settling rather than saving on every change is what keeps this off the
+        card: the carrier moves continuously while a signal is being hunted,
+        and only where it comes to rest is worth remembering.
+        """
+        if not self.fldigi.connected:
+            return
+        mode, carrier = self.fldigi.modem(), self.fldigi.carrier()
+        if not mode or not carrier:
+            return
+        if (mode, carrier) == (self._saved_mode, self._saved_carrier):
+            return
+        if time.monotonic() - self._saved_at < STATE_SETTLE_S:
+            return
+        self._save_state()
 
     def _watch_drain(self, sending):
         """Say something when the radio is still keyed long after a hand back.
@@ -553,10 +600,24 @@ class Deck:
         elif ch == curses.KEY_F4:
             self._apply_scheme(colors.cycle(self.scheme))
         elif ch == 20:                       # Ctrl-T
-            text = self.session.start_over()
-            if text is not None:
-                self._tx_echo = ""
-                self.fldigi.start_over(text)
+            # Not while the previous over is still going out. `Ctrl-Y` has
+            # already put fldigi's "receive when drained" mark into the
+            # transmit buffer and it cannot be recalled, so a second over
+            # queued behind it is split by a mark the operator can no longer
+            # see: part of it goes out with the first over, the rest waits for
+            # a key-up that may never come. Which half arrives depends on
+            # fldigi's own handling of text after the mark, and a terminal
+            # should not have an answer that depends on that.
+            if self._fldigi_sending and self.session.state == RX:
+                self.session.note("still sending the last over — wait for RX, "
+                                  "or Ctrl-C to cut it short")
+            else:
+                text = self.session.start_over()
+                if text is not None:
+                    self._tx_echo = ""
+                    self._handed_at = None
+                    self._drain_warned = 0.0
+                    self.fldigi.start_over(text)
         elif ch == 25:                       # Ctrl-Y
             if self.session.hand_back():
                 self._handed_at = time.monotonic()
@@ -736,14 +797,27 @@ class Deck:
                 fh.flush()
                 os.fsync(fh.fileno())
             os.replace(tmp, path)
+            self._saved_mode = state["mode"]
+            self._saved_carrier = state["carrier"]
+            self._saved_at = time.monotonic()
+            self._state_error = None
             # And the directory, so the rename itself survives the same cut.
             dirfd = os.open(directory, os.O_RDONLY)
             try:
                 os.fsync(dirfd)
             finally:
                 os.close(dirfd)
-        except OSError:
-            pass
+        except OSError as exc:
+            # Not silent. A state file that cannot be written makes every
+            # remembered setting appear to work and then revert at the next
+            # start, with the deck restoring whatever was last written
+            # successfully — which reads as "it always comes back in CW"
+            # rather than as a permissions or disk problem. Reported once per
+            # failure so a full card or a root-owned file is visible on the
+            # panel instead of being inferred.
+            if self._state_error != str(exc):
+                self._state_error = str(exc)
+                self.session.note(f"cannot save settings: {exc}")
 
     def _apply_scheme(self, name):
         """Switch color scheme and force the whole screen to be repainted.
@@ -998,8 +1072,20 @@ class Deck:
     # -- editing a message memory in place --------------------------------
 
     def _toggle_inhibit(self):
+        """Arm or disarm transmit. Does not stop an over already running.
+
+        The inhibit is an interlock against *starting*, not a stop button —
+        `Ctrl-C` is the stop. fldigi's own `main.rx_only` is set too but is
+        not relied on: it was observed not to inhibit `main.tune` (§9). Since
+        the control cannot do what pressing it mid-over looks like it should,
+        it says so rather than leaving the operator to infer it from a radio
+        that stays keyed.
+        """
         self.session.inhibit(not self.session.inhibited)
         self.fldigi.receive_only(self.session.inhibited)
+        if self.session.inhibited and self._fldigi_sending:
+            self.session.note("inhibited — this over still finishes; "
+                              "Ctrl-C to stop it now")
 
     def _clear_transcript(self):
         """Empty the transcript and fldigi's receive buffer together.

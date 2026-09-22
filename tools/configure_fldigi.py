@@ -38,6 +38,10 @@ INTERESTING = [
     "AUDIOIO", "PORTINDEVICE", "PORTOUTDEVICE",
     "CHKUSEHAMLIBIS", "HAMRIGMODEL", "HAMRIGDEVICE", "HAMRIGBAUDRATE",
     "HAMLIBPTTONDATA", "XMLRPC_RIG",
+    # Carrier behaviour on a mode change, and the RSID settings that interact
+    # with it. See --keep-carrier.
+    "STARTATSWEETSPOT", "PSKSWEETSPOT", "DISABLERSIDFREQCHANGE",
+    "RECEIVERSID", "TRANSMITRSID",
 ]
 
 
@@ -150,6 +154,10 @@ def main():
                     help="pick the audio device on this machine by name pattern "
                          "(default 'USB Audio'); use on the deck itself")
     ap.add_argument("--call", help="set MYCALL")
+    ap.add_argument("--keep-carrier", action="store_true",
+                    help="nothing but the operator moves the carrier: no sweet-spot "
+                         "reset on a mode change, and no retune on a received RSID "
+                         "(STARTATSWEETSPOT=0, DISABLERSIDFREQCHANGE=1)")
     args = ap.parse_args()
 
     if args.list_audio:
@@ -166,7 +174,8 @@ def main():
         print(f"  chose {name!r}")
         args.audio = name
 
-    if args.show or not any((args.rigctld, args.no_rig, args.audio, args.call)):
+    if args.show or not any((args.rigctld, args.no_rig, args.audio, args.call,
+                            args.keep_carrier)):
         print(f"{path}:"); show(text); return 0
 
     changed = []
@@ -189,6 +198,27 @@ def main():
     if args.call:
         text, ok = put(text, "MYCALL", args.call)
         ok and changed.append(f"MYCALL={args.call}")
+    if args.keep_carrier:
+        # The carrier is the operator's. Two fldigi behaviors move it without
+        # being asked, and both are turned off together because the intent is
+        # one thing: what is tuned stays tuned until a key says otherwise.
+        #
+        #   STARTATSWEETSPOT     every new modem starts at the sweet spot —
+        #                        1500 Hz for PSK, RTTY and CW alike — so any
+        #                        mode change resets the carrier.
+        #   DISABLERSIDFREQCHANGE  a received RSID retunes to wherever the
+        #                        identifier was heard.
+        #
+        # The first was observed on the air in both directions between two
+        # stations: change mode at 700 Hz and the other end jumps to 1500. The
+        # second is the remaining way a correspondent can move your carrier,
+        # and is left disabled for the same reason — searching and nudging are
+        # deliberate acts, and a signal arriving should not undo them.
+        for key, value, why in (
+                ("STARTATSWEETSPOT", 0, "no sweet-spot reset on a mode change"),
+                ("DISABLERSIDFREQCHANGE", 1, "a received RSID cannot retune")):
+            text, ok = put(text, key, value)
+            ok and changed.append(f"{key}={value} ({why})")
 
     if not changed:
         print("nothing to change"); return 0

@@ -16,7 +16,8 @@ sys.path.insert(0, _SRC)
 import pyte
 
 
-def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path=""):
+def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path="",
+        settle_s="10"):
     """Drive the real application in a pty and return the reconstructed screen.
 
     `term` is a parameter because it is not cosmetic. The deck runs on the
@@ -36,6 +37,8 @@ def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path=""):
         # test_state.py passes a path on purpose, to check that it does leak
         # when it is supposed to.
         os.environ["CYBERDECK_STATE_PATH"] = state_path
+        # A test cannot wait out the deck's ten-second settle window.
+        os.environ["CYBERDECK_STATE_SETTLE_S"] = settle_s
         os.environ["LINES"], os.environ["COLUMNS"] = str(rows), str(cols)
         os.chdir(_PROJECT)          # cyberdeck.conf is read from here
         os.execvp(sys.executable,
@@ -71,8 +74,11 @@ def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path=""):
     # Did it actually exit? waitpid before the pty is closed, so a process
     # still in the main loop is visibly still there. Recorded on the screen
     # object rather than asserted here, since most callers do not care.
+    # Generous: the exit path calls fldigi.abort(), which blocks for up to the
+    # client's own timeout when fldigi is busy, and curses has to restore the
+    # terminal after that. Two seconds raced under full-suite load.
     exited = False
-    for _ in range(20):
+    for _ in range(60):
         try:
             done, _status = os.waitpid(pid, os.WNOHANG)
         except OSError:

@@ -16,7 +16,7 @@ and five contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19;
 Martinique on 40 m BPSK31, 2026-09-21 — the first DX, and the first contact
 above QRP.
 
-Nine modules and nine test files, **251 checks**, all passing against a live
+Nine modules and ten test files, **295 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`). Six of them — `test_screen.py`,
 `test_menu_nav.py`, `test_menu_arrows.py`, `test_console_keys.py`,
 `test_screen_toggles.py` and `test_state.py` — drive the real application
@@ -36,6 +36,7 @@ again. Section 15 records the decisions already made and the ones still open.
 Section 16 is where to start when this is picked back up.
 
 ---
+
 
 
 ## Contents
@@ -82,7 +83,7 @@ Section 16 is where to start when this is picked back up.
 - [15. Decisions and open questions](#15-decisions-and-open-questions)
   - [15.1 Settled](#151-settled)
   - [15.1a Found while building](#151a-found-while-building)
-  - [15.2 Open](#152-open)
+  - [15.2 Answered by the operator](#152-answered-by-the-operator)
 - [16. Picking this back up](#16-picking-this-back-up)
 
 ---
@@ -951,7 +952,7 @@ this decode* — a question the transcript alone does not answer.
 
 ### 8.3 Band presets
 
-Nine, low to high, from 80 m to 70 cm. The HF entries are the long-standing
+Eleven, low to high, from 80 m to 70 cm. The HF entries are the long-standing
 PSK31 watering holes; 6 m, 2 m and 70 cm are the PSK31 calling frequencies —
 50.290, 144.144 and 432.200.
 
@@ -1102,6 +1103,24 @@ unmistakable and its stop path to be immediate.
   not an intervention: a long over legitimately takes minutes to go out, and
   aborting on a timer would cut off real transmissions. `TX_TIMEOUT` remains
   the thing that acts.
+
+* **A new over is refused while the last one is still going out.** `Ctrl-Y`
+  has already placed fldigi's "receive when drained" mark in the transmit
+  buffer, and it cannot be recalled. Text queued behind it is split by a mark
+  the operator can no longer see: some goes out with the first over and the
+  rest waits for a key-up that may never come. Which half arrives depends on
+  how fldigi treats text after the mark, and a terminal should not have
+  behavior that depends on that — so the answer is "wait for `RX`, or `Ctrl-C`
+  to cut it short", said rather than implied. This is the sequence that
+  produced a truncated over in use: hand back, then immediately start another
+  to add a line before the buffer emptied.
+
+* **Transmit inhibit is an interlock against starting, not a stop button.**
+  `Ctrl-I` during an over cannot end it — `main.rx_only` is set but is not
+  relied on, having been observed not to inhibit `main.tune` — so the over
+  runs to completion. The control now says so rather than leaving it to be
+  inferred from a radio that stays keyed after what looks like a stop. `Ctrl-C`
+  is the stop.
 
 * **The two transmit states are reconciled.** This side's state is set by the
   operator's keys and fldigi's by the radio, and they can part company — a
@@ -1255,12 +1274,49 @@ Each phase ends with something demonstrable.
 | 3 | The curses layout with live status, transcript and compose | **done** |
 | 4 | The four color schemes and the F1 menu tree | **done** |
 | 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot | **done** |
-| 6 | The tuning panel and RSID, evaluated on the air | receive only; see §7.1 |
+| 6 | The tuning panel and RSID, evaluated on the air | **done**, both |
 | 7 | An image build script producing the card unattended, as the iGate has | **done**, run end to end |
 
-Phase 6 is the only one outstanding, and it is blocked on rig control rather
-than on anything in this document: frequency cannot be set on the shipped
-hamlib (§7.1), and nothing has been transmitted.
+Every phase is complete.
+
+**The tuning panel is evaluated and works.** Used on the air across RTTY on
+80 m, BPSK31 on 20 m and 40 m: signal search, carrier nudging, the squelch
+level, the reverse toggle and the decode preview have each done their job in a
+contact. §8.1 records the technique it arrived at.
+
+**RSID and TXID are tested and work**, confirmed against a second station on
+2026-09-22. Both directions: a mode change announced by TXID switched the far
+end's modem, and theirs switched this one.
+
+**They also moved the carrier, which is not wanted.** Both stations were tuned
+to 700 Hz; each mode change dragged the other end to 1500. The cause is not
+RSID but `STARTATSWEETSPOT`, which makes fldigi start every new modem at its
+sweet spot — the same behavior the deck already works around for a mode change
+the operator makes (§7.2 note in `_set_mode`), firing here for one fldigi makes
+by itself, where a workaround in the terminal cannot reach it.
+
+The seeded configuration now sets both halves of "the carrier is the
+operator's":
+
+| Key | Set to | Effect |
+|---|---|---|
+| `STARTATSWEETSPOT` | 0 | No sweet-spot reset when the modem changes |
+| `DISABLERSIDFREQCHANGE` | 1 | A received RSID switches mode but cannot retune |
+
+The second is a preference rather than a fix. Leaving it enabled would let RSID
+retune to where the identifier was actually heard, which is defensible — but
+searching and nudging the carrier are deliberate acts on this deck, and a
+signal arriving should not undo them. `tools/configure_fldigi.py --keep-carrier`
+sets both, and the image build applies it to the card.
+
+**A note on false detections.** With squelch open on noise and `RSID_ERRORS`
+allowing a bit error, fldigi reports RSIDs that were never sent — observed on
+the bench with no antenna attached, logging `Before RSID: <<… QPSK-250 @ …>>`
+repeatedly. Each one changes the modem, and the changed modem is then written
+to the remembered state. That is the most likely explanation for a deck found
+in CW at power-on having never been put there, and it is an argument for the
+question §15.2 leaves open about whether an RSID-chosen mode should be
+remembered at all.
 
 ## 14. Verified, and assumed
 
@@ -1494,6 +1550,10 @@ reproducible from a test, and all but one turned out to be software.
 
 **Still assumed, and not yet tested:**
 
+* ~~RSID switches the mode automatically on a received identifier~~ —
+  **answered: it does**, in both directions, against a second station on
+  2026-09-22. It also moved the carrier, which is a separate fldigi setting
+  and is now turned off (§13).
 * **Terminus 12×24, 10×20 and 16×32 console fonts** switch at runtime with
   `setfont` without disturbing a running curses application. The 12×24 default
   renders; the others have not been tried.
@@ -1525,6 +1585,13 @@ reproducible from a test, and all but one turned out to be software.
 | Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
 | Rig control | `rigctld` on 127.0.0.1:4532, bridging the FTX-1's separate CAT and PTT ports. Model **1051**, which supersedes the 1035 the iGate used: 1035 reads but cannot tune | 7, 7.1 |
 | Power | 5 V over USB from the station's own source — a power bank or LiFePO4 box — and no internal battery | 3.5 |
+| Console size | 12×24 on the 5" panel, giving 66×20. Revisited only for a larger panel | 15.2 |
+| Touch | Two uses: transcript scrolling, and pairing a keyboard when none is paired. No touch menu | 15.2, 16 |
+| Local chat variant | Not built. One transmit model for every band | 15.2 |
+| QSO logging | Not built. The transcript holds what a log would draw from | 15.2 |
+| Bands | Eleven presets, 80 m to 70 cm, ordered by frequency | 8.3, 15.2 |
+| WiFi | Stays, and gains a toggle. The 3A+ has no RTC, so NTP is the only correct clock | 15.2, 16 |
+| A second radio | In scope eventually, as per-rig profiles. Not now | 15.2 |
 
 ### 15.1a Found while building
 
@@ -1586,70 +1653,77 @@ full list of seven overflows by one character and renders as `^C abor`, which
 is worse than showing fewer hints. `render.hint_line` drops whole bindings in
 priority order down to 12 columns.
 
-### 15.2 Open
+### 15.2 Answered by the operator
+
+Every question in this section has now been decided, on 2026-09-22, after
+enough hours on the air for the answers to be based on use rather than taste.
+They are kept as questions-and-answers rather than folded into 15.1 because
+the reasoning is the useful part; a bare decision loses why the alternative
+was rejected.
 
 #### Hardware
 
-**1. Which console font size is the default?** 12×24 gives 66×20 and is proposed.
-10×20 gives the classic 80×24 and is noticeably smaller on a 5" panel; 16×32
-gives 50×15, very legible, and leaves about twelve lines of conversation. Worth
-deciding by looking at the panel rather than on paper.
+**1. Which console font size is the default?** — **12×24, and it stays.**
+66×20 is legible on the 5" panel and the transcript is long enough to hold a
+conversation. The only reason to revisit it is a *larger* panel, where the same
+cell size would buy more rows rather than smaller text. 10×20 and 16×32 remain
+untested and there is no longer a reason to test them.
 
-**2. The panel is capacitive touch and the design does not use it.** A console has
-no pointer, and using touch would mean X. Leave it unused, or is there one thing
-worth having it for — scrolling the transcript, or a keyboard-free abort?
+**2. Should the design use the panel's touch?** — **Yes, for two things.**
+Transcript scrolling by drag, and pairing a Bluetooth keyboard when none is
+paired yet — which is precisely the case where there is no keyboard to do it
+with, and the strongest argument for touch existing at all. Not a touch menu:
+§1 stands. The hardware check (§16) removed the objection that motivated the
+question, since touch turns out not to require X.
 
-**3. Which Bluetooth keyboard, and should the deck be able to pair one itself?**
-Baking a pairing into the image is simpler; a pairing screen is more useful if the
-keyboard is ever replaced away from home.
+**3. Should the deck pair a keyboard itself?** — **Yes, without SSH.** This is
+the headline of the next phase. The BlueZ access check passed (§16), so it is
+a matter of writing the interface rather than of privilege.
 
 #### Interface
 
-**4. Is a local chat variant wanted?** On VHF simplex with a strong signal,
-turnarounds are cheap and Enter-sends-immediately is a reasonable way to work —
-closer to messaging than to an HF QSO. Worth a switchable behavior, or does one
-model for everything keep it honest?
+**4. Is a local chat variant wanted?** — **No.** One transmit model for
+everything. A second workflow for VHF simplex would mean the muscle memory
+differs by band, and `Enter`-sends is a different program, not a mode of this
+one.
 
-**5. Is 1500 Hz the right parking offset?** It is the common default and sits
-comfortably inside any SSB passband. A fixed offset is what makes the
-radio's-waterfall technique work, so it wants choosing once and leaving alone.
+**5. Is 1500 Hz the right parking offset?** — **Yes.** Confirmed in use across
+three bands.
 
-**6. Should the transcript separate the two stations into columns, or interleave
-them?** Interleaved with a callsign column is proposed. A split screen — remote
-above, own below — is the other tradition, and is easier to read at a glance on a
-small display.
+**6. Columns or interleaved transcript?** — **Interleaved, as built.** The
+existing format reads correctly in real QSOs.
 
-**7. Macros.** `F5`–`F12` are free. Worth defining CQ, a signal report, a brag
-tape, and a sign-off? If so, what text, and should they be editable on the deck or
-only in the configuration file?
+**7. Macros on `F5`–`F12`.** — **Done and settled.** Eight memories with token
+substitution, edited on the deck. §5.6.
 
-**8. What belongs in the status line at 66 columns?** Section 5.2 currently cuts
-sideband and IMD to fit. What gets cut next if something else has to go in?
+**8. What belongs in the status line at 66 columns?** — **What is there now.**
+IMD was the field most argued over and it is reachable on the tuning screen,
+which is where it is wanted anyway — it is a transmitter-quality figure, read
+while adjusting, not while conversing.
 
-#### Operation
+**9. Should the deck log QSOs?** — **Not yet.** Possibly later; nothing in the
+current design forecloses it, and the transcript already holds the content a
+log would draw from.
 
-**9. Should the deck log QSOs?** A plain text transcript per QSO is cheap. ADIF
-that can be merged into a main log is more work and implies capturing callsign,
-RST and times, which implies fields to fill in, which implies more interface.
+**10. Band and frequency control.** — **Settled by the Band menu**, which now
+carries eleven presets. 17 m and 12 m were missing and have been added; the
+digits run 1-9 then 0 and `a`, ordered by frequency so the list reads as a band
+plan rather than by keeping older bands on their original keys.
 
-**10. Band and frequency control.** Should the menu carry presets for the usual
-digital watering holes — 14.070, 7.070, 3.580, 10.142, 21.070 — or is direct
-numeric entry enough?
+**11. Transmit time-out.** — **180 seconds**, as proposed.
 
-**11. Transmit time-out.** What limit? 180 seconds is proposed, which is long for
-a keyboard QSO and short enough to matter if something hangs.
+**12. Does the deck need WiFi once built?** — **Yes, and it should be
+toggleable.** Two reasons it stays: the 3A+ has no RTC, so the clock is wrong
+until NTP and wrong for a whole session without a network — which matters for
+logging and for the UTC clock the status line shows. And there are further
+uses for it not yet specified. A toggle is wanted for power in the field. The
+rule in §16 still holds: whatever the toggle does, WiFi must come back on at
+power-on, because that is the recovery path when the keyboard is flat.
 
-#### Scope
-
-**12. Does the deck need WiFi at all once built?** Leaving it off is one less
-radio in the case and one less attack surface; leaving it on means updates and
-SSH without opening anything.
-
-**13. Is a second radio ever in scope?** The design assumes the FTX-1 exclusively.
-Making the radio a profile, as the iGate does, costs little now and a great deal
-later.
-
----
+**13. Is a second radio ever in scope?** — **Eventually, not now.** Radio
+profiles in the shape the iGate uses — one file per rig, hardware facts only —
+are the likely form. Nothing in the current design blocks it: the radio is
+fldigi's concern, and the deck names one only in defaults.
 
 ## 16. Picking this back up
 
@@ -1660,11 +1734,11 @@ the keyboard bonded and fldigi decoding.
 
 **Nothing is blocked. In order:**
 
-1. **A sustained transmission at 20 W.** One DX contact has been made at that
-   power with the ALC clear (§7.2), but only for a few minutes and with no
-   temperature reading taken. RTTY and PSK are near 100% duty cycle, so what
-   is unknown is thermal rather than electrical: put the final amplifier
-   temperature on the radio's meter and work a long one.
+1. ~~A sustained transmission at 20 W.~~ **Done, at 25 W.** A full PSK31
+   ragchew with the final amplifier temperature on the radio's meter
+   throughout, 2026-09-22, with no thermal trouble. The duty-cycle caution in
+   §7.2 stands as guidance rather than as an untested worry: a continuous mode
+   at a quarter of the radio's rated output, watched, is comfortable.
 2. **A long session away from mains.** The longest run to date is an evening,
    always on a wall supply. Neither thermal behavior nor current draw has been
    measured, and portability is a claim the deck has not yet been asked to
@@ -1679,16 +1753,16 @@ the keyboard bonded and fldigi decoding.
 3. **The remaining console-font question:** 10×20 and 16×32 at runtime via
    `setfont`, without disturbing the running curses application. The 12×24
    default renders correctly.
-4. **Verify Hal and Tron on the panel.** The palette redefinition was
-   addressing nothing until it was corrected (§5), so every scheme was
-   rendering as its ANSI approximation. The corrected version is confirmed for
-   **Matrix** and **Deckard**, photographed on the panel on 2026-09-19 and
-   2026-09-20: the amber is amber rather than the washed yellow the broken
-   version produced. Hal and Tron have not been seen on the panel. The PNG
-   screenshots cannot settle it either way, since they draw from the hex values
-   directly.
+4. ~~Verify Hal and Tron on the panel.~~ **Done — all four schemes are
+   confirmed on the hardware.** The palette redefinition was addressing
+   nothing until it was corrected (§5), so every scheme rendered as its ANSI
+   approximation; Matrix and Deckard were confirmed on 2026-09-19 and
+   2026-09-20, Hal and Tron on 2026-09-22. The amber is amber rather than the
+   washed yellow the broken version produced, and `PIO_CMAP` reaches every
+   scheme rather than only the two that had been looked at.
 
-**Planned, and gated on two cheap hardware checks:**
+**Planned. The two hardware checks that gated all of it have been run and
+both passed — see the end of this section.**
 
 The deck is configured from its own keyboard now — memories, station, mode,
 band. The two things still needing SSH are **adding a Bluetooth keyboard** and
@@ -1730,25 +1804,60 @@ exposing exactly `scan`, `pair`, `forget`, `list`, `wifi-add`, `wifi-toggle`
 keeps the attack surface to verbs the project controls; polkit rules are less
 code and easier to write too broadly.
 
-**The two checks, before any of it:**
+**The two checks — both run on the deck, 2026-09-22, both passed:**
 
-```bash
-ls -l /dev/input/by-path/ ; grep -A5 -i goodix /proc/bus/input/devices
+**1. Does the panel's touchscreen enumerate?** Yes, and nothing has to be
+enabled for it.
+
+```
+10-0038 generic ft5x06 (79)
+Sysfs=/devices/platform/soc/3f205000.i2c/i2c-11/i2c-10/10-0038/input/input1
+PROP=2   EV=b   KEY=400 …   ABS=2608000 3
 ```
 
-Does the panel's touchscreen enumerate at all? The overlay supports it and
-Waveshare documents `disable_touchscreen=1`, implying it is on by default —
-but it has never been looked at, and §14 has a poor record on assumptions of
-that shape.
+A FocalTech **FT5x06** at i2c address 0x38 — not the Goodix part the check
+guessed at, which is why an earlier `grep goodix` found nothing and meant
+nothing. Decoding the bitmaps: `INPUT_PROP_DIRECT`, `BTN_TOUCH`, `ABS_X`,
+`ABS_Y`, and `ABS_MT_SLOT` / `ABS_MT_POSITION_X` / `ABS_MT_POSITION_Y` /
+`ABS_MT_TRACKING_ID` — multitouch protocol type B. A drag reported 8 touch-down
+events and 295 Y samples across 50..454.
+
+Two things follow for the implementation:
+
+* **Coordinates are panel pixels, and the grid divides them exactly.** 800×480
+  at a 12×24 font is 66×20 characters, so `row = y // 24` and `col = x // 12`
+  reach a character cell with no scaling and no calibration step. 480/24 is 20
+  rows on the nose.
+* **`struct input_event` is 16 bytes on this deck**, not 24. The image is
+  32-bit userland, so its `timeval` holds two 32-bit longs. Code that hardcodes
+  either size is wrong on the other kind of machine; the native `llHHi` struct
+  format is right on both, and the probe that produced these numbers ran
+  unmodified on a 64-bit laptop and the deck.
+* **No privilege is needed to read it.** `/dev/input/event1` is
+  `crw-rw---- root input` and `deck` is already in the `input` group, so the
+  terminal reads touch as itself. Nothing to add to the build, no udev rule,
+  no capability.
+
+**2. Can an unprivileged process reach BlueZ over D-Bus?** Yes. `StartDiscovery`
+called as `deck`, with no sudo, returned cleanly:
 
 ```bash
-python3 -c "import gi; gi.require_version('Gio','2.0'); from gi.repository import Gio;
-b=Gio.bus_get_sync(Gio.BusType.SYSTEM); print('system bus OK')"
-busctl --system list | grep -i bluez
+busctl --system call org.bluez /org/bluez/hci0 org.bluez.Adapter1 StartDiscovery
 ```
 
-Can an unprivileged process reach BlueZ over D-Bus on this image? That answer
-decides between the helper and polkit.
+**So the root helper is not needed and neither are polkit rules.** The pairing
+interface talks to BlueZ directly as `deck`.
+
+The same test demonstrated, on a different verb, the trap that broke the
+original pairing script. `StopDiscovery` issued as a second `busctl` command
+failed with `No discovery started` — because BlueZ tracks discovery **per D-Bus
+connection**, and the first `busctl` took its discovery down with it when it
+exited. An agent registered by a process that then exits is gone for exactly
+the same reason. Whatever implements pairing must hold **one long-lived
+in-process connection** for the whole operation.
+
+`python3-gi` is not in the image and has to be added to the build; the missing
+binding is what an earlier `ModuleNotFoundError` was really reporting.
 
 **Worth doing when convenient:**
 

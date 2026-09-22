@@ -1007,7 +1007,7 @@ its configuration, its fldigi seed, its Bluetooth bond and its hamlib build.
 On the laptop:
 
 ```bash
-rsync -av src/*.py deck@cyberdeck.local:/tmp/deckupd/
+rsync -av src/*.py tools/configure_fldigi.py deck@cyberdeck.local:/tmp/deckupd/
 ```
 
 On the deck:
@@ -1018,9 +1018,20 @@ sudo systemctl restart cyberdeck-ui
 systemctl is-active cyberdeck-ui
 ```
 
-Only `src/` goes over. Tests, tools and documentation stay on the build
-machine; `/opt/cyberdeck` holds the flat set of modules the unit runs plus
-`configure_fldigi.py`, `cyberdeck.conf` and the fldigi seed.
+`/opt/cyberdeck` holds the flat set of modules the unit runs, plus
+`configure_fldigi.py`, `cyberdeck.conf` and the fldigi seed. Tests, the rest of
+`tools/`, and documentation stay on the build machine.
+
+**`configure_fldigi.py` is in that list and is easy to forget.** It lives in
+`tools/` here and in `/opt/cyberdeck` there, so a copy of `src/*.py` alone
+leaves the deck running an older version of it — which presents as the deck
+rejecting an option that exists on the laptop:
+
+```
+configure_fldigi.py: error: unrecognized arguments: --keep-carrier
+```
+
+That is the command above being run with a stale tool, not a broken flag.
 
 **If a module is renamed or removed, delete the old one.** A stale file beside
 its replacement still imports cleanly and will be found instead of the new
@@ -1236,22 +1247,25 @@ first principles.
 | Bluetooth keyboard | After a one-time manual bond — see phase 3 |
 | fldigi 4.2.06 on a 3A+'s 512 MB | Under Xvfb, with the radio attached |
 | Receive | Real off-air RTTY copy, tuned with `F2` and the reverse toggle |
+| The `F2` tuning panel | Used on the air on three bands: search, carrier nudge, squelch level, reverse and the decode preview |
 | Transmit | PTT, the over model, and `Ctrl-C` against a live carrier |
 | The transmit state the panel shows | `RX`, `TX`, `DRAIN` and `INH`, read from fldigi rather than from the terminal's own intent |
 | **PSK31 on the air** | The mode the deck was designed around. Two contacts on 14.070, both found with `Ctrl-W` / `Ctrl-S` |
 | Rig control, reads and writes | Needs hamlib 4.7.2 and model 1051 |
-| The color schemes | True hues via `PIO_CMAP`; `OSC P` does not work on this panel |
+| The color schemes | All four on the panel: Matrix and Deckard 2026-09-19/20, Hal and Tron 2026-09-22. True hues via `PIO_CMAP`; `OSC P` does not work here |
+| **25 W on a 100% duty cycle mode** | A full PSK31 ragchew at 25 W with the final amplifier temperature watched throughout, 2026-09-22 |
+| **RSID and TXID** | Both directions against a second station, 2026-09-22 |
 
 **Not tested:**
 
 | | |
 |---|---|
-| **20 W on a 100% duty cycle mode** | One BPSK31 contact at 20 W with the ALC clear. Nothing longer than a few minutes at that power, and no temperature data |
+
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
 | A long session | Longest run so far is an evening; no thermal or memory data |
 | Remembered state across a power cut | The `fsync` that makes it durable is in place and exercised by a clean restart; pulling the power on a freshly changed setting has not been tried |
 | Off-mains operation | Never run off anything but a wall supply. The deck holds no battery by design — it takes 5 V over USB from whatever powers the station, a USB power bank or a LiFePO4 box. Its draw from one has not been measured |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **251 checks**
+over model, line editing, the color schemes — is covered by **295 checks**
 against a live fldigi (`tools/run_tests.sh`).

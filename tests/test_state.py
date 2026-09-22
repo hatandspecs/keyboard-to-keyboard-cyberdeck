@@ -49,7 +49,7 @@ if __name__ == "__main__":
               repr(saved.get("carrier")))
 
         # A second process, same state file, no keys at all.
-        second = run(state_path=path, settle=1.8)
+        second = run(state_path=path, settle=1.8, settle_s="0.2")
         body2 = "\n".join(second.display)
         check("the restarted deck comes back in RTTY", "RTTY" in body2,
               body2[:200])
@@ -59,6 +59,38 @@ if __name__ == "__main__":
         # The default is BPSK31; seeing it would mean the state was ignored.
         check("it did not fall back to the configured default",
               "BPSK31" not in body2.split("\n")[0], body2.split("\n")[0])
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # A carrier moved by tuning, with no menu action at all. This is the case
+    # that was broken: _save_state ran only from menu actions, so a deck tuned
+    # with the search and nudge keys and then restarted came back on whatever
+    # carrier happened to be live at the last colour change or memory edit.
+    print("\nA carrier moved by tuning, with no menu action")
+    tmp = tempfile.mkdtemp(prefix="cyberdeck-tuned-")
+    path = os.path.join(tmp, "state", "cyberdeck.json")
+    try:
+        # Ctrl-D nudges the carrier +10 Hz; settle longer than STATE_SETTLE_S
+        # so the deck has a chance to write it.
+        nudges = ["\x04"] * 6
+        first = run(keys=nudges, state_path=path, settle=1.5, settle_s="0.2")
+        line = first.display[0]
+        check("the nudges moved the carrier", "Hz" in line, line)
+
+        saved = {}
+        if os.path.exists(path):
+            with open(path) as fh:
+                saved = json.load(fh)
+        check("a carrier reached only by tuning is written to the state file",
+              isinstance(saved.get("carrier"), int), repr(saved.get("carrier")))
+        # 1500 is the configured default; the nudges moved it off that.
+        check("and it is where the tuning left it, not the default",
+              saved.get("carrier") not in (None, 1500), repr(saved.get("carrier")))
+
+        second = run(state_path=path, settle=1.8, settle_s="0.2")
+        check("the restarted deck comes back on that carrier",
+              f"{saved.get('carrier')}Hz" in second.display[0],
+              second.display[0])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

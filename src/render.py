@@ -22,8 +22,45 @@ WHO_W = 7           # callsign column, left-justified
 _DROP_ORDER = ("imd", "sideband", "snr", "carrier", "freq", "mode")
 
 
+def _wrap_spans(text, width):
+    """Wrap, returning (line, characters consumed from `text`) for each line.
+
+    The count is what makes an exact cursor position possible. A wrapped line
+    swallows the space it broke at and a hard break swallows the newline, so
+    the sum of the line lengths is smaller than the source and stepping
+    through output lines alone puts the caret in the wrong place.
+
+    Newlines are hard breaks. Without that they reach curses as literal
+    characters inside a string handed to addstr, which moves the cursor and
+    paints the rest of the compose buffer over whatever is below it — the
+    compose area is the one place the operator's own newlines are rendered
+    before being split into transcript entries.
+    """
+    if width <= 0:
+        return [("", 0)]
+    out = []
+    paragraphs = text.split("\n")
+    for n, para in enumerate(paragraphs):
+        hard = 1 if n < len(paragraphs) - 1 else 0   # the newline that ended it
+        lines, line = [], ""
+        for word in para.split(" "):
+            while len(word) > width:
+                if line:
+                    lines.append((line, len(line))); line = ""
+                lines.append((word[:width], width)); word = word[width:]
+            if not line:
+                line = word
+            elif len(line) + 1 + len(word) <= width:
+                line += " " + word
+            else:
+                lines.append((line, len(line) + 1)); line = word   # +1: the space
+        lines.append((line, len(line) + hard))
+        out.extend(lines)
+    return out
+
+
 def _wrap(text, width):
-    """Wrap on spaces, breaking long runs rather than overflowing.
+    """Wrap on spaces and newlines, breaking long runs rather than overflowing.
 
     Received text can contain a hundred characters with no space in it when a
     signal is marginal, and a line that overflows the screen is worse than one
@@ -31,20 +68,7 @@ def _wrap(text, width):
     """
     if width <= 0:
         return [""]
-    lines, line = [], ""
-    for word in text.split(" "):
-        while len(word) > width:
-            if line:
-                lines.append(line); line = ""
-            lines.append(word[:width]); word = word[width:]
-        if not line:
-            line = word
-        elif len(line) + 1 + len(word) <= width:
-            line += " " + word
-        else:
-            lines.append(line); line = word
-    lines.append(line)
-    return lines
+    return [line for line, _used in _wrap_spans(text, width)]
 
 
 def entry_lines(entry, width, timestamps=True, utc=True):
@@ -292,24 +316,26 @@ def compose_lines(text, indicator, width, height, cursor=None):
     sits unless the line is being edited.
     """
     body_w = max(8, width - 2)
-    wrapped = _wrap(text, body_w) or [""]
+    spans = _wrap_spans(text, body_w) or [("", 0)]
+    wrapped = [line for line, _used in spans]
     shown = wrapped[-height:] if height else wrapped
 
     if cursor is None:
         cursor = len(text)
     cursor = max(0, min(len(text), cursor))
-    # Walk the wrapped lines counting characters until the cursor index is
-    # reached, so the caret lands where the character actually is rather than
-    # at the end of the text.
+    # Walk the wrapped lines counting SOURCE characters until the cursor index
+    # is reached, so the caret lands where the character actually is. Each
+    # line reports what it consumed, which is more than it displays wherever a
+    # space or a newline was swallowed by the break.
     remaining, row, col = cursor, 0, 0
-    for i, line in enumerate(wrapped):
+    for i, (line, used) in enumerate(spans):
         if remaining <= len(line):
             row, col = i, remaining
             break
-        remaining -= len(line)
+        remaining -= used
         row, col = i, len(line)
     else:
-        row, col = len(wrapped) - 1, len(wrapped[-1])
+        row, col = len(spans) - 1, len(spans[-1][0])
 
     hidden = len(wrapped) - len(shown)
     cursor_row = max(0, row - hidden)

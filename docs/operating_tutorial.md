@@ -921,6 +921,19 @@ If the transcript starts saying *"still transmitting Ns after hand back"* and
 the number keeps climbing past a minute or two, something is wrong rather than
 slow. `Ctrl-C` drops the carrier.
 
+**`Ctrl-T` says "still sending the last over".** You handed back and the
+buffer has not emptied yet. You cannot un-hand: the instruction to return to
+receive is already in fldigi's queue and anything you add now would be cut in
+half by it. Wait for the state to go back to `RX`, or `Ctrl-C` to cut the
+over short and start again.
+
+This is worth knowing before it bites: **decide to hand back once.** If you
+think you may want to add another line, do not press `Ctrl-Y` yet — nothing
+is sent any sooner for having pressed it, and the only way back is to abort.
+
+**`Ctrl-I` mid-over does not stop the over.** The inhibit blocks the *next*
+one. `Ctrl-C` is the stop.
+
 **`Ctrl-T` does nothing and says "already transmitting".** The deck thinks an
 over is still running. `Ctrl-Y` to hand back, or `Ctrl-C` to abort, and it
 will clear. If fldigi is not actually transmitting the deck notices within a

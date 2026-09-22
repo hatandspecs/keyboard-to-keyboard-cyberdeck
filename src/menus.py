@@ -115,16 +115,24 @@ def tuning_menu(afc, squelch, level, rsid, txid, reverse=False, rx_hold=0,
 # Low to high. The HF entries are the long-standing PSK31 watering holes; the
 # VHF and UHF ones are the PSK31 calling frequencies — 6 m 50.290, 2 m 144.144
 # (activity runs 144.144-144.150), 70 cm 432.200.
+#
+# Eleven bands need eleven single keys, so the digits run 1-9 then 0 and the
+# last is `a`. Ordering is by frequency rather than by key, because the list is
+# read as a band plan: the alternative keeps 20 m on `4` forever at the cost of
+# 17 m and 12 m appearing at the bottom, away from the bands either side of
+# them.
 BANDS = (
     ("1", "80 m", "3.580", 3_580_000),
     ("2", "40 m", "7.070", 7_070_000),
     ("3", "30 m", "10.142", 10_142_000),
     ("4", "20 m", "14.070", 14_070_000),
-    ("5", "15 m", "21.070", 21_070_000),
-    ("6", "10 m", "28.120", 28_120_000),
-    ("7", "6 m", "50.290", 50_290_000),
-    ("8", "2 m", "144.144", 144_144_000),
-    ("9", "70 cm", "432.200", 432_200_000),
+    ("5", "17 m", "18.100", 18_100_000),
+    ("6", "15 m", "21.070", 21_070_000),
+    ("7", "12 m", "24.920", 24_920_000),
+    ("8", "10 m", "28.120", 28_120_000),
+    ("9", "6 m", "50.290", 50_290_000),
+    ("0", "2 m", "144.144", 144_144_000),
+    ("a", "70 cm", "432.200", 432_200_000),
 )
 
 BAND_FREQUENCIES = {key: hz for key, _label, _display, hz in BANDS}

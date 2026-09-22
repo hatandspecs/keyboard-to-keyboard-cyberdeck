@@ -114,7 +114,7 @@ screen is indistinguishable from a crash.
 |---|---|
 | `1` Mode | Twelve modes plus **AUTO (RSID)** and the full list |
 | `2` Tune Settings | AFC, squelch and level, RSID, TXID, reverse, park carrier, the receive hold after an over |
-| `3` Band | 80 m to 70 cm, low to high |
+| `3` Band | Eleven presets, 80 m to 70 cm, low to high |
 | `4` Display | The four color schemes, timestamps |
 | `5` Memories | Eight message memories, edited in place |
 | `6` Station | Callsign, name, QTH, grid, rig — edited in place |
@@ -170,6 +170,7 @@ Nothing else in the repository reaches the deck.
 | [`tests/test_console_keys.py`](tests/test_console_keys.py) | Keys as `TERM=linux` delivers them, which is not how xterm does |
 | [`tests/test_screen_toggles.py`](tests/test_screen_toggles.py) | `F2` and `F3` moving between the three screens |
 | [`tests/test_state.py`](tests/test_state.py) | What survives a restart |
+| [`tests/test_sequences.py`](tests/test_sequences.py) | Over, hand and abort pressed in orders nobody designed for |
 | [`tools/run_tests.sh`](tools/run_tests.sh) | The whole suite, one command |
 | [`docs/deploy_cyberdeck_instructions.md`](docs/deploy_cyberdeck_instructions.md) | The full runbook, blank card to on the air |
 | [`docs/operating_tutorial.md`](docs/operating_tutorial.md) | How to actually work someone, for a first-timer |
@@ -338,7 +339,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-251 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
+295 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
 `test_console_keys.py`, `test_screen_toggles.py` and `test_state.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
@@ -420,6 +421,14 @@ Working end to end:
 
 **Fixed along the way**, recorded because each cost real time:
 
+* **Handing back and immediately starting another over truncated the first.**
+  `Ctrl-Y` queues fldigi's "receive when drained" mark, which cannot be
+  recalled; a second over queued behind it is split by a mark that is no
+  longer visible. A new over is now refused while the previous one is still
+  going out, and says to wait for `RX` or `Ctrl-C`.
+* **`Ctrl-I` mid-over looked like a stop and was not.** The inhibit blocks the
+  *next* over; it cannot end the one running. It now says so instead of
+  leaving it to be inferred from a radio that stays keyed.
 * **A handed-back over could stay on the air with the screen showing `RX`.**
   Three faults in series: `Ctrl-Y` set the session to receive and cleared the
   transmit time-out, disarming the only software backstop for exactly the

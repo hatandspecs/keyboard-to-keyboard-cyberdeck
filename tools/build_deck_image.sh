@@ -566,6 +566,16 @@ install_project() {
   sudo rsync -a --exclude 'fldigi.log' "${seed}/" "${dest}/fldigi-config/"
   note "fldigi config seeded from ${seed}"
 
+  # fldigi starts every new modem at its sweet spot — 1500 Hz — whatever the
+  # carrier was. That fires on any modem change, including one an incoming
+  # RSID asks for, so a station identifying at 700 Hz drags the receiver to
+  # 1500 and away from the signal it just announced. Observed on the air in
+  # both directions between two stations. Turned off on the seeded card so a
+  # freshly flashed deck does not inherit it.
+  sudo python3 "${PROJECT_DIR}/tools/configure_fldigi.py" \
+    --config-dir "${dest}/fldigi-config" --keep-carrier \
+    || note "could not set STARTATSWEETSPOT; set it on the deck with --keep-carrier"
+
   sudo mkdir -p "${dest}/run"
   note "installed to /opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
 }

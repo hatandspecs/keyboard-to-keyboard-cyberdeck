@@ -108,4 +108,56 @@ check("a long note is truncated to the width",
       all(len(r) <= 66 for r in render.tune_rows({"note": "x" * 200}, 66)),
       [len(r) for r in render.tune_rows({"note": "x" * 200}, 66)])
 
+
+print("\n-- newlines are hard breaks, and never reach the screen --")
+# Enter inserts a newline in the compose buffer. Before this, _wrap split only
+# on spaces, so the newline stayed inside the string handed to addstr, moved
+# the cursor, and painted the rest of the buffer over the hint line. It showed
+# up as a display glitch on any over of three or more lines.
+three = "first line\nsecond line\nthird line"
+equals("three lines wrap to three", render._wrap(three, 40),
+       ["first line", "second line", "third line"])
+equals("no newlines behaves as before",
+       render._wrap("the quick brown fox jumps over the lazy dog", 20),
+       ["the quick brown fox", "jumps over the lazy", "dog"])
+equals("a trailing newline leaves an empty line to type on",
+       render._wrap("a\n", 20), ["a", ""])
+equals("an empty buffer is still one empty line", render._wrap("", 20), [""])
+
+lines, _cur = render.compose_lines(three, "[RX 33]", 66, 3)
+rendered = ["".join(t for t, _k in ln) for ln in lines]
+check("no newline survives into a rendered row",
+      not any("\n" in r for r in rendered), rendered)
+check("the last row carries the buffer indicator", "[RX 33]" in rendered[-1],
+      rendered[-1])
+
+# The caret has to land on the character the cursor index names, which means
+# counting the characters the breaks swallowed as well as the ones shown.
+# Indices chosen at the boundaries: end of a line, and the character straight
+# after each newline, which is where an off-by-one in the break accounting
+# shows up first.
+for index, want in ((0, (0, 1)), (10, (0, 11)), (11, (1, 1)),
+                    (22, (1, 12)), (23, (2, 1)), (33, (2, 11))):
+    _l, got = render.compose_lines(three, "", 66, 5, cursor=index)
+    equals(f"cursor {index} after {three[:index]!r}", got, want)
+
+# The transient TX echo is the path that actually broke on the air. Sent and
+# received text reach the transcript already split into one entry per line;
+# the echo does not — it is fldigi's stream wrapped in a synthetic entry, so
+# it carries newlines verbatim and is the one place they reach a renderer.
+# Symptom: the second line blanked halfway and the third resumed, whenever an
+# over of three or more lines was going out.
+from session import Entry
+echo = render.entry_lines(Entry("TX", "line one\nline two\nline three"), 66)
+echoed = ["".join(t for t, _k in ln) for ln in echo]
+equals("the echo renders one row per line", len(echoed), 3)
+check("and no row carries a raw newline",
+      not any("\n" in r for r in echoed), echoed)
+check("only the first row is stamped and attributed",
+      "TX" in echoed[0] and "TX" not in echoed[1], echoed)
+
+# Only the last `height` rows are shown; the caret must follow into them.
+_l, (row, _col) = render.compose_lines(three, "", 66, 2, cursor=33)
+equals("with two rows shown the caret follows into them", row, 1)
+
 sys.exit(report())

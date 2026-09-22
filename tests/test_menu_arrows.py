@@ -100,7 +100,10 @@ print("\n-- the band list runs low to high and marks what the rig cannot do --")
 import menus
 labels = [lbl for _k, lbl, _d, _h in menus.BANDS]
 freqs = [hz for _k, _l, _d, hz in menus.BANDS]
-check("nine bands", len(menus.BANDS) == 9, labels)
+check("eleven bands", len(menus.BANDS) == 11, labels)
+check("17 m and 12 m are present", {"17 m", "12 m"} <= set(labels), labels)
+check("every band has its own key", len({k for k, *_ in menus.BANDS}) == 11,
+      [k for k, *_ in menus.BANDS])
 check("ordered low to high", freqs == sorted(freqs), freqs)
 check("starts at 80 m", labels[0] == "80 m", labels[0])
 check("ends at 70 cm", labels[-1] == "70 cm", labels[-1])
@@ -110,11 +113,12 @@ check("VHF and UHF are the PSK31 calling frequencies",
       and dict(zip(labels, freqs))["70 cm"] == 432_200_000,
       dict(zip(labels, freqs)))
 
-hf_only = menus.band_menu({"80 m", "40 m", "30 m", "20 m", "15 m", "10 m"})
+hf_bands = {"80 m", "40 m", "30 m", "20 m", "17 m", "15 m", "12 m", "10 m"}
+hf_only = menus.band_menu(hf_bands)
 marked = [lbl for _k, lbl in hf_only["items"] if "not supported" in lbl]
 check("an HF-only rig marks the three VHF/UHF entries", len(marked) == 3, marked)
-check("and leaves the HF ones unmarked",
-      sum("not supported" in lbl for _k, lbl in hf_only["items"]) == 3, hf_only["items"])
+check("and leaves every HF one unmarked",
+      len(hf_only["items"]) - len(marked) == len(hf_bands), hf_only["items"])
 check("no radio restriction means nothing is marked",
       not any("not supported" in lbl for _k, lbl in menus.band_menu()["items"]),
       menus.band_menu()["items"])
