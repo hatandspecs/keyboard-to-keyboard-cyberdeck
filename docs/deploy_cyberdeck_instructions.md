@@ -28,6 +28,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
 
 
 
+
 ## Contents
 
 - [Phase 0 — on the laptop](#phase-0--on-the-laptop)
@@ -56,6 +57,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
   - [The deck reads the radio's frequency but cannot change it](#the-deck-reads-the-radios-frequency-but-cannot-change-it)
   - [The panel says DRAIN and the radio is still keyed](#the-panel-says-drain-and-the-radio-is-still-keyed)
   - [A received RSID moves the carrier, or a mode change resets it to 1500](#a-received-rsid-moves-the-carrier-or-a-mode-change-resets-it-to-1500)
+  - [Punctuation comes out wrong on the keyboard](#punctuation-comes-out-wrong-on-the-keyboard)
   - [The radio was power-cycled and rig control stopped](#the-radio-was-power-cycled-and-rig-control-stopped)
   - [No keyboard, no screen, no SSH](#no-keyboard-no-screen-no-ssh)
   - [Start again](#start-again)
@@ -1003,6 +1005,39 @@ Check with `--show`; both values must be as above. The first was observed on
 the air in both directions between two stations — change mode at 700 Hz and
 the other end jumps to 1500 — and the same setting is available in fldigi's
 own interface, under Configure → Modems, for a correspondent running a laptop.
+
+### Punctuation comes out wrong on the keyboard
+
+The console keymap is GB and the keyboard is US, or the reverse. On a US
+keyboard against a GB keymap the signature is unmistakable:
+
+| Pressed | Produces | Because GB has |
+|---|---|---|
+| Shift+2 | `"` | `"` on Shift+2 |
+| the `"` key | `@` | `@` on Shift+apostrophe |
+| Shift+3 | nothing visible | `£`, which is not ASCII |
+| the `\` key | `#` | `#`/`~` at that key position |
+
+**The backslash becomes untypeable**, because GB puts it on the extra ISO key
+beside left Shift and a US keyboard has no such key. That also removes `\n`,
+which is how a message memory is made multi-line (§5.6 of the design doc).
+
+Raspberry Pi OS defaults to GB. `DECK_KEYBOARD` in `deck.conf` sets this at
+build time and a card flashed before that setting was wired up will have
+inherited the default. Fix a running deck in place:
+
+```bash
+grep XKBLAYOUT /etc/default/keyboard
+sudo sed -i 's/^XKBLAYOUT=.*/XKBLAYOUT="us"/' /etc/default/keyboard
+sudo sed -i 's/^XKBVARIANT=.*/XKBVARIANT=""/' /etc/default/keyboard
+sudo setupcon --save
+sudo reboot
+```
+
+`setupcon` applies the keymap to the console immediately, but the terminal
+owns tty1 and has its own idea of the session; rebooting is the reliable way
+to be sure. Confirm afterwards by typing `@ # \` on the deck — all three
+should appear as themselves.
 
 ### The radio was power-cycled and rig control stopped
 

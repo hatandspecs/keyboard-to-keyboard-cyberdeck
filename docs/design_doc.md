@@ -1709,6 +1709,18 @@ the kernel's palette, not a property of this program, so quitting left the
 deck's hues on whatever owned tty1 next. The original is now read once and put
 back on exit.
 
+**A setting nothing reads is worse than no setting.** `DECK_KEYBOARD` sat in
+`deck.conf` looking authoritative while the build script never read it, so the
+deck inherited Raspberry Pi OS's GB console keymap with `DECK_KEYBOARD = us`
+plainly visible in the configuration. On a US keyboard that is not cosmetic:
+GB puts backslash on the extra ISO key beside left Shift, which a US keyboard
+does not have, so the character is untypeable — and with it the `\n` that
+makes a message memory multi-line (§5.6). `FONT` was the same shape and is
+documented as dead in §11; this one is now applied at build time instead.
+Both were found by using the deck rather than by reading the configuration,
+which is the point: a key that is parsed, validated and ignored looks correct
+from every direction except the one that matters.
+
 **A capability is not the same as a capability being used for what its name
 suggests.** The check for "is a keyboard attached" looked for the kernel's
 `kbd` handler, which on this deck is carried permanently by the radio's USB

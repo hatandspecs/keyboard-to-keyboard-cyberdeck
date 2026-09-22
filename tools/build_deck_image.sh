@@ -596,6 +596,27 @@ configure_boot() {
   else
     note "timezone ${tz} not found in the image; leaving the default"
   fi
+
+  # The console keymap. Raspberry Pi OS defaults to GB, and on a US keyboard
+  # that is not a cosmetic difference: GB puts backslash on the extra ISO key
+  # beside left Shift, which a US keyboard does not physically have. The
+  # character becomes untypeable, and with it the \n that makes a message
+  # memory multi-line. Shift+2 gives " instead of @, Shift+3 gives an
+  # unprintable pound sign instead of #, and the key marked backslash gives #.
+  #
+  # DECK_KEYBOARD sat in deck.conf for a long time with nothing reading it —
+  # a setting that appeared to work and did not, which is worse than having no
+  # setting at all. It is applied here now.
+  local kbd="${CFG[DECK_KEYBOARD]:-us}"
+  sudo tee "${ROOT_MNT}/etc/default/keyboard" >/dev/null <<KBD
+# Written by build_deck_image.sh from DECK_KEYBOARD in deck.conf.
+XKBMODEL="pc105"
+XKBLAYOUT="${kbd}"
+XKBVARIANT=""
+XKBOPTIONS=""
+BACKSPACE="guess"
+KBD
+  note "console keymap ${kbd}"
   local cfg="${BOOT_MNT}/config.txt" cmd="${BOOT_MNT}/cmdline.txt"
 
   if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" ]]; then
