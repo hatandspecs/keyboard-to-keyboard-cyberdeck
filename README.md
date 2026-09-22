@@ -17,7 +17,10 @@ after, go straight to [Running it on a laptop](#running-it-on-a-laptop-with-your
 or to the fuller walkthrough in
 [the runbook](docs/deploy_cyberdeck_instructions.md#running-it-on-a-laptop-with-your-own-radio).
 
-Full design rationale is in [design_doc.md](docs/design_doc.md).
+Full design rationale is in [design_doc.md](docs/design_doc.md). There is a
+write-up of why it exists and what it is like to operate at
+**[hatandspecs.github.io/hamradio — A Keyboard-to-Keyboard Cyberdeck for the
+FTX-1](https://hatandspecs.github.io/hamradio/articles/keyboard-to-keyboard-cyberdeck/)**.
 
 ### Color schemes
 
@@ -84,6 +87,20 @@ for why there is no software spectrum.
 
 Eleven curated conversational modes with the current one marked `<`. `m` opens
 the full list — 97 conversational modems, paginated, single-key selection.
+
+![Pairing a keyboard](docs/screens/pairing.png)
+
+![The passkey](docs/screens/pairing-passkey.png)
+
+Pairing needs no SSH: the deck scans, you tap, and it shows the passkey to
+type on the keyboard being paired. A keyboard with channel buttons appears
+once per channel under one name, so the address tail is what distinguishes
+them. See §17 of the design document.
+
+![No keyboard](docs/screens/no-keyboard.png)
+
+Raised by the deck itself when nothing is connected — the one situation it
+cannot be told about, since every other way in is behind `F1`.
 
 ## Keys
 

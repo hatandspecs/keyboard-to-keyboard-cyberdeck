@@ -97,6 +97,26 @@ if __name__ == "__main__":
     made.append(draw(menus.render(menus.mode_menu("BPSK63"), COLS, ROWS),
                      "matrix", f"{OUT}/mode-picker.png"))
 
+    # The two screens that exist for the moment there is no keyboard. Built
+    # from the same render functions the deck draws with, and from the device
+    # data the real scan produced on the panel — two channels of one keyboard
+    # under one name, which is the case the screen has to explain.
+    import btpair
+    kb_here = btpair.Device("/a", {"Address": "DF:3C:77:61:6C:22",
+                                   "Alias": "Pebble K380s",
+                                   "Icon": "input-keyboard", "RSSI": -54})
+    kb_bonded = btpair.Device("/b", {"Address": "DF:3C:77:61:6C:21",
+                                     "Alias": "Pebble K380s",
+                                     "Icon": "input-keyboard", "Paired": True})
+    made.append(draw(render.no_keyboard_screen([kb_bonded], COLS, ROWS),
+                     "matrix", f"{OUT}/no-keyboard.png"))
+    made.append(draw(render.pair_screen("scanning", [kb_here, kb_bonded],
+                                        COLS, ROWS),
+                     "matrix", f"{OUT}/pairing.png"))
+    made.append(draw(render.pair_screen("passkey", [], COLS, ROWS,
+                                        passkey="482190"),
+                     "matrix", f"{OUT}/pairing-passkey.png"))
+
     names = menus.keyboard_modes([n for _, n in menus.MODE_TIER1] + [
         "BPSK125", "BPSK250", "BPSK500", "QPSK63", "QPSK125", "QPSK250",
         "OLIVIA-4/250", "OLIVIA-16/500", "OLIVIA-32/1K", "MFSK8", "MFSK32",
