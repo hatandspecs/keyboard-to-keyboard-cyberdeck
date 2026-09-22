@@ -16,7 +16,10 @@ DECK_INSTALL_DIR = cyberdeck      # under /opt
 
 # --- Locale ---
 DECK_WIFI_COUNTRY = US
-DECK_TIMEZONE = America/New_York
+# UTC, so journal timestamps match the panel. The terminal's own clock is Zulu
+# regardless — it uses gmtime and cannot be configured off it — so a local
+# timezone here only makes the journal disagree with the screen.
+DECK_TIMEZONE = UTC
 DECK_KEYBOARD = us
 DECK_LOCALE = C.UTF-8
 

@@ -1760,6 +1760,12 @@ uses for it not yet specified. A toggle is wanted for power in the field. The
 rule in §16 still holds: whatever the toggle does, WiFi must come back on at
 power-on, because that is the recovery path when the keyboard is flat.
 
+*Half of that reasoning is being removed deliberately.* A DS3231 is on order
+(§16), and once the deck keeps its own time the clock stops being an argument
+for WiFi — leaving only the uses not yet specified. The toggle becomes more
+useful rather than less: a field session can run with the radio off and still
+log correctly.
+
 **13. Is a second radio ever in scope?** — **Eventually, not now.** Radio
 profiles in the shape the iGate uses — one file per rig, hardware facts only —
 are the likely form. Nothing in the current design blocks it: the radio is
@@ -1901,14 +1907,53 @@ binding is what an earlier `ModuleNotFoundError` was really reporting.
 
 **Worth doing when convenient:**
 
-* Set a timezone in the build. The deck defaults to Europe/London, so journal
-  timestamps sit an hour off local without anything being wrong. The deck's own
-  clock is UTC by design and is unaffected.
+* ~~Set a timezone in the build.~~ **Done.** `DECK_TIMEZONE`, defaulting to
+  UTC. Raspberry Pi OS ships Europe/London, so journal timestamps sat an hour
+  off local without anything being wrong, which is a poor thing to discover
+  while correlating a crash against what was on the screen. The deck's own
+  clock is UTC by design and was never affected.
 * A `DECK_PERSISTENT_JOURNAL` setting. The build puts the journal in RAM to
   spare the card, which is right for normal use and exactly wrong while
   bringing hardware up — the boot that failed left no log to read.
-* An RTC. The 3A+ has none, so the clock is wrong until NTP, and wrong for the
-  whole session anywhere without WiFi. That matters for logging.
+* **An RTC — decided, hardware on order (2026-09-22).** A DS3231 from Adafruit
+  rather than one of the common ZS-042 boards, for the reason in the battery
+  note below. Unfinished business until it arrives.
+
+  The 3A+ has no clock of its own, so from power-on the system time is
+  whatever `fake-hwclock` saved at the last shutdown until NTP corrects it.
+  Every timestamp the deck shows is a system clock read — the status line and
+  the stamp on every transcript line — so in the field without WiFi the whole
+  session is stamped wrong, and those stamps are what a log would draw from.
+
+  It also removes a constraint §15.2 accepted under protest. WiFi stays partly
+  because NTP is the only correct clock; an RTC separates those, so the radio
+  can be switched off in the field to save power without losing the time. For
+  a deck whose point is portability that is the stronger argument, and the
+  logging accuracy is almost incidental.
+
+  Nothing in the application changes: it reads the system clock, so the fix
+  lands underneath it. What it needs is four things, none automatic:
+
+  1. I²C on the GPIO header — SDA pin 3, SCL pin 5, 3V3 pin 1, GND pin 9,
+     address 0x68.
+  2. `dtparam=i2c_arm=on` and `dtoverlay=i2c-rtc,ds3231` in `config.txt`. The
+     overlay is what creates `/dev/rtc0`; without it the chip is inert.
+  3. `fake-hwclock` removed, or it competes to restore a saved timestamp.
+  4. `hwclock -w` once while NTP is good.
+
+  **Check it against the panel first.** The touchscreen is on the same I²C
+  controller — `3f205000.i2c/i2c-11/i2c-10/10-0038` — at a different address,
+  so they should coexist, but `i2cdetect` before trusting it.
+
+  **The battery warning is why the part is being bought rather than found.**
+  The common ZS-042 module carries a diode-and-resistor charging circuit for a
+  rechargeable LIR2032. A non-rechargeable CR2032 in that holder is being
+  trickle-charged and can leak or vent — in a deck that lives in a bag. Either
+  fit an LIR2032, or remove the charging resistor and fit a CR2032.
+
+  Worth doing as a `DECK_RTC` option in the image build, so a flashed card
+  comes up with the overlay set and `fake-hwclock` gone rather than needing
+  four manual steps repeated at every reflash.
 
 **What not to re-derive**, because it cost time to find and is easy to hit
 again: the rfkill block on both radios, the LE bonding passkey requirement, and
