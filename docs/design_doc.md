@@ -16,7 +16,7 @@ and five contacts to its name: **N3QE** and **K4ZW** on 80 m RTTY, 2026-09-19;
 Martinique on 40 m BPSK31, 2026-09-21 — the first DX, and the first contact
 above QRP.
 
-Nine modules and ten test files, **315 checks**, all passing against a live
+Eleven modules and thirteen test files, **436 checks**, all passing against a live
 fldigi (`tools/run_tests.sh`). Six of them — `test_screen.py`,
 `test_menu_nav.py`, `test_menu_arrows.py`, `test_console_keys.py`,
 `test_screen_toggles.py` and `test_state.py` — drive the real application
@@ -36,6 +36,7 @@ again. Section 15 records the decisions already made and the ones still open.
 Section 16 is where to start when this is picked back up.
 
 ---
+
 
 
 
@@ -86,6 +87,12 @@ Section 16 is where to start when this is picked back up.
   - [15.1a Found while building](#151a-found-while-building)
   - [15.2 Answered by the operator](#152-answered-by-the-operator)
 - [16. Picking this back up](#16-picking-this-back-up)
+- [17. Touch, and pairing a keyboard without SSH](#17-touch-and-pairing-a-keyboard-without-ssh)
+  - [17.1 Touch is not a pointer, and does not need X](#171-touch-is-not-a-pointer-and-does-not-need-x)
+  - [17.2 Pairing is a lifetime problem, not a permissions one](#172-pairing-is-a-lifetime-problem-not-a-permissions-one)
+  - [17.3 The bootstrap problem](#173-the-bootstrap-problem)
+  - [17.4 What counts as a keyboard](#174-what-counts-as-a-keyboard)
+  - [17.5 Multi-channel keyboards](#175-multi-channel-keyboards)
 
 ---
 
@@ -466,6 +473,8 @@ therefore cannot be undone. `undo()` refuses rather than pretending.
 | `PgUp` / `PgDn` | Scroll the transcript |
 | `Ctrl-L` | Redraw |
 | `Ctrl-Q` | Restart the terminal, after a confirmation |
+| *drag* | Scroll the transcript on the touchscreen (§17.1) |
+| *tap* | Choose, on the pairing and no-keyboard screens only |
 | `Esc` | Close any panel; from the tuning screen, back to chat |
 
 `F2` is a full-screen mode toggle rather than an overlay, for the reason in
@@ -501,6 +510,15 @@ left hand while the right stays on the text.
 **These four are not on the hint line.** There is not room at 66 columns for
 everything, and they are listed in Tune Settings (`F1` → `2`) instead —
 beside the settings they relate to.
+
+**A memory is stored on one line and may be sent as several.** Both places it
+can live are line-based — `cyberdeck.conf` is `KEY = value`, and the on-deck
+editor takes Enter to mean save — so a literal newline cannot be typed into
+either. `\n` is expanded at the moment of insertion, which keeps the stored
+form single-line everywhere and leaves the editor showing exactly what was
+typed. Multi-line memories are how PSK31 is actually worked: a station
+description arrives as a formatted block, not as one long line the far end has
+to unwrap.
 
 **Command keys are case-folded.** RTTY is Baudot and has no lowercase, so
 every RTTY operator works with Caps Lock on; a command key that stops working
@@ -549,7 +567,7 @@ moment they are looking at what the grid is set to.
 
 ### 5.9 Color schemes
 
-Four, each a single hue on black:
+Five, each a single hue on black — or in one case no hue at all:
 
 | Scheme | Hue | Bright | Dim | Evokes |
 |---|---|---|---|---|
@@ -557,10 +575,21 @@ Four, each a single hue on black:
 | **Deckard** | amber | `#FFB000` | `#B27B00` | P3 phosphor, the Esper and the VDUs around it |
 | **Hal** | red | `#FF3B30` | `#A62018` | the 9000-series eye; also the night-vision scheme |
 | **Tron** | cyan-blue | `#00D9FF` | `#0089A8` | the Grid |
+| **Ripley** | none | `#FFFFFF` | `#A0A0A0` | the Nostromo's own screens; plain white on black |
 
-Two of these carry a legibility caveat worth recording rather than discovering.
+**Ripley is the oldest meaning of monochrome**: one intensity axis and no hue,
+which makes it the most legible of the five in daylight and the obvious choice
+for anyone who finds a colored console tiring. It is also the only scheme that
+redefines the console's *own* default foreground — entry 7, and 15 through
+`A_BOLD` — rather than a color the console was not otherwise using. That is
+safe here because the deck owns `tty1` and `colors.restore()` puts the table
+back on exit, but it is the reason the restore exists at all rather than being
+merely tidy.
 
-**Hal is the least legible of the four.** Red has the lowest luminance of any
+Two of the colored schemes carry a legibility caveat worth recording rather
+than discovering.
+
+**Hal is the least legible of them.** Red has the lowest luminance of any
 saturated hue, so red-on-black has the poorest contrast here even at full
 brightness. That is inherent to the choice and is also the point — it is the
 scheme for operating at night without wrecking dark adaptation. It is not the one
@@ -1178,6 +1207,10 @@ RIG_MODE = PKTUSB       # the radio's data mode; USB for plain sideband
 RIG_BANDS =             # empty: this radio covers every band listed
 
 TIMESTAMPS = yes        # timestamp column in the transcript
+TOUCH = yes             # drag the transcript to scroll (§17.1)
+TOUCH_DEVICE =          # empty: find the touchscreen by capability
+TOUCH_ROW_PIXELS = 24   # the console cell height
+PAIR_ON_NO_KEYBOARD = yes   # show NO KEYBOARD when none is attached (§17.3)
 INHIBIT_ON_START = yes
 RSID_ON_START = yes
 REMEMBER_STATE = yes
@@ -1296,10 +1329,11 @@ Each phase ends with something demonstrable.
 | 1 | fldigi headless under Xvfb, answering XML-RPC | **done**, laptop and deck |
 | 2 | A Python client that prints received text and sends a typed line | **done** |
 | 3 | The curses layout with live status, transcript and compose | **done** |
-| 4 | The four color schemes and the F1 menu tree | **done** |
+| 4 | The color schemes and the F1 menu tree | **done** |
 | 5 | Running on the deck's own screen and Bluetooth keyboard, autostarting at boot | **done** |
 | 6 | The tuning panel and RSID, evaluated on the air | **done**, both |
 | 7 | An image build script producing the card unattended, as the iGate has | **done**, run end to end |
+| 8 | Touch, and pairing a keyboard with no SSH | **done**, §17 |
 
 Every phase is complete.
 
@@ -1604,7 +1638,7 @@ reproducible from a test, and all but one turned out to be software.
 | Display | 5" capacitive touch DSI, 800×480, at 12×24 giving a 66×20 grid | 3.3 |
 | Transmit model | Over-based: compose while receiving, `Ctrl-T` to start, `Ctrl-Y` to hand back. `Enter` is a newline, not a send | 5.4 |
 | Tuning | The radio's own waterfall for RF; a parked audio carrier with AFC and RSID for the modem. No software spectrum | 8 |
-| Color schemes | Matrix, Deckard, Hal, Tron — four hues on black, Matrix the default | 5.8 |
+| Color schemes | Matrix, Deckard, Hal, Tron and Ripley — four hues on black plus white, Matrix the default | 5.8 |
 | Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
 | Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
 | Rig control | `rigctld` on 127.0.0.1:4532, bridging the FTX-1's separate CAT and PTT ports. Model **1051**, which supersedes the 1035 the iGate used: 1035 reads but cannot tune | 7, 7.1 |
@@ -1616,6 +1650,9 @@ reproducible from a test, and all but one turned out to be software.
 | Bands | Eleven presets, 80 m to 70 cm, ordered by frequency | 8.3, 15.2 |
 | WiFi | Stays, and gains a toggle. The 3A+ has no RTC, so NTP is the only correct clock | 15.2, 16 |
 | A second radio | In scope eventually, as per-rig profiles. Not now | 15.2 |
+| Touch | Two gestures and no pointer: drag scrolls, tap chooses on the pairing screens only. No X | 17.1 |
+| Pairing a keyboard | On the deck, no SSH. One D-Bus connection holds the agent; the terminal drives it from its own loop | 17.2 |
+| Noticing there is no keyboard | The deck raises a screen by itself, since it cannot be told | 17.3 |
 
 ### 15.1a Found while building
 
@@ -1671,6 +1708,17 @@ process, which presents as text breaking early for no reason.
 the kernel's palette, not a property of this program, so quitting left the
 deck's hues on whatever owned tty1 next. The original is now read once and put
 back on exit.
+
+**A capability is not the same as a capability being used for what its name
+suggests.** The check for "is a keyboard attached" looked for the kernel's
+`kbd` handler, which on this deck is carried permanently by the radio's USB
+audio codec and by the HDMI CEC remote — so it was true forever and could
+never report a keyboard missing. The handler means "can send a key event to a
+console", not "is a keyboard". What distinguishes them is the key bitmap:
+a keyboard reports the whole top letter row and a volume rocker does not
+(§17.4). The first version of the touchscreen check made the mirror-image
+mistake in the other direction, guessing at a Goodix part by name when the
+panel carries an FT5x06.
 
 **A renderer has to know about the characters the operator can type.**
 `_wrap` split on spaces only, so a newline stayed inside the string handed to
@@ -1799,7 +1847,7 @@ the keyboard bonded and fldigi decoding.
 3. **The remaining console-font question:** 10×20 and 16×32 at runtime via
    `setfont`, without disturbing the running curses application. The 12×24
    default renders correctly.
-4. ~~Verify Hal and Tron on the panel.~~ **Done — all four schemes are
+4. ~~Verify Hal and Tron on the panel.~~ **Done — all the colored schemes are
    confirmed on the hardware.** The palette redefinition was addressing
    nothing until it was corrected (§5), so every scheme rendered as its ANSI
    approximation; Matrix and Deckard were confirmed on 2026-09-19 and
@@ -1814,7 +1862,11 @@ The deck is configured from its own keyboard now — memories, station, mode,
 band. The two things still needing SSH are **adding a Bluetooth keyboard** and
 **WiFi**, and both can be brought on-deck.
 
-5. **Pair a keyboard without SSH.** The crux is not the interface: LE bonding
+5. ~~**Pair a keyboard without SSH.**~~ **Built and working on the deck**
+   (§17.2, §17.3). Scan, tap, passkey on the panel, bonded and trusted. The
+   notes below are kept because they are why it works.
+
+   **Original reasoning, borne out:** The crux is not the interface: LE bonding
    requires a passkey *displayed by the host and typed on the keyboard being
    paired*, which is why `NoInputNoOutput` failed and `KeyboardDisplay`
    worked. The deck has a screen and the new keyboard types — SSH was never
@@ -1831,17 +1883,35 @@ band. The two things still needing SSH are **adding a Bluetooth keyboard** and
    D-Bus API delivers the passkey as a method call, which is the whole reason
    to use it.
 
-6. **WiFi on the deck**, second because adding a network needs a keyboard to
-   type a PSK. `nmcli radio wifi off` persists across reboots, so the deck
+6. **WiFi on the deck — the one thing here still outstanding.** Deferred
+   deliberately rather than forgotten; §15.2 question 12 settles what it
+   should do and this is what is left to build. Second in this list because
+   adding a network needs a keyboard to type a PSK, and that dependency is
+   now satisfied: the deck pairs its own keyboard (§17).
+
+   `nmcli radio wifi off` persists across reboots, so the deck
    must *explicitly* enable WiFi at startup rather than relying on a default —
    and that rule is not a convenience. It is what makes the radio safe to
    switch off at all: with WiFi off and the keyboard flat, there is no SSH, no
    keyboard, and a radio in the only USB port. Power-cycling is the recovery,
    and it only works if WiFi always returns.
 
-7. **Touch**, for transcript scrolling during a contact and as a failover
-   input. A vertical drag on content is a gesture, not a pointer, so it does
-   not contradict §1's premise the way a touch *menu* would.
+7. ~~**Touch**, for transcript scrolling during a contact.~~ **Built** (§17.1). A
+   vertical drag on the transcript scrolls it; `src/touch.py` reads the
+   panel's FT5x06 directly from evdev, with no X and no pointer. Dragging
+   downward reveals earlier text, the way a sheet of paper moves under a
+   finger. A tap does nothing, nothing is selectable, and there is no cursor:
+   a gesture on content does not contradict §1 the way a touch *menu* would.
+
+   **It cannot get in the way of a deck that is not a deck.** The application
+   is also run on ordinary laptops (the runbook's laptop section), and every
+   way the touchscreen can be absent ends in "no movement" rather than an
+   error: no `/proc/bus/input/devices` at all, no device with
+   `INPUT_PROP_DIRECT`, or a device the user may not read. The module imports
+   only the standard library, and it opens the device read-only without
+   `EVIOCGRAB` — so on a laptop that *does* have a touchscreen, the desktop
+   keeps it too. `TOUCH = no` turns it off outright. All of that is asserted
+   in `tests/test_touch.py`, which needs no hardware.
 
 **Privilege is the design question**, not the interface. Pairing, forgetting a
 bond and toggling WiFi are all privileged, and the terminal runs as `deck` —
@@ -1884,8 +1954,48 @@ Two things follow for the implementation:
   terminal reads touch as itself. Nothing to add to the build, no udev rule,
   no capability.
 
-**2. Can an unprivileged process reach BlueZ over D-Bus?** Yes. `StartDiscovery`
-called as `deck`, with no sudo, returned cleanly:
+**2. Can an unprivileged process reach BlueZ over D-Bus?** Yes, and an agent
+registered by one holds. `tools/bt_agent_probe.py`, run on the deck as `deck`
+with no sudo on 2026-09-22, exported an `org.bluez.Agent1` object, registered
+it with `KeyboardDisplay` capability, ran a 30-second discovery, and confirmed
+the agent was **still registered afterwards**. That is the property the whole
+feature rests on, and it is now measured rather than assumed. No root helper,
+no polkit rules, no service outliving the terminal.
+
+The scan also corrected an assumption this section used to make. It said that
+with nothing bonded there is no selection interface to build — scan, show the
+name, show the passkey. That is wrong:
+
+```
+DF:3C:77:61:6C:22  Pebble K380s                   <-- looks like a keyboard
+DF:3C:77:61:6C:21  Pebble K380s      paired       <-- looks like a keyboard
+```
+
+**A multi-channel keyboard advertises one address per channel**, with the same
+name on each. The Pebble K380 has three, selected by three buttons: during
+this scan button 1 was bonded to a phone, button 3 was the deck's existing
+bond (`:21`, reported paired), and button 2 was being held in pairing mode
+(`:22`, not paired). Both were visible at once under one name.
+
+So a list showing names alone cannot distinguish them, and the screen has to
+carry the address — the last octets are enough — and mark what is already
+paired. It also means "pair the keyboard it finds" is not a safe shortcut even
+when only one keyboard is in the room.
+
+Filtering is easy on the other hand: BlueZ's `Icon` property reported
+`input-keyboard` for both, which reduced ten visible devices to the two that
+matter, discarding neighbouring phones and a television without any heuristics
+of this project's own.
+
+**Presence is the remaining question for that screen.** BlueZ remembers
+devices it has seen, so a list built from `GetManagedObjects` includes
+channels that are not advertising now — button 1's bond to a phone would
+appear the same as button 2 held in pairing mode. `RSSI` is present on a
+device being heard and absent on one merely remembered, which looks like the
+right discriminator, but it has not been tested and §14 has a poor record on
+assumptions of that shape.
+
+The earlier, weaker check that only established reachability:
 
 ```bash
 busctl --system call org.bluez /org/bluez/hci0 org.bluez.Adapter1 StartDiscovery
@@ -1958,3 +2068,161 @@ binding is what an earlier `ModuleNotFoundError` was really reporting.
 **What not to re-derive**, because it cost time to find and is easy to hit
 again: the rfkill block on both radios, the LE bonding passkey requirement, and
 the eight-digit frequency command. All three are in §14.
+
+---
+
+## 17. Touch, and pairing a keyboard without SSH
+
+These are one section because they are one argument. Touch was excluded from
+the design on a premise that turned out to be false, and the thing it unlocks
+is the deck's last dependency on another computer.
+
+### 17.1 Touch is not a pointer, and does not need X
+
+§15.2 left touch unused on the reasoning that a console has no pointer and
+using touch would mean running X. The second half is simply wrong. The panel's
+controller enumerates as an ordinary evdev device — an FT5x06 at i2c address
+`0x38`, multitouch protocol type B — and a drag is a handful of integers read
+from a character device. No display server is involved at any point.
+
+The premise that survives is the first half. There is no cursor, nothing
+follows the finger, and nothing is selectable. **Two gestures exist:**
+
+| Gesture | Where | What it does |
+|---|---|---|
+| Vertical drag | The conversation screen | Scrolls the transcript |
+| Tap | The pairing and no-keyboard screens | Chooses |
+
+Everywhere else a tap is discarded. `src/touch.py` reports taps as character
+cells rather than acting on them, which keeps that decision with the screen
+showing rather than with the input layer.
+
+A drag on content is a gesture; a touch *menu* would be an instruction to a
+widget, and §1 still rules that out.
+
+**The geometry is free.** Coordinates arrive as panel pixels, and 800×480 at a
+12×24 font is 66×20 — so `row = y // 24` and `col = x // 12` reach a character
+cell with no scaling and no calibration step. 480 divides by 24 exactly twenty
+times.
+
+**`struct input_event` is 16 bytes on the deck and 24 on a 64-bit machine**,
+because its `timeval` holds two longs. The native `llHHi` struct format is
+right on both; a hardcoded size is wrong on one of them.
+
+**It must be invisible where there is no panel.** The application runs on
+ordinary laptops, and every way the touchscreen can be absent ends in "no
+movement" rather than an error: no `/proc/bus/input/devices` at all, no device
+with `INPUT_PROP_DIRECT`, or a device the user may not read. The module
+imports only the standard library, and opens the device read-only **without**
+`EVIOCGRAB` — so a laptop that does have a touchscreen keeps it for its
+desktop. `TOUCH = no` disables it outright.
+
+### 17.2 Pairing is a lifetime problem, not a permissions one
+
+An LE keyboard will not deliver input over an unbonded link, and bonding needs
+a passkey **displayed by the host and typed on the keyboard being paired**.
+That is why a `NoInputNoOutput` agent fails and `KeyboardDisplay` works, and
+it is why pairing cannot be made silent: typing the code is what proves the
+device is a keyboard. The deck has a screen and the keyboard types, so SSH was
+never fundamentally required — only convenient at 2am.
+
+What broke the first attempt was lifetime. **BlueZ tracks an agent, and
+discovery, per D-Bus connection.** The original script ran each `bluetoothctl`
+command as its own process, so the agent it registered was gone before pairing
+began: BlueZ had nowhere to send the passkey, and the script reported success
+on a keyboard that could not type a character. The same rule was demonstrated
+later from the command line, on a different verb — `StartDiscovery` in one
+`busctl` call and `StopDiscovery` in another fails with `No discovery started`.
+
+So everything happens on **one connection held open for the whole operation**,
+and `tools/bt_agent_probe.py` measured that this works before any interface
+was written (§16): an agent registered by the deck as its own user survived a
+thirty-second discovery. No root helper and no polkit rules — the question
+§16 set out to answer, settled in the simpler direction.
+
+**It is driven from the terminal's own loop.** `Pairing.pump()` services
+pending D-Bus work without blocking, bounded so a busy bus cannot starve the
+screen. There is no thread and no nested main loop, because a curses
+application already has a main loop and two of them is how an interface stops
+repainting. `Pair` itself is called asynchronously: it does not return until
+the passkey has been typed or the attempt times out, and a synchronous call
+would freeze the panel for exactly the period it is meant to be showing the
+passkey.
+
+A successful bond is marked **Trusted**, without which the deck asks about the
+keyboard every time it returns — on a deck with no other input, that is the
+same as not being paired.
+
+### 17.3 The bootstrap problem
+
+Pairing lives behind `F1` → `7` → `b`. `F1` needs a keyboard. The feature that
+attaches a keyboard therefore required one, which made it useless in precisely
+the case it was built for.
+
+The deck notices instead. When no keyboard exists it shows a **NO KEYBOARD**
+screen, and two different problems look identical from there:
+
+* a bonded keyboard that is switched off, asleep or flat — by far the common
+  case;
+* nothing bonded at all.
+
+So it does not jump into a scan, which would answer the rarer one and bury the
+answer to the usual one. It names the keyboards already bonded **with their
+addresses**, says to switch one on, and offers pairing as the second answer.
+Any tap opens pairing — not a particular row, because someone with no keyboard
+and no cursor should not be asked to hit a target.
+
+**Any keypress dismisses it**, which is the neatest part: a keystroke arriving
+is proof the problem it describes has been solved.
+
+The same check runs every three seconds, so a keyboard that sleeps mid-session
+raises the screen and a keyboard switched back on clears it. Suppressed during
+an over — the transcript matters more then, and a missing keyboard does not
+stop a transmission finishing.
+
+### 17.4 What counts as a keyboard
+
+The obvious test is the kernel's `kbd` handler, and it is wrong. `kbd` means
+"can send a key event to a console", and on this deck two devices carry it
+permanently, neither of them a keyboard:
+
+```
+C-Media Electronics Inc. USB Audio Device    H: Handlers=kbd event0
+vc4-hdmi                                     H: Handlers=kbd event2
+```
+
+The first is the radio's own codec — USB audio exposes HID consumer controls
+for volume and mute. The second is the HDMI CEC remote input. Both are present
+whenever the radio is plugged in, so the check was true forever and could
+never report a keyboard missing. The same shape appears on an ordinary laptop,
+where power buttons, hotkey blocks and even the PC speaker carry `kbd` with an
+empty key bitmap.
+
+**What separates them is what they can type.** A keyboard reports the whole top
+letter row; a volume rocker and a CEC remote do not. `KEY_Q` through `KEY_Y`
+are codes 16–21, which sit in the last word of the `B: KEY=` bitmap whether a
+kernel long is 32 or 64 bits — so one test works on the deck's 32-bit
+userland and on a 64-bit development machine. Both conditions are required:
+able to type, and able to reach the console.
+
+### 17.5 Multi-channel keyboards
+
+A keyboard with channel buttons advertises **one address per channel, under
+one name**. The Pebble K380 has three: during the first scan on the deck,
+button 1 was bonded to a phone, button 3 was the deck's own bond, and button 2
+was held in pairing mode. Two entries, identical names.
+
+So "pair the keyboard it finds" is not a safe shortcut even alone in a room,
+and the list carries the address tail and marks what is already paired. The
+screen says why two entries share a name rather than leaving it to be worked
+out.
+
+Filtering is easy on the other hand: BlueZ's own `Icon` property reported
+`input-keyboard` for both, reducing ten visible devices to the two that
+matter and discarding neighbouring phones and a television with no heuristic
+of this project's own.
+
+`RSSI` is present on a device being heard and absent on one BlueZ merely
+remembers, which is used to sort the list and to label an entry `here` — never
+to hide anything. If that reading is wrong somewhere, the list is still
+complete.

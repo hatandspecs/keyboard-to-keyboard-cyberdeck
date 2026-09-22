@@ -7,6 +7,7 @@ Every key in this document was read out of the deck's source, not remembered.
 
 
 
+
 ## Contents
 
 - [1. What keyboard-to-keyboard is](#1-what-keyboard-to-keyboard-is)
@@ -30,6 +31,7 @@ Every key in this document was read out of the deck's source, not remembered.
   - [Automatic mode switching](#automatic-mode-switching)
 - [10. Where to listen](#10-where-to-listen)
 - [11. Reading the status line](#11-reading-the-status-line)
+- [11.5 When the keyboard stops working](#115-when-the-keyboard-stops-working)
 - [12. Full key reference](#12-full-key-reference)
   - [Conversation screen](#conversation-screen)
   - [Menu (`F1`)](#menu-f1)
@@ -191,7 +193,8 @@ that first.
 decode into readable text. Spend a session just reading other people's
 conversations; every convention in section 6 will appear within ten minutes.
 
-`PgUp` and `PgDn` scroll back through the transcript.
+`PgUp` and `PgDn` scroll back through the transcript, and so does dragging a
+finger up and down the panel.
 
 ---
 
@@ -642,6 +645,53 @@ shrinks.
 
 ---
 
+## 11.5 When the keyboard stops working
+
+Sooner or later the Pebble goes to sleep, runs flat, or gets switched to
+another channel. The deck notices within a few seconds and says so:
+
+```
+ NO KEYBOARD
+┌──────────────────────────────────────────────────────┐
+│  No keyboard is connected...                         │
+│                                                      │
+│  Already paired:                                     │
+│    Pebble K380s                 6C:21                │
+│                                                      │
+│  Switch it on, or press its channel button.          │
+│  This screen clears by itself when it answers.       │
+│                                                      │
+│  ▸  TAP THE SCREEN TO PAIR A KEYBOARD                │
+└──────────────────────────────────────────────────────┘
+```
+
+**Usually the answer is the first line**: switch the keyboard on, or press its
+channel button. The screen clears itself the moment a key arrives — a
+keystroke is proof the problem is gone — and it will not appear while an over
+is going out.
+
+**To pair a new keyboard, tap the panel.** Anywhere; the screen offers one
+action. Then:
+
+1. Hold the keyboard's pairing key until its light blinks quickly.
+2. Tap the row for the keyboard you want.
+3. A six-digit passkey appears in large digits. **Type it on the keyboard
+   being paired and press its Enter key.** Nothing echoes anywhere.
+4. `PAIRED, AND TRUSTED.` It will reconnect by itself from now on.
+
+You can reach the same screen deliberately with `F1` → `7` → `b`.
+
+**Two entries with the same name is normal.** A keyboard with channel buttons
+advertises one address per channel — a K380 with a phone on button 1 and the
+deck on button 3 shows both. The address at the end of the line is the only
+thing that tells them apart; the one marked `here` is the one currently
+broadcasting, which is usually the one you just put into pairing mode.
+
+`f` removes a bond. That is what makes a second attempt possible: a half-made
+bond cannot be replaced, only removed and made again.
+
+---
+
 ## 12. Full key reference
 
 ### Conversation screen
@@ -666,7 +716,7 @@ shrinks.
 | `Ctrl-W` `Ctrl-S` | Search for the next signal, up / down |
 | `F5`–`F12` | Insert a message memory at the cursor |
 | `Ctrl-Z` | Undo the last memory insert |
-| `PgUp` / `PgDn` | Scroll the transcript |
+| `PgUp` / `PgDn` | Scroll the transcript — or **drag it on the touchscreen** |
 | `Enter` | Newline — **does not send** |
 | `Backspace` | Delete from the compose buffer |
 

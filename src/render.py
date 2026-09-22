@@ -262,7 +262,7 @@ def preview(text, width):
 EDIT_HINT = "  Enter save   Esc cancel   ^U clear the line"
 # Only shown when editing a message memory: the tokens mean nothing when the
 # field being edited is the callsign they would be filled in from.
-EDIT_TOKENS_HINT = "  {call} {name} {qth} {grid} {rig} are filled in when inserted"
+EDIT_TOKENS_HINT = "  {call} {name} {qth} {grid} {rig} fill in;  \\n starts a new line"
 
 
 def status_line(fields, width):
@@ -388,3 +388,212 @@ def hint_line(width):
         if len(tier) <= width:
             return [(tier, "dim")]
     return [(_HINT_TIERS[-1][:width], "dim")]
+
+# Block digits for the pairing passkey (§5.9's aesthetic, and legibility).
+#
+# The passkey is the one number on this deck that has to be read off the
+# screen and typed somewhere else, by someone leaning over a 5" panel, often
+# in a hurry before the pairing attempt times out. Six characters of body text
+# is the wrong size for that job. Five rows of block characters is the size a
+# terminal of the period would have used for exactly the same reason — it is
+# the one place where the vintage treatment and the practical answer are the
+# same thing.
+_DIGITS = {
+    "0": ("███", "█ █", "█ █", "█ █", "███"),
+    "1": ("  █", "  █", "  █", "  █", "  █"),
+    "2": ("███", "  █", "███", "█  ", "███"),
+    "3": ("███", "  █", "███", "  █", "███"),
+    "4": ("█ █", "█ █", "███", "  █", "  █"),
+    "5": ("███", "█  ", "███", "  █", "███"),
+    "6": ("███", "█  ", "███", "█ █", "███"),
+    "7": ("███", "  █", "  █", "  █", "  █"),
+    "8": ("███", "█ █", "███", "█ █", "███"),
+    "9": ("███", "█ █", "███", "  █", "███"),
+    " ": ("   ", "   ", "   ", "   ", "   "),
+}
+BIG_ROWS = 5
+
+
+def big_number(text, width):
+    """`text` as five rows of block characters, centred in `width`.
+
+    Anything without a glyph falls back to the plain string rather than
+    disappearing: a passkey BlueZ sends in an unexpected shape must still be
+    readable, even if it is not beautiful.
+    """
+    glyphs = [_DIGITS.get(ch) for ch in text]
+    if not text or any(g is None for g in glyphs):
+        return [text.center(width)[:width]]
+    rows = []
+    for i in range(BIG_ROWS):
+        line = "  ".join(g[i] for g in glyphs)
+        rows.append(line.center(width)[:width] if len(line) <= width
+                    else line[:width])
+    return rows
+
+
+def frame(title, body, width, height, footer=""):
+    """A boxed panel, drawn with the terminal's own line characters.
+
+    Used by the pairing screen rather than the menu renderer. Pairing is the
+    one screen that interrupts operating to do something else entirely, and
+    giving it a border says so — the same reason a period terminal drew a box
+    around anything modal.
+    """
+    inner = max(4, width - 2)
+    out = ["┌" + "─" * inner + "┐"]
+    head = f" {title} ".center(inner, "─") if title else "─" * inner
+    out.append("├" + head + "┤") if title else None
+    for line in body:
+        out.append("│" + line[:inner].ljust(inner) + "│")
+    while len(out) < max(2, height - (2 if footer else 1)):
+        out.append("│" + " " * inner + "│")
+    out.append("└" + "─" * inner + "┘")
+    if footer:
+        out.append(" " + footer[:width - 1])
+    return out[:height]
+
+
+# Screen row of the first device on the pairing screen: the title bar, the top
+# border and one blank line come first. A tap is turned into a device index
+# with this, so it has to track pair_screen() rather than be guessed at.
+PAIR_ROW0 = 3
+
+
+def pair_screen(state, devices, width, height, passkey="", error="",
+                selected=0, tick=0):
+    """The pairing screen, drawn as a framed panel.
+
+    Given its own renderer rather than going through the menu one. Pairing
+    interrupts operating to do something else entirely, and a border says so —
+    the same reason a terminal of the period drew a box around anything modal.
+    The passkey inside it is set in block characters because it is the one
+    number on this deck that has to be read off the panel and typed somewhere
+    else, against a timeout, by someone leaning over a five inch screen.
+    """
+    inner = max(20, width - 2)
+    body = []
+
+    def line(text="", kind="bright"):
+        body.append([("│", "dim"), (text[:inner].ljust(inner), kind),
+                     ("│", "dim")])
+
+    out = [[(" PAIR A KEYBOARD".ljust(width), "reverse")]]
+    out.append([("┌" + "─" * inner + "┐", "dim")])
+
+    if state == "passkey":
+        line()
+        line("  TYPE THIS ON THE KEYBOARD BEING PAIRED,")
+        line("  THEN PRESS ITS ENTER KEY:")
+        line()
+        for row in big_number(passkey, inner):
+            line(row)
+        line()
+        line("  It will not respond until the bond is made.", "dim")
+    elif state == "pairing":
+        line()
+        line("  Pairing" + "." * (1 + tick % 3))
+        line()
+        line("  Waiting for the keyboard to answer.", "dim")
+    elif state == "paired":
+        line()
+        line("  ✓  PAIRED, AND TRUSTED.")
+        line()
+        line("  It will reconnect by itself from now on.", "dim")
+        line("  Try typing on it.", "dim")
+        if error:
+            line()
+            line("  " + error[:inner - 2], "dim")
+    elif state == "failed":
+        line()
+        line("  ✗  PAIRING FAILED")
+        line()
+        line("  " + (error or "no reason given")[:inner - 2], "dim")
+        line()
+        line("  Hold the keyboard's pairing key until its light", "dim")
+        line("  blinks quickly, then try again.", "dim")
+    else:
+        line()
+        if not devices:
+            line("  No keyboards found yet.")
+            line()
+            line("  Hold the keyboard's pairing key until its", "dim")
+            line("  light blinks quickly, then wait a few seconds.", "dim")
+        else:
+            for n, dev in enumerate(devices[:9], start=1):
+                mark = "▸" if n - 1 == selected else " "
+                marks = []
+                if dev.rssi is not None:
+                    marks.append("here")
+                if dev.paired:
+                    marks.append("paired")
+                name = (dev.name or "(unnamed)")[:24]
+                line(f" {mark} {n}  {name:<24} {dev.tail:<6} "
+                     f"{' '.join(marks)}")
+            line()
+            line("  Two entries, one name? A keyboard with channel", "dim")
+            line("  buttons shows one per channel; the address differs.", "dim")
+        line()
+        line("  " + "·" * (1 + tick % 4) + " scanning", "dim")
+
+    out.extend(body)
+    while len(out) < height - 2:
+        out.append([("│", "dim"), (" " * inner, "bright"), ("│", "dim")])
+    out.append([("└" + "─" * inner + "┘", "dim")])
+
+    footers = {"passkey": "Esc cancel", "pairing": "Esc cancel",
+               "paired": "Esc back", "failed": "Esc back"}
+    footer = footers.get(state,
+                         "Esc back   ↑↓ move   Enter pair   f forget   tap to choose")
+    out.append([(" " + footer[:width - 1], "dim")])
+    return out[:height]
+
+
+def no_keyboard_screen(bonded, width, height, tick=0, can_pair=True):
+    """Shown when the deck has no keyboard, which is also when it cannot be
+    told anything.
+
+    Two different problems look identical from here — a bonded keyboard that
+    is switched off or asleep, and no bond at all — and the common one by far
+    is the first. So this does not jump into pairing. It names the keyboards
+    already bonded, says to switch one on, and offers pairing as the second
+    answer rather than the only one.
+
+    It clears itself the moment a key arrives, because a keystroke is proof
+    the problem is solved.
+    """
+    inner = max(20, width - 2)
+    out = [[(" NO KEYBOARD".ljust(width), "reverse")],
+           [("┌" + "─" * inner + "┐", "dim")]]
+
+    def line(text="", kind="bright"):
+        out.append([("│", "dim"), (text[:inner].ljust(inner), kind),
+                    ("│", "dim")])
+
+    line()
+    line("  No keyboard is connected" + "." * (1 + tick % 3))
+    line()
+    if bonded:
+        line("  Already paired:", "dim")
+        for d in bonded[:4]:
+            line(f"    {(d.name or '(unnamed)')[:28]:<28} {d.tail}")
+        line()
+        line("  Switch it on, or press its channel button.")
+        line("  This screen clears by itself when it answers.", "dim")
+    else:
+        line("  Nothing is paired with this deck yet.")
+        line()
+        line("  Hold the keyboard's pairing key until its", "dim")
+        line("  light blinks quickly.", "dim")
+    line()
+    if can_pair:
+        line("  ▸  TAP THE SCREEN TO PAIR A KEYBOARD")
+    else:
+        line("  Pairing is not available on this machine.", "dim")
+
+    while len(out) < height - 2:
+        out.append([("│", "dim"), (" " * inner, "bright"), ("│", "dim")])
+    out.append([("└" + "─" * inner + "┘", "dim")])
+    out.append([(" " + ("tap to pair   any key dismisses" if can_pair
+                        else "any key dismisses")[:width - 1], "dim")])
+    return out[:height]

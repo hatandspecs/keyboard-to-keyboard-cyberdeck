@@ -573,8 +573,8 @@ install_project() {
   # both directions between two stations. Turned off on the seeded card so a
   # freshly flashed deck does not inherit it.
   sudo python3 "${PROJECT_DIR}/tools/configure_fldigi.py" \
-    --config-dir "${dest}/fldigi-config" --keep-carrier \
-    || note "could not set STARTATSWEETSPOT; set it on the deck with --keep-carrier"
+    --config-dir "${dest}/fldigi-config" --keep-carrier --rsid-strict \
+    || note "could not set the fldigi carrier/RSID options; set them on the deck"
 
   sudo mkdir -p "${dest}/run"
   note "installed to /opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
@@ -705,9 +705,14 @@ for i in \$(seq 1 30); do
 done
 
 apt-get update -y || exit 1
+# python3-gi is for Bluetooth pairing from the panel: registering a BlueZ
+# agent needs a D-Bus connection held open for the whole operation, which a
+# subprocess per command cannot provide — that is the defect that made the
+# first pairing script report success on a keyboard that could not type.
+# Nothing else in the deck imports it, and the terminal runs without it.
 apt-get install -y --no-install-recommends \\
   fldigi xvfb libhamlib-utils python3 console-setup fonts-terminus \\
-  kbd bluez alsa-utils || exit 1
+  kbd bluez alsa-utils python3-gi || exit 1
 
 # --- hamlib from source ------------------------------------------------
 #

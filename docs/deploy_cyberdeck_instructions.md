@@ -27,6 +27,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
 
 
 
+
 ## Contents
 
 - [Phase 0 — on the laptop](#phase-0--on-the-laptop)
@@ -41,7 +42,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
   - [3. Write it](#3-write-it)
   - [4. Verify the card before booting](#4-verify-the-card-before-booting)
 - [Phase 3 — first boot](#phase-3--first-boot)
-  - [The keyboard: the first bond is manual](#the-keyboard-the-first-bond-is-manual)
+  - [The keyboard: pair it on the deck](#the-keyboard-pair-it-on-the-deck)
 - [Phase 4 — the radio](#phase-4--the-radio)
   - [1. Devices](#1-devices)
   - [2. Is fldigi answering?](#2-is-fldigi-answering)
@@ -571,27 +572,69 @@ which fldigi Xvfb rigctld
 df -h /                      # rootfs should have expanded to fill the card
 ```
 
-### The keyboard: the first bond is manual
+### The keyboard: pair it on the deck
+
+**The deck pairs its own keyboard now, and this is the ordinary way to do it.**
+Nothing below needs SSH; the older `bluetoothctl` procedure is kept at the end
+of this section as a fallback for a deck whose panel or touchscreen is not
+working yet.
+
+With nothing bonded, the terminal notices at startup that no keyboard exists
+and shows the **NO KEYBOARD** screen by itself — which it must, because every
+other way in is behind `F1`, and `F1` needs the keyboard that is missing.
+
+1. Put the keyboard into pairing mode: hold its pairing key, or a channel
+   button on a keyboard that has them, until the light blinks quickly.
+2. **Tap the panel.** Anywhere — the screen offers one action and asking
+   someone with no keyboard to hit a target would be the wrong thing to
+   insist on.
+3. The pairing screen scans and lists what it finds. Tap the row you want, or
+   use `↑` `↓` and Enter if another keyboard is attached.
+4. A six-digit passkey appears **in block characters**. Type it on the keyboard
+   being paired and press its Enter key. Nothing echoes anywhere.
+5. `PAIRED, AND TRUSTED.` Type on the keyboard to confirm.
+
+A keyboard with channel buttons shows **one entry per channel, all with the
+same name** — the address tail is what distinguishes them. A Pebble K380 with
+a phone on button 1 and this deck on button 3 lists both. The screen says so
+in place rather than leaving it to be worked out.
+
+To pair another keyboard later, or replace one: `F1` → `7` → `b`. `f` on the
+pairing screen removes an existing bond, which is what makes a second attempt
+possible — a half-made bond cannot be replaced, only removed and remade.
+
+**If pairing attempts fail repeatedly, check what else the radio is doing.**
+The Pi 3A+ shares one chip and one antenna between WiFi and Bluetooth. Pairing
+attempts during the first-boot package download failed three times in a row and
+succeeded immediately once apt had finished. Wait for `Setup complete.` before
+troubleshooting anything else.
+
+#### Why the deck can do this at all
+
+A Bluetooth LE keyboard will not deliver input over an unbonded link — HID over
+LE requires encryption — and bonding needs a passkey **displayed by the host
+and typed on the keyboard being paired**. That is why a `NoInputNoOutput` agent
+fails and `KeyboardDisplay` works, and it cannot be automated: typing the code
+is what proves the device is a keyboard. The deck has a screen and the keyboard
+types, so SSH was never fundamentally required — only convenient at 2am.
+
+What made the first attempt fail was lifetime, not permission. BlueZ tracks an
+agent **per D-Bus connection**, and the original script ran each `bluetoothctl`
+command as its own process, so the agent was gone before pairing began. The
+terminal holds one connection open for the whole operation instead.
+`tools/bt_agent_probe.py` measured that this works on this hardware before any
+of it was written.
+
+#### Fallback: pairing over SSH
+
+Only for a deck that cannot show the pairing screen. Check the state first:
 
 ```bash
 bluetoothctl info DF:3C:77:61:6C:21 | grep -E 'Connected|Paired|Bonded'
 ```
 
-**Expect this to fail the first time, and read the fields carefully.** The
-signature to look for is:
-
-```
-Paired: no      Bonded: no      Connected: yes      Trusted: yes
-```
-
-Connected but not bonded means the link is up and the keyboard types nothing.
-A Bluetooth LE keyboard will not deliver input over an unbonded link — HID over
-LE requires encryption — and bonding a keyboard requires a passkey that the Pi
-displays and you type **on the keyboard**. That cannot be automated, and should
-not be: typing the code is what proves the device is a keyboard.
-
-So `cyberdeck-btpair` cannot do the first bond. Its job is reconnecting a
-keyboard that is already bonded. Do this once, by hand:
+`Paired: no  Bonded: no  Connected: yes` means the link is up and the keyboard
+types nothing.
 
 ```bash
 bluetoothctl
@@ -606,34 +649,10 @@ power on
 agent KeyboardDisplay
 default-agent
 scan on
-```
-
-Put the keyboard into pairing mode, wait for its `[NEW] Device` line, then:
-
-```
 pair DF:3C:77:61:6C:21
 ```
 
-A six-digit passkey appears:
-
-```
-[agent] Passkey: 585717
-```
-
-**Type those digits on the keyboard and press Enter.** Nothing echoes anywhere.
-If the passkey regenerates before you finish, the keyboard dropped and
-re-advertised — type faster, or `remove` and retry so there is one deliberate
-attempt rather than repeated auto-reconnects.
-
-Success looks like:
-
-```
-[CHG] Device DF:3C:77:61:6C:21 Bonded: yes
-[CHG] Device DF:3C:77:61:6C:21 Paired: yes
-[CHG] Device DF:3C:77:61:6C:21 ServicesResolved: yes
-```
-
-Then:
+Type the six-digit passkey on the keyboard and press Enter, then:
 
 ```
 trust DF:3C:77:61:6C:21
@@ -641,22 +660,14 @@ scan off
 quit
 ```
 
-Type on the keyboard at the deck's screen to confirm. **The LED may keep
-blinking as though still pairing — ignore it; the transcript is the test.**
-
-From here `cyberdeck-btpair` reconnects it automatically at boot, retrying
-every five minutes:
+**The LED may keep blinking as though still pairing — ignore it; typing at the
+deck's screen is the test.** From here `cyberdeck-btpair` reconnects an
+already-bonded keyboard at boot, retrying every five minutes:
 
 ```bash
 sudo systemctl start cyberdeck-btpair
 journalctl -u cyberdeck-btpair -n 20 --no-pager
 ```
-
-**If pairing attempts fail repeatedly, check what else the radio is doing.**
-The Pi 3A+ shares one chip and one antenna between WiFi and Bluetooth. Pairing
-attempts during the first-boot package download failed three times in a row and
-succeeded immediately once apt had finished. Wait for `Setup complete.` before
-troubleshooting anything else.
 
 ---
 
@@ -1217,7 +1228,7 @@ program that can key a radio should not be able to do so the instant it starts.
 
 ### What differs from the deck
 
-* **Color.** The four schemes set true hues through the `PIO_CMAP` ioctl,
+* **Color.** The five schemes set true hues through the `PIO_CMAP` ioctl,
   which works only on a Linux virtual console. In a terminal emulator or over
   SSH the ioctl fails, the failure is caught, and the schemes render as their
   ANSI approximations — recognizable, not exact. Nothing breaks.
@@ -1225,6 +1236,13 @@ program that can key a radio should not be able to do so the instant it starts.
   hint line sheds bindings rather than truncating, down to a floor of 30×8
   below which it prints `terminal too small` and waits. A larger window is
   simply a larger transcript.
+* **Touch and pairing are absent, and that is not an error.** The touchscreen
+  reports no movement on a machine that has none, and the pairing screen is
+  offered only where BlueZ and `python3-gi` are present. Neither is imported
+  at startup. `TOUCH = no` and `PAIR_ON_NO_KEYBOARD = no` switch them off
+  outright if a laptop happens to have a touchscreen you would rather the
+  terminal left alone — it reads the device without grabbing it, so the
+  desktop keeps working either way.
 * **Keys.** The application inherits `TERM` from wherever it runs, and terminal
   types disagree about what some keystrokes mean. `TERM=linux` maps Ctrl-Z to
   `KEY_SUSPEND` where `xterm` delivers byte 26; both are handled, and
@@ -1269,7 +1287,9 @@ first principles.
 | The Waveshare 5" DSI panel on a Pi 3A+ | Console at 66×20, `vc4-kms-dsi-7inch`, powered from the DSI connector |
 | Terminus 12×24 | Renders on the panel |
 | WiFi, NTP, firstboot install, SSH | About five minutes, plus 20–30 for the hamlib build |
-| Bluetooth keyboard | After a one-time manual bond — see phase 3 |
+| Bluetooth keyboard | Paired **from the deck itself**, no SSH: scan, tap, passkey on the panel, bonded and trusted (phase 3) |
+| Touchscreen | FT5x06, multitouch. Drag scrolls the transcript; a tap chooses on the pairing screen |
+| Noticing the keyboard is gone | Switching the keyboard off raises the NO KEYBOARD screen within three seconds; switching it on clears it |
 | fldigi 4.2.06 on a 3A+'s 512 MB | Under Xvfb, with the radio attached |
 | Receive | Real off-air RTTY copy, tuned with `F2` and the reverse toggle |
 | The `F2` tuning panel | Used on the air on three bands: search, carrier nudge, squelch level, reverse and the decode preview |
@@ -1287,10 +1307,11 @@ first principles.
 |---|---|
 
 | Console fonts 10×20 and 16×32 | Only 12×24 has been rendered |
+| Pairing a keyboard that is not a K380 | One model, one bond. Nothing here is specific to it, but that is an argument rather than a report |
 | A long session | Longest run so far is an evening; no thermal or memory data |
 | Remembered state across a power cut | The `fsync` that makes it durable is in place and exercised by a clean restart; pulling the power on a freshly changed setting has not been tried |
 | Off-mains operation | Never run off anything but a wall supply. The deck holds no battery by design — it takes 5 V over USB from whatever powers the station, a USB power bank or a LiFePO4 box. Its draw from one has not been measured |
 
 Everything above the hardware line — the terminal, the modes, the menus, the
-over model, line editing, the color schemes — is covered by **315 checks**
+over model, line editing, the color schemes — is covered by **436 checks**
 against a live fldigi (`tools/run_tests.sh`).

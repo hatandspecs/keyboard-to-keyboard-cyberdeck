@@ -1,7 +1,8 @@
-"""The four monochrome schemes (docs/design_doc.md §5.9).
+"""The five monochrome schemes (docs/design_doc.md §5.9).
 
 Each is one hue on black, with a dim variant for the timestamp and callsign
-columns. Monochrome means one hue, not one intensity.
+columns. Monochrome means one hue, not one intensity — and in Ripley's case
+no hue at all, which is the oldest meaning of the word.
 
 Two paths to the color, because the deck and the development machine are not
 the same thing:
@@ -25,8 +26,14 @@ SCHEMES = {
     "deckard": {"name": "Deckard", "bright": "FFB000", "dim": "B27B00", "ansi": curses.COLOR_YELLOW},
     "hal":     {"name": "Hal",     "bright": "FF3B30", "dim": "A62018", "ansi": curses.COLOR_RED},
     "tron":    {"name": "Tron",    "bright": "00D9FF", "dim": "0089A8", "ansi": curses.COLOR_CYAN},
+    # White is monochrome in the oldest sense: no hue at all, just intensity.
+    # It redefines entries 7 and 15, which are the console's own default
+    # foreground and its bold — the one scheme that changes what a plain
+    # console looks like rather than a color it was not using. That is safe
+    # because the deck owns tty1 and restore() puts the table back on exit.
+    "ripley":  {"name": "Ripley",  "bright": "FFFFFF", "dim": "A0A0A0", "ansi": curses.COLOR_WHITE},
 }
-ORDER = ("matrix", "deckard", "hal", "tron")
+ORDER = ("matrix", "deckard", "hal", "tron", "ripley")
 
 # Which palette entries to redefine on a Linux console.
 #
@@ -52,7 +59,7 @@ def _slots(ansi):
 # bar does not have to settle for the scheme's dim entry. Entry 5 is given over
 # to it and redefined to the scheme's BRIGHT hex, which makes the status bar
 # full brightness while leaving dim text dim. 5 is free: no scheme uses it
-# (they use 1, 2, 3 and 6), and this program owns the console.
+# (they use 1, 2, 3, 6 and 7), and this program owns the console.
 _SLOT_BAR = 5
 
 # One set of color pairs per scheme, rather than three pairs redefined in

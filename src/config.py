@@ -34,7 +34,7 @@ SCHEMA = {
 
     "DEFAULT_MODE":    ("BPSK31", str, "modem selected at startup"),
     "DEFAULT_CARRIER": (1500, int, "audio carrier parked here, in Hz"),
-    "COLOR":          ("matrix", str, "matrix | deckard | hal | tron"),
+    "COLOR":          ("matrix", str, "matrix | deckard | hal | tron | ripley"),
     "FONT":            ("12x24", str, "console font; sets the character grid"),
 
     "FLDIGI_URL":      ("http://127.0.0.1:7362/", str, "fldigi's XML-RPC address"),
@@ -48,6 +48,14 @@ SCHEMA = {
                                    "the modem reports a real signal. 0 uses the "
                                    "fixed RX_HOLD_MS window instead"),
     "TIMESTAMPS":      ("yes", str, "yes | no"),
+    "TOUCH":           ("yes", str, "yes | no — drag the transcript to scroll"),
+    "PAIR_ON_NO_KEYBOARD": ("yes", str, "yes | no — open the pairing screen at "
+                                        "startup when no keyboard exists to "
+                                        "open it with"),
+    "TOUCH_DEVICE":    ("", str, "/dev/input/eventN; empty finds the "
+                                 "touchscreen by capability"),
+    "TOUCH_ROW_PIXELS": (24, int, "the console cell height, so a drag of one "
+                                  "row moves the transcript by one line"),
     "INHIBIT_ON_START": ("yes", str, "yes | no — start with transmit inhibited"),
     "RIG_MODE":        ("PKTUSB", str, "rig mode set at startup and on band "
                                        "change; PKTUSB is the radio's data "
@@ -74,7 +82,7 @@ SCHEMA = {
     "MEMORY_12": ("", str, "F12"),
 }
 
-COLORS = ("matrix", "deckard", "hal", "tron")
+COLORS = ("matrix", "deckard", "hal", "tron", "ripley")
 
 
 class ConfigError(Exception):

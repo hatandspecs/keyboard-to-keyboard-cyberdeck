@@ -19,10 +19,11 @@ import colors
 import config as configmod
 import menus
 import render
+import touch as touchmod
 from fldigi_client import Fldigi
 from session import Entry, Session, RX, TX
 
-CHAT, TUNE = "chat", "tune"
+CHAT, TUNE, PAIR, NOKB = "chat", "tune", "pair", "nokb"
 
 # Releasing the post-over receive hold. Not configuration: these describe how
 # a decaying transient is told apart from a station answering, which is a
@@ -109,6 +110,25 @@ class Deck:
         # Held separately from the transcript because it has to survive the
         # transcript being cleared and has to be cheap to take the tail of.
         self._rx_tail = ""
+        # The panel's touchscreen, for scrolling the transcript by drag. Never
+        # required: a deck without one, or one whose device cannot be opened,
+        # gets an object that reports no movement and nothing else notices.
+        self.touch = (touchmod.Touch(path=settings.get("TOUCH_DEVICE") or None,
+                                     row_pixels=settings.get("TOUCH_ROW_PIXELS", 24))
+                      if settings.get("TOUCH") == "yes" else None)
+        # A pairing session, only while the pairing screen is open. The module
+        # is imported lazily inside it: it needs BlueZ and PyGObject, neither
+        # of which exists on every machine this terminal runs on.
+        self.pairing = None
+        self.pair_sel = 0
+        self._pair_refreshed = 0.0
+        self._pair_tick = 0
+        # The no-keyboard screen's state: which keyboards are already bonded,
+        # whether pairing is even possible here, and the animation counter.
+        self._nokb_bonded = []
+        self._nokb_can_pair = False
+        self._nokb_tick = 0
+        self._kb_checked = 0.0
         self.fldigi = Fldigi(url=settings["FLDIGI_URL"])
         self.session = Session(
             callsign=settings["CALLSIGN"],
@@ -151,6 +171,50 @@ class Deck:
             self.session.inhibit(True)
             self.fldigi.receive_only(True)
             self.session.note("transmit INHIBITED at startup — Ctrl-I to enable")
+
+        self._pair_if_no_keyboard(settings)
+
+    def _pair_if_no_keyboard(self, settings):
+        """Open the pairing screen when there is no keyboard to open it with.
+
+        The pairing screen is reached from the System menu, which is reached
+        with F1 — so on a deck with nothing bonded, the one feature that
+        exists to fix that is behind the thing it fixes. Someone has to notice
+        the keyboard is missing, and the deck is the only one present.
+
+        Three cheap conditions, in the order that keeps `btpair` unimported on
+        machines that will never pair:
+
+        1. a real console. Over SSH the keyboard is the far end's and /proc
+           knows nothing about it, so this must not fire on a laptop;
+        2. no keyboard-capable input device of any kind, Bluetooth or USB;
+        3. only then is pairing asked whether it is possible, which is the
+           call that imports PyGObject.
+        """
+        if settings.get("PAIR_ON_NO_KEYBOARD") != "yes":
+            return
+        if not colors.on_linux_console():
+            return
+        if touchmod.find_keyboard():
+            return
+        self._show_no_keyboard()
+
+    def _show_no_keyboard(self):
+        """Say there is no keyboard, and offer the two things that fix it.
+
+        Not the pairing screen directly. Two different problems look the same
+        from here — a bonded keyboard switched off or asleep, and no bond at
+        all — and the first is far the more common. Jumping into a scan would
+        answer the rarer one and bury the answer to the usual one.
+        """
+        try:
+            import btpair
+            self._nokb_bonded = btpair.bonded_keyboards()
+            self._nokb_can_pair = btpair.available()[0]
+        except Exception:
+            self._nokb_bonded, self._nokb_can_pair = [], False
+        self._nokb_tick = 0
+        self.screen = NOKB
 
     # -- fldigi ------------------------------------------------------------
 
@@ -208,6 +272,9 @@ class Deck:
         else:
             self._tx_idle = 0
 
+        self._check_keyboard()
+        self._scroll_by_touch()
+        self._poll_pair()
         self._persist_settled()
         self._watch_drain(sending)
 
@@ -261,6 +328,188 @@ class Deck:
         finally:
             self.scr.timeout(self.cfg["POLL_MS"])
         return again != 17
+
+    def _scroll_by_touch(self):
+        """A vertical drag on the transcript scrolls it.
+
+        Only on the conversation screen, and only when no menu or editor is
+        open: a drag is a gesture on content, and there is no content to drag
+        anywhere else. Dragging downward reveals earlier text, which is the
+        same direction PgUp goes and the same direction a sheet of paper would
+        move under the finger.
+
+        This is the whole of the touch interface by design. A tap does
+        nothing, nothing is selectable, and there is no cursor — section 1's
+        premise is that the deck has no pointer, and a gesture on content does
+        not contradict it the way a touch menu would.
+        """
+        if self.touch is None:
+            return
+        if self.screen == NOKB:
+            self.touch.poll()
+            if self.touch.taps() and self._nokb_can_pair:
+                # Any tap, not a particular row. The operator has no keyboard
+                # and no cursor; asking them to hit a target would be the
+                # wrong thing to insist on, and the only action this screen
+                # offers is pairing.
+                self._open_pair()
+            return
+        if self.screen == PAIR and self.pairing is not None:
+            # The one screen a tap can act on. It exists to attach a keyboard,
+            # so it cannot require one: a tap on a device row starts pairing
+            # it, which is the whole touch path through this feature.
+            self.touch.poll()
+            for row, _col in self.touch.taps():
+                self._pair_choose(row - render.PAIR_ROW0)
+            return
+        if self.menu or self.edit is not None:
+            return
+        if self.screen != CHAT:
+            self.touch.poll()
+            self.touch.taps()          # discarded: a tap means nothing here
+            return
+        rows = self.touch.poll()
+        self.touch.taps()
+        if rows:
+            # Clamped at zero exactly as PgDn is: the transcript cannot be
+            # scrolled forward past its own end.
+            self.scroll = max(0, self.scroll + rows)
+
+    def _check_keyboard(self):
+        """Notice a keyboard going away, and coming back.
+
+        A Bluetooth keyboard that sleeps, runs flat or is switched off leaves
+        a deck that cannot be told anything — including that it has a problem.
+        The screen is the only thing left, so it says so, rather than the
+        operator pressing keys at a terminal that looks perfectly healthy.
+
+        Checked at a human rate. /proc is cheap but not free, and a keyboard
+        does not come and go five times a second.
+        """
+        if self.cfg.get("PAIR_ON_NO_KEYBOARD") != "yes":
+            return
+        if not colors.on_linux_console():
+            return
+        if self.screen == PAIR or self.menu or self.edit is not None:
+            return
+        now = time.monotonic()
+        if now - self._kb_checked < 3.0:
+            return
+        self._kb_checked = now
+        present = touchmod.find_keyboard()
+        if present and self.screen == NOKB:
+            self.screen = CHAT
+            self.session.note("keyboard is back")
+        elif not present and self.screen == CHAT and self.session.state != TX:
+            # Not mid-over: the transcript is what matters while a
+            # transmission is going out, and the keyboard being absent does
+            # not stop it finishing.
+            self._show_no_keyboard()
+
+    # -- pairing a keyboard ------------------------------------------------
+
+    def _open_pair(self):
+        """Start a pairing session and show its screen.
+
+        The session holds one D-Bus connection open for its whole life. That
+        is the entire point: BlueZ tracks an agent per connection, and the
+        first pairing script registered one per subprocess, so the agent was
+        gone before the passkey could be delivered.
+        """
+        import btpair
+        ok, why = btpair.available()
+        if not ok:
+            self.session.note(f"cannot pair here: {why}")
+            self._close_menu()
+            return
+        self.pairing = btpair.Pairing()
+        self.pair_sel = 0
+        self._pair_refreshed = 0.0
+        self._pair_tick = 0
+        if not self.pairing.start():
+            self.session.note(f"pairing failed to start: {self.pairing.error}")
+            self.pairing = None
+            self._close_menu()
+            return
+        self._close_menu()
+        self.screen = PAIR
+
+    def _close_pair(self):
+        if self.pairing is not None:
+            self.pairing.stop()
+            self.pairing = None
+        self.screen = CHAT
+
+    def _pair_devices(self):
+        return self.pairing.devices[:9] if self.pairing else []
+
+    def _pair_choose(self, index):
+        devices = self._pair_devices()
+        if 0 <= index < len(devices):
+            self.pair_sel = index
+            self.pairing.pair(devices[index])
+
+    def _draw_pair(self, h, w):
+        p = self.pairing
+        self._pair_tick += 1
+        lines = render.pair_screen(
+            p.state if p else "failed",
+            self._pair_devices(), w, h,
+            passkey=p.passkey if p else "",
+            error=p.error if p else "no session",
+            selected=self.pair_sel,
+            # Divided down so the scanning dots move at a readable rate rather
+            # than at the poll rate, which is five times a second.
+            tick=self._pair_tick // 3)
+        for i, line in enumerate(lines):
+            self._put(i, 0, line, w)
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
+
+    def _handle_pair(self, ch):
+        p = self.pairing
+        if p is None:
+            self.screen = CHAT
+            return True
+        key = chr(ch).lower() if 32 <= ch < 127 else ""
+        devices = self._pair_devices()
+
+        if ch == 27 or ch == curses.KEY_F1:            # Esc
+            self._close_pair()
+        elif ch == curses.KEY_UP and devices:
+            self.pair_sel = (self.pair_sel - 1) % len(devices)
+        elif ch == curses.KEY_DOWN and devices:
+            self.pair_sel = (self.pair_sel + 1) % len(devices)
+        elif ch in (10, 13, curses.KEY_ENTER):
+            self._pair_choose(self.pair_sel)
+        elif key.isdigit() and key != "0":
+            self._pair_choose(int(key) - 1)
+        elif key == "f" and devices:
+            # Forgetting is what makes a second attempt possible: a half-made
+            # bond cannot be replaced, only removed and made again.
+            if p.forget(devices[self.pair_sel]):
+                self.session.note("bond removed")
+                p.refresh()
+        elif key == "r":
+            p.refresh()
+        elif ch == 17:                                  # Ctrl-Q
+            self._close_pair()
+            return self._quit()
+        return True
+
+    def _poll_pair(self):
+        """Service the pairing session from the main loop."""
+        if self.pairing is None or self.screen != PAIR:
+            return
+        self.pairing.pump()
+        # Re-reading the whole device list is a round trip, so it happens at
+        # a human rate rather than at the poll rate.
+        now = time.monotonic()
+        if now - self._pair_refreshed >= 1.0:
+            self._pair_refreshed = now
+            self.pairing.refresh()
 
     def _persist_settled(self):
         """Write the mode and carrier once they have stopped changing.
@@ -429,6 +678,18 @@ class Deck:
             self._draw_edit(h, w)
         elif self.menu:
             self._draw_menu(h, w)
+        elif self.screen == NOKB:
+            self._nokb_tick += 1
+            for i, line in enumerate(render.no_keyboard_screen(
+                    self._nokb_bonded, w, h, tick=self._nokb_tick // 4,
+                    can_pair=self._nokb_can_pair)):
+                self._put(i, 0, line, w)
+            try:
+                curses.curs_set(0)
+            except curses.error:
+                pass
+        elif self.screen == PAIR:
+            self._draw_pair(h, w)
         elif self.screen == TUNE:
             self._draw_tune(h, w)
         else:
@@ -581,6 +842,16 @@ class Deck:
 
         if self.menu:
             return self._handle_menu(ch)
+
+        if self.screen == NOKB:
+            # Any key at all dismisses it: a keystroke arriving IS the proof
+            # that the problem it describes has been solved.
+            self.screen = CHAT
+            self.session.note("keyboard is working")
+            return True
+
+        if self.screen == PAIR:
+            return self._handle_pair(ch)
 
         if self.screen == TUNE:
             return self._handle_tune(ch)
@@ -947,7 +1218,8 @@ class Deck:
             return True
 
         if m == "display":
-            scheme = {"1": "matrix", "2": "deckard", "3": "hal", "4": "tron"}.get(key)
+            scheme = {"1": "matrix", "2": "deckard", "3": "hal",
+                      "4": "tron", "5": "ripley"}.get(key)
             if scheme:
                 self._apply_scheme(scheme)
                 self._close_menu()
@@ -1030,7 +1302,9 @@ class Deck:
             return True
 
         if m == "system":
-            if key == "i":
+            if key == "b":
+                self._open_pair()
+            elif key == "i":
                 self._toggle_inhibit()
                 self._close_menu()
             elif key == "c":
@@ -1173,7 +1447,17 @@ class Deck:
         if not raw:
             self.session.note(f"F{slot} is empty — set it from F1 5")
             return
-        text = raw.format_map(_Memories({
+        # A memory is stored on one line and may be sent as several. Both
+        # places it can be stored are line-based — cyberdeck.conf is KEY =
+        # value, and the on-deck editor takes Enter to mean save — so a
+        # literal newline cannot be typed into either. `\n` is expanded here,
+        # at the moment of insertion, which keeps the stored form single-line
+        # everywhere and leaves the editor showing exactly what was typed.
+        #
+        # Multi-line memories are how PSK31 is actually worked: a station
+        # description or a brag file arrives as a formatted block, not as one
+        # long line the far end has to unwrap.
+        text = raw.replace("\\n", "\n").format_map(_Memories({
             "call": self.cfg.get("CALLSIGN", ""),
             "name": self.cfg.get("NAME", ""),
             "qth": self.cfg.get("QTH", ""),
@@ -1393,6 +1677,11 @@ def main(stdscr, settings):
         # process: without this, whatever owns tty1 next inherits the scheme.
         try:
             colors.restore()
+        except Exception:
+            pass
+        try:
+            if deck.touch is not None:
+                deck.touch.close()
         except Exception:
             pass
         try:

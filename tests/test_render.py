@@ -141,6 +141,24 @@ for index, want in ((0, (0, 1)), (10, (0, 11)), (11, (1, 1)),
     _l, got = render.compose_lines(three, "", 66, 5, cursor=index)
     equals(f"cursor {index} after {three[:index]!r}", got, want)
 
+# A memory is stored on one line and may be sent as several. Both places it
+# can live are line-based — cyberdeck.conf is KEY = value, and the on-deck
+# editor takes Enter to mean save — so `\n` is expanded at insertion instead.
+# Multi-line memories are how PSK31 is actually worked: a station description
+# arrives as a formatted block, not one long line to unwrap.
+memory = "NAME HR IS {name}\\nQTH {qth}\\nRIG IS {rig}"
+expanded = memory.replace("\\n", "\n").format_map(
+    {"name": "Don", "qth": "State College, PA", "rig": "FTX-1"})
+equals("an escaped memory expands to three lines",
+       expanded.count("\n"), 2)
+equals("and wraps to one row each",
+       render._wrap(expanded, 48),
+       ["NAME HR IS Don", "QTH State College, PA", "RIG IS FTX-1"])
+check("the editor hint says how to do it",
+      "\\n" in render.EDIT_TOKENS_HINT, render.EDIT_TOKENS_HINT)
+check("and still fits the panel", len(render.EDIT_TOKENS_HINT) <= 66,
+      len(render.EDIT_TOKENS_HINT))
+
 # The transient TX echo is the path that actually broke on the air. Sent and
 # received text reach the transcript already split into one entry per line;
 # the echo does not — it is fldigi's stream wrapped in a synthetic entry, so

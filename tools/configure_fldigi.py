@@ -41,7 +41,7 @@ INTERESTING = [
     # Carrier behaviour on a mode change, and the RSID settings that interact
     # with it. See --keep-carrier.
     "STARTATSWEETSPOT", "PSKSWEETSPOT", "DISABLERSIDFREQCHANGE",
-    "RECEIVERSID", "TRANSMITRSID",
+    "RECEIVERSID", "TRANSMITRSID", "RSID_ERRORS", "RSIDRXMODESEXCLUDE",
 ]
 
 
@@ -154,6 +154,10 @@ def main():
                     help="pick the audio device on this machine by name pattern "
                          "(default 'USB Audio'); use on the deck itself")
     ap.add_argument("--call", help="set MYCALL")
+    ap.add_argument("--rsid-strict", action="store_true",
+                    help="require an exact RSID match and never let one select CW "
+                         "(RSID_ERRORS=0, RSIDRXMODESEXCLUDE=CW) — stops false "
+                         "detections on noise changing the mode by themselves")
     ap.add_argument("--keep-carrier", action="store_true",
                     help="nothing but the operator moves the carrier: no sweet-spot "
                          "reset on a mode change, and no retune on a received RSID "
@@ -175,7 +179,7 @@ def main():
         args.audio = name
 
     if args.show or not any((args.rigctld, args.no_rig, args.audio, args.call,
-                            args.keep_carrier)):
+                            args.keep_carrier, args.rsid_strict)):
         print(f"{path}:"); show(text); return 0
 
     changed = []
@@ -198,6 +202,25 @@ def main():
     if args.call:
         text, ok = put(text, "MYCALL", args.call)
         ok and changed.append(f"MYCALL={args.call}")
+    if args.rsid_strict:
+        # RSID is a short Reed-Solomon burst, and fldigi will accept one with
+        # a bit error in it by default. On an open squelch against a noise
+        # floor that produces identifiers nobody sent — observed on the bench
+        # with no antenna attached, logging "Before RSID: <<... QPSK-250 ...>>"
+        # repeatedly. Each false match changes the modem, and a deck found in
+        # CW at power-on having never been put there is what that looks like
+        # from the operating position.
+        #
+        # Requiring an exact match costs some genuine detections on weak
+        # signals and removes the spurious ones. Excluding CW as well is
+        # belt and braces: it is the mode a phantom has most often landed on
+        # here, and it is not one this deck is used for.
+        for key, value, why in (
+                ("RSID_ERRORS", 0, "an RSID must match exactly"),
+                ("RSIDRXMODESEXCLUDE", "CW,", "a received RSID cannot select CW")):
+            text, ok = put(text, key, value)
+            ok and changed.append(f"{key}={value} ({why})")
+
     if args.keep_carrier:
         # The carrier is the operator's. Two fldigi behaviors move it without
         # being asked, and both are turned off together because the intent is

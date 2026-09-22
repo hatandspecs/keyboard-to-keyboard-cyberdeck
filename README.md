@@ -30,11 +30,19 @@ intensity: the dim variant carries the timestamps and the callsign column.
 | ![Matrix](docs/screens/conversation-matrix.png) | ![Deckard](docs/screens/conversation-deckard.png) |
 | **Hal** — `#FF3B30` | **Tron** — `#00D9FF` |
 | ![Hal](docs/screens/conversation-hal.png) | ![Tron](docs/screens/conversation-tron.png) |
+| **Ripley** — `#FFFFFF` | |
+| ![Ripley](docs/screens/conversation-ripley.png) | |
 
-Hal is the least legible of the four, because red has the lowest luminance of
+Hal is the least legible of the five, because red has the lowest luminance of
 any saturated hue. That is inherent and it is also the point — it is the scheme
 for operating at night without wrecking dark adaptation. Tron is cyan-shifted
 deliberately: a true blue on black is close to unreadable as body text.
+
+Ripley is white: no hue at all, which is the oldest meaning of monochrome and
+the most legible of the five in daylight. It is also the only scheme that
+redefines the console's own default foreground rather than a color the console
+was not using — safe because the deck owns `tty1` and the palette is put back
+on exit.
 
 ## What it does
 
@@ -48,6 +56,11 @@ deliberately: a true blue on black is close to unreadable as body text.
 * A status line that reports **the radio's** state rather than the program's
   intent: `RX`, `TX`, `DRAIN` while a handed-back over is still going out,
   `INH` while transmit is inhibited.
+* **Pairing its own Bluetooth keyboard, with no SSH** — scan, tap, passkey on
+  the panel. The deck raises the screen by itself when no keyboard is
+  attached, because that is the one situation it cannot be told about.
+* **Touch, minimally**: drag the transcript to scroll it, tap to choose on the
+  pairing screens. No pointer, no cursor, nothing else is selectable.
 
 It deliberately does **not** do contest logging, ADIF, weak-signal modes,
 waterfall display, image modes, or packet.
@@ -79,7 +92,7 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | `F1` | Menu |
 | `F2` | Tuning screen, from anywhere; again to come back |
 | `F3` | Mode picker, from anywhere, including **AUTO (RSID)**; again to come back |
-| `F4` | Cycle the color scheme |
+| `F4` | Cycle the color scheme, five of them |
 | `←` `→` `↑` `↓` | Edit the line: cursor, and recall previous overs |
 | `Ctrl-A` `Ctrl-D` | Carrier −10 / +10 Hz, without leaving the transcript |
 | `Ctrl-W` `Ctrl-S` | Search for the next signal, up / down |
@@ -90,7 +103,7 @@ the full list — 97 conversational modems, paginated, single-key selection.
 | `Ctrl-I` | Toggle transmit inhibit |
 | `Ctrl-X` | Clear the transcript |
 | `Ctrl-L` | Redraw the screen |
-| `PgUp` / `PgDn` | Scroll the transcript |
+| `PgUp` / `PgDn` | Scroll the transcript — or drag it on the touchscreen |
 | `Ctrl-Q` | Restart the terminal; asks for confirmation |
 | `Esc` | Close a menu |
 
@@ -98,6 +111,13 @@ Menus take arrow keys as well as their single-key shortcuts: `↑` `↓` move a
 `▸` marker, `Enter` chooses. Transmit starts **inhibited** at every power-on;
 `Ctrl-I` arms it. Command keys are case-folded, so they work with Caps Lock on
 — which is how RTTY is operated, since Baudot has no lowercase.
+
+**Pairing a keyboard needs no SSH.** `F1` → `7` → `b`, or just switch the
+deck on with nothing bonded — it notices and shows the screen itself, since
+every other way in is behind `F1` and `F1` needs the keyboard that is missing.
+Put the keyboard into pairing mode, tap the panel, and type the passkey it
+shows. A keyboard with channel buttons appears once per channel under one
+name; the address tail is what tells them apart.
 
 **The three screens are a flat set, not a tree.** `F2` and `F3` reach the
 tuning screen and the mode picker from wherever you are, and each key is its
@@ -115,10 +135,10 @@ screen is indistinguishable from a crash.
 | `1` Mode | Twelve modes plus **AUTO (RSID)** and the full list |
 | `2` Tune Settings | AFC, squelch and level, RSID, TXID, reverse, park carrier, the receive hold after an over |
 | `3` Band | Eleven presets, 80 m to 70 cm, low to high |
-| `4` Display | The four color schemes, timestamps |
+| `4` Display | The five color schemes, timestamps |
 | `5` Memories | Eight message memories, edited in place |
 | `6` Station | Callsign, name, QTH, grid, rig — edited in place |
-| `7` System | Transmit inhibit, clear transcript, quit |
+| `7` System | Pair a Bluetooth keyboard, transmit inhibit, clear transcript, quit |
 
 `Ctrl-I` and `Tab` are the same byte — ASCII 9 — so `Tab` also toggles the
 inhibit. Watch the status line if you hit it by accident.
@@ -161,7 +181,9 @@ Nothing else in the repository reaches the deck.
 | [`src/session.py`](src/session.py) | Transcript, compose buffer, line editing, the shape of an over |
 | [`src/render.py`](src/render.py) | Layout as pure functions, so it can be tested at any width |
 | [`src/menus.py`](src/menus.py) | Menu structure and rendering |
-| [`src/colors.py`](src/colors.py) | The four schemes, console palette and ANSI fallback |
+| [`src/colors.py`](src/colors.py) | The five schemes, console palette and ANSI fallback |
+| [`src/touch.py`](src/touch.py) | The panel's touchscreen, read from evdev. Absent hardware is not an error |
+| [`src/btpair.py`](src/btpair.py) | Pairing a keyboard over BlueZ, on one long-lived D-Bus connection |
 | [`src/config.py`](src/config.py) | `cyberdeck.conf` — the station's own settings, message memories, remembered state |
 | [`src/rigctld_client.py`](src/rigctld_client.py) | Unused. Documents a hamlib bug and a raw-CAT workaround |
 | [`tools/build_deck_image.sh`](tools/build_deck_image.sh) | Builds and flashes the Pi's SD card |
@@ -170,7 +192,10 @@ Nothing else in the repository reaches the deck.
 | [`tests/test_console_keys.py`](tests/test_console_keys.py) | Keys as `TERM=linux` delivers them, which is not how xterm does |
 | [`tests/test_screen_toggles.py`](tests/test_screen_toggles.py) | `F2` and `F3` moving between the three screens |
 | [`tests/test_state.py`](tests/test_state.py) | What survives a restart |
+| [`tests/test_pair.py`](tests/test_pair.py) | The pairing and no-keyboard screens, and refusing where BlueZ is absent |
+| [`tests/test_colors.py`](tests/test_colors.py) | The schemes, and the two properties that were real faults |
 | [`tests/test_sequences.py`](tests/test_sequences.py) | Over, hand and abort pressed in orders nobody designed for |
+| [`tools/bt_agent_probe.py`](tools/bt_agent_probe.py) | Proves a BlueZ agent survives a scan, before any of it is built on |
 | [`tools/run_tests.sh`](tools/run_tests.sh) | The whole suite, one command |
 | [`docs/deploy_cyberdeck_instructions.md`](docs/deploy_cyberdeck_instructions.md) | The full runbook, blank card to on the air |
 | [`docs/operating_tutorial.md`](docs/operating_tutorial.md) | How to actually work someone, for a first-timer |
@@ -339,7 +364,7 @@ tools/dev-fldigi.sh        # fldigi must be running; three tests drive it
 tools/run_tests.sh
 ```
 
-315 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
+436 checks. `test_screen.py`, `test_menu_nav.py`, `test_menu_arrows.py`,
 `test_console_keys.py`, `test_screen_toggles.py` and `test_state.py` fork
 a pseudo-terminal, run the real application, and read the screen back with a
 terminal emulator, so the tests assert on what the deck looks like rather than
@@ -407,11 +432,12 @@ Working end to end:
 * **`src/rigctld_client.py` is dead code**, kept only until the Beta backend has
   some hours on it. It documents the bug and carries a raw-CAT workaround that
   is no longer wired in.
-* **First-time Bluetooth bonding is manual.** An LE keyboard will not deliver
-  input over an unbonded link, and bonding needs a passkey displayed by the Pi
-  and typed on the keyboard — which cannot be automated. `cyberdeck-btpair`
-  reconnects an already-bonded keyboard; the first bond is a one-off
-  `bluetoothctl` session, documented in the deployment runbook.
+* **Pairing still needs the passkey typed on the keyboard being paired**, and
+  always will: an LE keyboard delivers no input over an unbonded link, and
+  typing the code is what proves the device is a keyboard. What is no longer
+  needed is another computer — the deck shows the passkey itself. Only one
+  keyboard model has been through it, which is an argument for generality
+  rather than a report of it.
 * `main.rx_only` does not inhibit fldigi's `main.tune`; the transmit inhibit is
   enforced in the terminal instead.
 * Transmit is proven on the air but lightly exercised: five contacts across
@@ -421,6 +447,15 @@ Working end to end:
 
 **Fixed along the way**, recorded because each cost real time:
 
+* **"Is a keyboard attached" was true forever.** The check looked for the
+  kernel's `kbd` handler, which on this deck is carried permanently by the
+  radio's USB audio codec — USB audio exposes HID volume controls — and by the
+  HDMI CEC remote input. It means "can send a key event to a console", not "is
+  a keyboard". The key bitmap is what separates them: a keyboard reports the
+  whole top letter row and a volume rocker does not.
+* **Pairing was reachable only with the keyboard it exists to attach.** It
+  lived behind `F1`, so the feature was useless in exactly the case it was
+  built for. The deck now notices and raises the screen itself.
 * **A multi-line over corrupted the display while it was going out.** `_wrap`
   split on spaces only, so a newline — which `Enter` inserts by design —
   stayed inside the string handed to `addstr` and moved the cursor mid-row.

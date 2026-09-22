@@ -69,6 +69,7 @@ DISPLAY = {
         ("2", "Color: Deckard  amber"),
         ("3", "Color: Hal      red"),
         ("4", "Color: Tron     cyan"),
+        ("5", "Color: Ripley   white"),
         ("t", "Timestamps on/off"),
     ],
     "footer": "Esc back   ↑↓ move   Enter select",
@@ -158,6 +159,7 @@ def band_menu(supported=None):
 SYSTEM = {
     "title": "SYSTEM",
     "items": [
+        ("b", "Pair a Bluetooth keyboard"),
         ("i", "Transmit inhibit on/off      Ctrl-I  (also Tab)"),
         ("c", "Clear the transcript         Ctrl-X"),
         ("q", "Quit                         Ctrl-Q"),

@@ -83,8 +83,9 @@ check("no memory-token hint here",
 
 body = show("editing a memory does show the token hint",
             run(keys=[F1, "5", "1"], settle=1.4))
-check("token hint present for a memory",
-      "filled in when inserted" in body, body[-200:])
+check("token hint present for a memory", "{call}" in body, body[-200:])
+check("and it says how to make a memory multi-line",
+      "\\n" in body, body[-200:])
 
 body = show("change Name and save",
             run(keys=[F1, "6", "2", CTRL_U] + list("DONALD") + [ENTER], settle=1.8))
