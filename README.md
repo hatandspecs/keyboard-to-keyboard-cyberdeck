@@ -7,15 +7,22 @@ terminal over modern digital modes.
 
 ![The conversation screen](docs/screens/conversation-matrix.png)
 
-**Two ways to use this.** It was built as a dedicated machine — a Raspberry Pi
-3A+ behind a 5" panel, driving a Yaesu FTX-1 — and that is what most of this
-repository describes. But the application itself is an ordinary Python program
-that needs a terminal and a fldigi to talk to, and nothing else. It runs just
-as well **on a laptop, against whatever radio fldigi already works with**, with
-no Pi, no panel and no Bluetooth keyboard involved. If that is what you are
-after, go straight to [Running it on a laptop](#running-it-on-a-laptop-with-your-own-radio)
-or to the fuller walkthrough in
-[the runbook](docs/deploy_cyberdeck_instructions.md#running-it-on-a-laptop-with-your-own-radio).
+## Start here
+
+| Goal | What to do | What to read |
+|---|---|---|
+| **Run it on a computer I already have** | Start fldigi, then `./src/cyberdeck.py` | [Running it on a laptop](#running-it-on-a-laptop-with-your-own-radio). Nothing else in this repository applies. |
+| **Build the deck** | Flash a card with `tools/build_deck_image.sh` | [The runbook](docs/deploy_cyberdeck_instructions.md) |
+| **Operate it** | — | [The operating tutorial](docs/operating_tutorial.md) |
+| **Understand why it is built this way** | — | [The design document](docs/design_doc.md) |
+
+The application is an ordinary Python program. It needs a terminal and an
+fldigi to talk to, and nothing else: no Pi, no panel, no Bluetooth keyboard, no
+SD card image, no touchscreen, no real-time clock. Those exist because the
+author's copy runs on a Raspberry Pi 3A+ behind a 5" panel, and most of this
+repository describes that machine — but none of it is required to use the
+terminal, and the laptop path above is a supported way to run it permanently
+rather than a demo mode.
 
 Full design rationale is in [design_doc.md](docs/design_doc.md). There is a
 write-up of why it exists and what it is like to operate at
@@ -265,6 +272,20 @@ Nothing else in the repository reaches the deck.
 Everything except the panel and the Bluetooth keyboard works on a laptop, over
 SSH or in a terminal window. This is how it is developed, and it is a
 perfectly good way to use it permanently.
+
+**Most of this repository is about the deck, and none of it is needed here.**
+Skip the SD card image, `deck.conf`, `deck.secrets`, `build_deck_image.sh`, the
+Bluetooth pairing sections, the touchscreen, the real-time clock and the whole
+deployment runbook. What a laptop needs is fldigi running and one file:
+
+```bash
+./src/cyberdeck.py
+```
+
+That is the entire installation. The first operator other than the author
+described the process as reading enough of the documentation to work out that
+nothing else was required, starting fldigi, and running that — which is the
+intended experience, and the reason for saying so this bluntly here.
 
 **The radio is fldigi's problem, not this program's.** The application opens no
 sound card and no serial port — it talks to fldigi over XML-RPC on the loopback

@@ -41,10 +41,40 @@ Section 16 is where to start when this is picked back up.
 
 
 
+## How to read this
+
+Two kinds of material, deliberately separated, because a reader looking for
+what the system *does* should not have to read how it came to do it.
+
+* **Specification.** What the deck does and the constraints it holds to:
+  §1–§2.2 (purpose, scope, requirements), §3–§11 (hardware through
+  configuration). Current behaviour is stated directly. Where a decision needs
+  justifying, the justification follows it in a paragraph beginning *Why*,
+  and can be skipped.
+* **Findings.** What was measured, what broke, and what was learned:
+  §12 (failure modes), §14 (verified and assumed), §15 (decisions and open
+  questions), §17 (touch and pairing). These are records of work, kept because
+  a fault that cost hours to find should cost minutes the second time.
+
+Two conventions hold throughout, and a contribution that breaks either is
+worth rejecting on that basis alone:
+
+1. **Behaviour before history.** What something does now is stated before any
+   account of what it used to do. A reader must never have to absorb a bug
+   report to learn a feature.
+2. **No open questions stated as fact.** Where something is undecided or
+   unverified, it says so in those words. §14 exists to keep the line between
+   *verified* and *assumed* visible.
+
+If the answer wanted is "how do I run this", none of this document is
+required: see [README](../README.md).
+
 ## Contents
 
 - [1. Purpose](#1-purpose)
 - [2. Scope](#2-scope)
+- [2.1 Requirements](#21-requirements)
+- [2.2 Verified by somebody who was not here](#22-verified-by-somebody-who-was-not-here)
 - [3. Hardware](#3-hardware)
   - [3.1 The Raspberry Pi 3A+ and its one USB port](#31-the-raspberry-pi-3a-and-its-one-usb-port)
   - [3.2 The radio](#32-the-radio)
@@ -110,13 +140,101 @@ In scope:
   DominoEX, Feld Hell.
 * Mode switching, carrier tuning, and rig frequency control from the keyboard.
 * A transcript of sent and received text, timestamped.
-* Four monochrome color schemes, switchable at runtime.
+* Five monochrome color schemes, switchable at runtime.
 
 Out of scope for the first build, and worth stating so the design does not drift
 toward them: contest logging, ADIF export beyond a plain transcript, WSJT-X-class
 weak-signal modes (different workflow entirely), waterfall display, image modes
 (wefax, MFSK image), APRS or packet (the other Pi does that), and networked
 operation of any kind beyond the radio.
+
+## 2.1 Requirements
+
+Written down after the fact. These were the standing intentions behind the
+build rather than a specification agreed in advance, and recording them serves
+two purposes: a change that breaks one is a change worth arguing about, and a
+requirement nothing tests is a requirement that will quietly stop being true.
+
+Status is one of **met**, **partly met** or **not met**, and reflects what is
+demonstrated rather than what is intended.
+
+### Functional
+
+| | Requirement | Status |
+|---|---|---|
+| FR-1 | Hold a conversational QSO in fldigi's text modes: compose while receiving, send an over, hand the transmitter back. | met — §5.2, `session.py` |
+| FR-2 | Show a timestamped transcript of what was sent and what was received, scrollable back through a session. | met — `render.transcript_lines`, PgUp/PgDn, touch drag |
+| FR-3 | Select a modem from a short curated list, and from the full modem list when needed. | met — `F3`, `F3 m` |
+| FR-4 | Move the audio carrier: nudge, search for a signal, park it at a known value. | met — §8 |
+| FR-5 | Control the radio's frequency and mode, with band presets, without leaving the conversation. | met — §7, eleven bands |
+| FR-6 | Store eight message memories, editable on the deck itself, multi-line, with fill-in tokens. | met — `F5`–`F12`, `F1 5` |
+| FR-7 | Edit the station's own identity — callsign, name, QTH, locator, rig — on the deck. | met — `F1 6` |
+| FR-8 | Refuse to transmit until deliberately armed, at every power-on. | met — `INHIBIT_ON_START`, §9 |
+| FR-9 | Abort a transmission in progress. | met — `Ctrl-C`, §9 |
+| FR-10 | Switch display scheme at runtime. | met — `F4`, five schemes |
+| FR-11 | Come back after a power cut in the mode, carrier, scheme and settings last chosen. | met — `STATE_PATH`, `_persist_settled`, `_apply_radio_startup`; `tests/test_state.py`, `tests/test_cold_boot.py` |
+| FR-12 | Pair its own Bluetooth keyboard, with no second computer. | met — §17, `btpair.py` |
+| FR-13 | Notice that no keyboard is attached and offer both explanations, without needing a keyboard to do it. | met — `NOKB` screen, §17 |
+| FR-14 | Accept touch for gestures on content, and for choosing where no keyboard can be assumed. | met — `touch.py`; transcript drag, pairing and WiFi rows |
+| FR-15 | Join a WiFi network from the panel: list, choose, enter a passphrase, forget, join by name. | met — `F1 7 w`, `wifi.py` |
+| FR-16 | Keep correct time with no network, so a field session is stamped correctly. | met — `DECK_RTC`, verified across a power cut with NTP disabled |
+| FR-17 | Follow other stations' RSID, and identify its own transmissions. | met — `r` / `t` on the tuning screen |
+| FR-18 | Control AFC, squelch, squelch level and mark/space reverse. | met — §8 |
+| FR-19 | Build a bootable card from configuration files, in one command. | met — `tools/build_deck_image.sh` |
+| FR-20 | Report what fldigi is actually doing, not what it was asked to do. | met — status line reads `trx_state`; §9, the DRAIN state |
+
+### Non-functional
+
+| | Requirement | Status |
+|---|---|---|
+| NFR-1 | One purpose. Contest logging, waterfall, weak-signal modes, image modes and packet stay out, because each would change what the screen is for. | met — §2, and the scope has not drifted |
+| NFR-2 | The single USB port belongs to the radio. Nothing else may require USB. | met — Bluetooth keyboard, DSI panel, GPIO clock |
+| NFR-3 | Run on a Pi 3A+: 512 MB, one core's worth of headroom, no Ethernet. | met — fldigi, Xvfb, terminal and rig control run together |
+| NFR-4 | One hue on black, 66×20, 12×24 font. Legibility on a five-inch panel in a dark room is the constraint; the period look is deliberate and not an accident of it. | met — §5.9, `colors.py` |
+| NFR-5 | No pointer, no cursor, nothing selectable. Touch may act on content, or where a keyboard cannot be assumed, and may not become a menu. | met — §1, §17.1 |
+| NFR-6 | Command keys work with Caps Lock on, because RTTY is operated that way. | met — case-folded throughout; `tests/test_menu_arrows.py` |
+| NFR-7 | No transmission the operator did not ask for. A stray keystroke must not key a radio connected to an unknown antenna. | met — inhibit at start, `TX_TIMEOUT`, `IGMSP`-style courtesy features absent by construction |
+| NFR-8 | Survive having its power pulled. There is no clean shutdown in normal use. | met — `fsync` on file and directory before rename; §11 |
+| NFR-9 | Spare the SD card. State is written when it settles, not on every change; the journal and `run/` stay in RAM. | met — `STATE_SETTLE_S`, tmpfs, `Storage=volatile` |
+| NFR-10 | Run on an ordinary laptop as well as on the deck. Absent touchscreen, Bluetooth or panel are not errors. | met, and verified by somebody else — see §2.2 |
+| NFR-11 | The terminal imports only the standard library. PyGObject is needed for pairing and for nothing else. | met — lazy `gi` import in `btpair.py`; `wifi.py` shells out to `nmcli` |
+| NFR-12 | A failure says so. Nothing that cannot be done may appear to have been done. | met — state-write errors surfaced, drain watchdog, `fldigi stayed in X; wanted Y`, unhandled keys reported |
+| NFR-13 | Boot unattended to the terminal: no login prompt, no kernel messages, no cursor. | met — §10, quiet boot |
+| NFR-14 | Reproducible: a card is built from `deck.conf` and `deck.secrets` and nothing else. | met — §11 |
+| NFR-15 | Testable without a radio or a deck wherever possible, and against the real application where not. | met — 524 checks; the pty harness drives the real program |
+| NFR-16 | Cheap enough to be worth building rather than buying: about \$68, plus \$15 for the clock. | met — §3 |
+| NFR-17 | Portable: 5 V over USB, no internal battery, packs in the bag that already carries the radio. | partly met — the electrical requirement is met; no field session has been run, and endurance is unmeasured |
+| NFR-18 | The panel clock is Zulu, always, regardless of the system timezone. | met — `time.gmtime`, `render.py` |
+| NFR-19 | The documentation carries the reasoning, so a fault costing hours to find costs minutes the second time. | met — §14, "what not to re-derive" |
+| NFR-20 | Rugged enough to travel. | not met — bare board on standoffs; a case is outstanding (§16) |
+
+## 2.2 Verified by somebody who was not here
+
+NFR-10 says the terminal runs on an ordinary computer and that a missing
+touchscreen, Bluetooth adapter or panel is an ordinary condition rather than an
+error. That is testable locally — `tests/test_touch.py` needs no hardware, and
+`btpair.py` imports PyGObject only when pairing is actually attempted — but no
+amount of local testing establishes whether the *documentation* makes the deck
+sound mandatory.
+
+KD3CCP ran it on a laptop and described what he did:
+
+> my testing was, read docs to understand what pieces do what, realize i didnt
+> need any other stuff, run fldigi and then `./src/cyberdeck.py` and thats it
+
+The load-bearing step is the middle one. Documentation for a project with a
+custom enclosure, a panel, an SD card image and a radio fails by implying all
+of it is required; a reader who cannot tell what to skip gives up before
+starting. This is the only evidence available that it does not, and it comes
+from someone who was not present for any of the decisions.
+
+Two things follow for future changes:
+
+* A change that makes the deck hardware necessary to *start* the terminal
+  breaks NFR-10 even if every test still passes, because the tests run on a
+  machine that also has no panel.
+* README and the runbook should keep saying plainly which sections a laptop
+  reader can skip. That is a documentation requirement, not a courtesy.
 
 ## 3. Hardware
 
@@ -319,12 +437,14 @@ one field that changes appearance rather than only content — see section 9.
 | `DRAIN` | Handed back, and the buffer is still going out — the radio is keyed |
 | `INH` | Transmit inhibited |
 
-`DRAIN` exists because the field used to be derived from the session's state,
-which is a record of what the operator asked for. `Ctrl-Y` does not unkey the
-radio: it marks fldigi's buffer "receive when drained", and everything already
-composed still has to be sent, which at 31 baud is minutes for a long over.
-Showing `RX` for that window told the operator the radio was silent while it
-was transmitting, and made a stuck transmission invisible (§9).
+The status field reports fldigi's transmit state, not the session's. The two
+differ during `DRAIN`: `Ctrl-Y` does not unkey the radio, it marks fldigi's
+buffer "receive when drained", and everything already composed still has to be
+sent — minutes, for a long over at 31 baud.
+
+*Why it is fldigi's state.* Deriving the field from the session showed `RX`
+throughout that window, which says the radio is silent while it is
+transmitting, and made a stuck transmission invisible (§9).
 
 ### 5.3 Transcript
 
@@ -832,7 +952,7 @@ The deck does not set transmit drive. fldigi's audio goes out through the USB
 codec and into the radio's modulator, and how hard it drives is a radio
 setting. It is recorded here because getting it wrong produces a signal that
 looks fine from this end and is splattering at the far end, and because the
-adjustment turned out to behave in a way that misleads.
+adjustment misleads in a specific way, set out below.
 
 **The arrangement.** In DATA-U the FTX-1 takes audio over USB. Three gain
 stages sit in series: fldigi's own transmit level, the ALSA playback mixer for
@@ -1234,20 +1354,17 @@ color scheme, timestamp setting and both receive-hold bounds are remembered the
 same way.
 
 **What is remembered is written when it settles, not when a menu is pressed.**
-`_save_state` originally ran only from discrete actions — a mode change, a
-colour change, a memory edit — and recorded the mode and carrier live at that
-instant. Tuning with the search and nudge keys triggered nothing at all, so the
-file held a snapshot of an unrelated moment: a deck tuned to 1500 Hz and
-restarted came back on a carrier from an hour earlier, with a mode to match.
-It presented as the restore being broken, and the restore was working
-perfectly on the wrong data.
+The mode and carrier are compared against the file on every poll and written
+once they have held still for `STATE_SETTLE_S`, ten seconds. This captures a
+setting reached by any route — the search and nudge keys as much as a menu —
+and keeps writes off the card, since the carrier moves continuously while a
+signal is being hunted and only where it comes to rest is worth recording.
 
-The mode and carrier are now compared against what the file says on every
-poll, and written once they have held still for `STATE_SETTLE_S` — ten
-seconds. Settling rather than saving on every change is what keeps this off
-the card: the carrier moves continuously while a signal is being hunted, and
-only where it comes to rest is worth recording. It also captures a mode or
-carrier reached any other way than a menu, which is the whole point.
+*Why not on each change.* Saving only from discrete actions recorded whatever
+was live at that instant, so tuning triggered no save at all and the file held
+a snapshot of an unrelated moment. A deck tuned to 1500 Hz came back on a
+carrier from an hour earlier. The restore was working perfectly, on the wrong
+data.
 
 **Starting up before fldigi does, which is every power-on.** The terminal's
 unit is ordered `After=cyberdeck-fldigi.service`, and systemd means by that
