@@ -153,18 +153,40 @@ class Network:
 
     def bars(self):
         """Signal as four blocks, which reads at a glance from a foot away
-        better than a percentage does."""
+        better than a percentage does.
+
+        Built from U+2588 and a middle dot rather than the geometric shapes
+        U+25AE/U+25AF that this first used. The panel runs a console font, not
+        a desktop one, and a glyph it lacks is a blank column — so the only
+        safe characters are the ones already proven on a shipped screen. The
+        full block is what draws the pairing passkey; the middle dot is in the
+        hint lines.
+        """
         filled = 0 if self.signal <= 0 else min(4, 1 + self.signal // 26)
-        return "▮" * filled + "▯" * (4 - filled)
+        return "█" * filled + "·" * (4 - filled)
+
+    def security_tag(self):
+        """A short name for the security, or '' for an open network.
+
+        This replaced a padlock, which was U+1F512 — an emoji, and emoji are
+        not in console fonts at any size. It would have been a blank column
+        on the panel saying nothing, with a legend line explaining a symbol
+        that was not there. The tag is better than the symbol it replaced
+        anyway: WPA3 and WPA2 are worth telling apart, and a padlock cannot.
+        """
+        if not self.secured:
+            return ""
+        return self.security.split()[0][:4] if self.security.split() else "WPA"
 
     def label(self, width=40):
-        mark = "●" if self.in_use else ("·" if self.known else " ")
-        lock = "🔒" if self.secured else " "
-        room = max(8, width - 10)
+        # A tick for connected: also proven, also already means "this one is
+        # done" on the pairing screen.
+        mark = "✓" if self.in_use else ("·" if self.known else " ")
+        room = max(8, width - 12)
         name = self.ssid or "(hidden)"
         if len(name) > room:
             name = name[:room - 1] + "…"
-        return f"{mark} {name:<{room}} {self.bars()} {lock}"
+        return f"{mark} {name:<{room}} {self.bars()} {self.security_tag():<4}"
 
     def sort_key(self):
         # Connected first, then known, then by signal. Someone looking at this

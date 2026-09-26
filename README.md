@@ -137,8 +137,14 @@ shows. A keyboard with channel buttons appears once per channel under one
 name; the address tail is what tells them apart.
 
 **WiFi is set from the panel too.** `F1` → `7` → `w` lists what is in range,
-with the connected network marked `●`, ones already known marked `·`, signal
-as four blocks and a lock on anything needing a passphrase. `Enter` or a tap
+with the connected network marked `✓`, ones already known marked `·`, signal
+as four blocks, and the security named on the right — blank for an open
+network.
+
+Every glyph on that screen is one already proven on a shipped screen. The panel
+runs a console font, not a desktop one, so a character it lacks is a blank
+column: the first version used geometric shapes for the signal bars and an
+emoji padlock, neither of which a console font has. `Enter` or a tap
 joins; a known network needs no passphrase, because the deck already wrote it
 down. `n` joins a network by name for one that does not broadcast it, `f`
 forgets a saved one, `s` scans again, and `r` switches the radio off and on.

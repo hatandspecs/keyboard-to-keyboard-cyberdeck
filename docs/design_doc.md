@@ -2022,6 +2022,18 @@ band. The two things still needing SSH are **adding a Bluetooth keyboard** and
    below — a polkit rule is easy to write too broadly. A root helper remains
    the alternative and nothing on this side would change if it were built.
 
+   **A console font is not a desktop font.** The first version of the network
+   row drew signal as U+25AE/U+25AF and security as U+1F512, a padlock. The
+   padlock is an emoji; no console font has one at any size, so it would have
+   been a blank column on the panel with a legend line explaining a symbol
+   that was not there. The rule that follows is narrow and worth keeping: a
+   screen may use only characters already proven on a shipped screen — the box
+   drawing, `█` from the pairing passkey, `·`, `▸`, `✓`, `✗`, `↑↓`. The row is
+   now built from those, and `tests/test_wifi.py` asserts it against that set
+   rather than trusting the next person to remember. Naming the security
+   turned out better than the symbol it replaced anyway: WPA2 and WPA3 are
+   worth telling apart and a padlock cannot.
+
    **Three more faults came out of operating it, all of them nmcli's output
    rather than the interface:**
 

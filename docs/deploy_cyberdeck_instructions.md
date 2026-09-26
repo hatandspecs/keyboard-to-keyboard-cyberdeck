@@ -36,6 +36,7 @@ Outputs shown in this document are the ones observed, not reconstructed.
   - [2. Configure fldigi for the deck](#2-configure-fldigi-for-the-deck)
   - [3. Fill in the two configuration files](#3-fill-in-the-two-configuration-files)
   - [4. Check the panel overlay](#4-check-the-panel-overlay)
+- [5. The real-time clock, if one is fitted](#5-the-real-time-clock-if-one-is-fitted)
 - [Phase 1 — build the image](#phase-1--build-the-image)
 - [Phase 2 — flash the card](#phase-2--flash-the-card)
   - [1. Identify the card](#1-identify-the-card)
@@ -321,6 +322,59 @@ Two settings this deck does not need, recorded in case they come up:
 
 ```bash
 echo 100 | sudo tee /sys/class/backlight/*/brightness    # 0–255
+```
+
+### 5. The real-time clock, if one is fitted
+
+A Raspberry Pi has no clock of its own. Without an RTC the deck's time from
+power-on is whatever was saved at the last shutdown, until NTP corrects it —
+so a field session with no WiFi is stamped wrong from end to end, and those
+stamps are what the status line and every transcript line are drawn from.
+
+`deck.conf` names the chip:
+
+```
+DECK_RTC = ds3231
+```
+
+The build then writes `dtparam=i2c_arm=on` and `dtoverlay=i2c-rtc,ds3231` into
+`config.txt`, installs `i2c-tools` and `util-linux-extra`, removes
+`fake-hwclock` on first boot, and writes the system time into the chip once
+NTP reports synchronized. Leave the value blank for no RTC.
+
+Tested on an **Adafruit PiRTC, product 4282** — a DS3231 that plugs onto header
+pins 1-10 with nothing to wire. Fit the CR1220 with its printed side up, seat
+the board on the corner end of the header with the deck powered **off**, and
+check it is not shifted a row along before powering up.
+
+Prefer a board like it over a common ZS-042 module: those trickle-charge their
+coin cell, which is wrong for the non-rechargeable CR2032 usually found in one
+and not something to carry in a bag.
+
+After the first boot:
+
+```bash
+timedatectl                    # an "RTC time" line now exists
+cat /sys/class/rtc/rtc0/name   # rtc-ds1307 1-0068
+```
+
+`rtc-ds1307` for a DS3231 is correct — one driver covers the whole
+DS1307/1337/1339/3231 family. On a chip that has never been set, the boot log
+carries `SET TIME!` and `hctosys: unable to read the hardware clock`; both stop
+after the first `sudo hwclock -w`, and both returning after a power cycle mean
+the cell is dead or unseated.
+
+To prove it actually works, switch NTP off first — otherwise
+`WIFI_ON_START` restores the radio at boot and the network sets the clock
+within seconds of a chip that might be doing nothing:
+
+```bash
+sudo timedatectl set-ntp false
+sudo poweroff
+# ... wait several minutes, power on ...
+date -u
+dmesg | grep -i rtc            # "setting system clock to ..." is the proof
+sudo timedatectl set-ntp true
 ```
 
 ---

@@ -52,15 +52,28 @@ if __name__ == "__main__":
     equals("'--' also means open",
            wifi.Network("x", 1, "--").secured, False)
     equals("WPA2 means secured", wpa.secured, True)
-    check("a strong signal fills every block", wpa.bars() == "▮▮▮▮", wpa.bars())
+    check("a strong signal fills every block", wpa.bars() == "████", wpa.bars())
     check("a dead signal fills none",
-          wifi.Network("x", 0).bars() == "▯▯▯▯", wifi.Network("x", 0).bars())
+          wifi.Network("x", 0).bars() == "····", wifi.Network("x", 0).bars())
     check("a weak signal still shows one",
-          wifi.Network("x", 1).bars().startswith("▮"), wifi.Network("x", 1).bars())
+          wifi.Network("x", 1).bars().startswith("█"), wifi.Network("x", 1).bars())
     check("the connected network sorts first",
           sorted([open_net, wpa], key=wifi.Network.sort_key)[0] is wpa, "")
-    check("the label marks the connected one", "●" in wpa.label(40), wpa.label(40))
-    check("and locks the secured one", "🔒" in wpa.label(40), wpa.label(40))
+    check("the label marks the connected one", "✓" in wpa.label(40), wpa.label(40))
+    check("and names the security of a secured one",
+          "WPA2" in wpa.label(40), wpa.label(40))
+    check("an open network gets no security tag",
+          "WPA" not in open_net.label(40), open_net.label(40))
+    equals("a multi-word security is shortened to its first word",
+           wifi.Network("x", 50, "WPA2 WPA3").security_tag(), "WPA2")
+
+    # The panel runs a console font, so a glyph it lacks is a blank column.
+    # Only characters already proven on a shipped screen may appear here.
+    PROVEN = set(" ·—↑↓─│┌┐└┘├┤█▸●✓✗…")
+    for net in (wpa, open_net, wifi.Network("x", 0, "WPA3", False, True)):
+        bad = {c for c in net.label(40) if ord(c) > 127} - PROVEN
+        check(f"no unrenderable glyph in {net.ssid!r}'s row", not bad,
+              sorted(f"U+{ord(c):04X}" for c in bad))
 
     print("\nMerging the rows nmcli gives per access point")
     real_run = wifi._run
@@ -93,7 +106,7 @@ if __name__ == "__main__":
         check("the connected network sorts to the top",
               nets_got[0].ssid == "Archer", [n.ssid for n in nets_got])
         check("its label carries the connected mark",
-              "●" in archer.label(40), archer.label(40))
+              "✓" in archer.label(40), archer.label(40))
 
         # The field asked for matters: IN-USE is the column carrying "*" in
         # nmcli's human output and comes back empty for every row in terse
@@ -132,6 +145,15 @@ if __name__ == "__main__":
     body = "\n".join(plain(l) for l in lines)
     check("both networks are shown", "Home" in body and "Cafe" in body, body[:200])
     check("the radio state is shown", "RADIO ON" in body, body[:120])
+    PROVEN_SCREEN = set(" ·—↑↓─│┌┐└┘├┤█▸●✓✗…§")
+    for state, kw in (("list", {}), ("failed", {"error": "wrong passphrase",
+                                                "ssid": "X", "retry": True}),
+                      ("joined", {"ssid": "X"}), ("working", {"message": "j"}),
+                      ("unavailable", {"error": "no"})):
+        rows = render.wifi_screen(state, nets, 66, 20, radio="on", **kw)
+        bad = {c for l in rows for c in plain(l) if ord(c) > 127} - PROVEN_SCREEN
+        check(f"the {state} screen uses no glyph the panel lacks", not bad,
+              sorted(f"U+{ord(c):04X} {c}" for c in bad))
     # s scans, r toggles the radio — s for scan and r for radio, rather than
     # the r/w pair they started as, which named neither thing.
     check("the radio line names the key that toggles it",

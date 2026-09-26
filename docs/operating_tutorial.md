@@ -31,6 +31,7 @@ Every key in this document was read out of the deck's source, not remembered.
   - [Automatic mode switching](#automatic-mode-switching)
 - [10. Where to listen](#10-where-to-listen)
 - [11. Reading the status line](#11-reading-the-status-line)
+- [11.4 Joining a WiFi network in the field](#114-joining-a-wifi-network-in-the-field)
 - [11.5 When the keyboard stops working](#115-when-the-keyboard-stops-working)
 - [12. Full key reference](#12-full-key-reference)
   - [Conversation screen](#conversation-screen)
@@ -645,6 +646,48 @@ shrinks.
 
 ---
 
+## 11.4 Joining a WiFi network in the field
+
+The deck's own networks are written into the card when it is built, which is
+right for home and useless anywhere else. `F1` `7` `w` lists what is in range:
+
+```
+ WIFI
+┌────────────────────────────────────────────────────────────────┐
+│  RADIO ON        r turns it off                                │
+│                                                                │
+│ ▸ 1  ✓ Fieldhouse                                     ████ WPA2│
+│   2    PARK-WIFI                                      ██··     │
+│                                                                │
+│  ✓ connected   · known   WPA2 etc = needs a passphrase         │
+└────────────────────────────────────────────────────────────────┘
+ Esc back  ↑↓ move  Enter join  n name  f forget  s scan  r radio
+```
+
+`✓` is the one you are on, `·` is one the deck already knows and will rejoin
+without being asked, the four blocks are signal, and the tag on the right is
+the security — blank means an open network with no passphrase. `Enter` joins the
+selected network; a known one needs no passphrase.
+
+A new network asks for one, masked. **`^R` shows it and hides it again** —
+worth using, because a long passphrase typed onto a panel that shows nothing
+back is how a single wrong character becomes "wrong passphrase" a minute later
+with no way to tell which character it was. It starts hidden every time.
+
+If the passphrase is wrong, press `Enter` on the failure and type it again.
+Nothing was saved, so there is no need to forget the network first.
+
+`n` joins a network that does not broadcast its name — type the name, then the
+passphrase. `s` scans again, which takes a few seconds and finds nothing at all
+indoors more often than you would expect.
+
+**`r` switches the radio off, and that is a normal way to operate.** With the
+real-time clock fitted the deck keeps correct time without NTP, so a field
+session can run with WiFi off from the start and every line in the transcript
+is still stamped correctly. The radio comes back on by itself at the next
+power-on — deliberately, because with WiFi off and the keyboard flat there
+would otherwise be no way into the deck at all.
+
 ## 11.5 When the keyboard stops working
 
 Sooner or later the Pebble goes to sleep, runs flat, or gets switched to
@@ -734,7 +777,7 @@ instead.
 | `4` | Display | `1` Matrix · `2` Deckard · `3` Hal · `4` Tron · `t` timestamps |
 | `5` | Memories | The eight message memories; `Enter` edits one in place |
 | `6` | Station | Callsign, name, QTH, grid, rig — `Enter` edits one in place |
-| `7` | System | `i` inhibit · `c` clear transcript · `q` quit |
+| `7` | System | `b` pair a keyboard · `w` WiFi · `i` inhibit · `c` clear transcript · `q` quit |
 
 **The line you type edits like a terminal.** `←` `→` move the cursor and
 typing inserts at it, `Backspace` deletes before it, `Home` and `End` jump to

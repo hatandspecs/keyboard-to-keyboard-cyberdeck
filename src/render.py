@@ -650,7 +650,7 @@ def wifi_screen(state, networks, width, height, radio="on", selected=0,
                 mark = "▸" if n - 1 == selected else " "
                 line(f" {mark} {n}  {net.label(inner - 6)}")
             line()
-            line("  ● connected   · known   🔒 needs a passphrase", "dim")
+            line("  ✓ connected   · known   WPA2 etc = needs a passphrase", "dim")
         if error:
             line()
             line("  " + error[:inner - 2], "dim")

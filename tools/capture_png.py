@@ -117,6 +117,10 @@ if __name__ == "__main__":
                                         passkey="482190"),
                      "matrix", f"{OUT}/pairing-passkey.png"))
 
+    # The WiFi screen. Invented networks: the real ones belong to the
+    # operator's neighbours and do not belong in a published screenshot.
+    made.append(draw(cap.wifi_screen(), "matrix", f"{OUT}/wifi.png"))
+
     names = menus.keyboard_modes([n for _, n in menus.MODE_TIER1] + [
         "BPSK125", "BPSK250", "BPSK500", "QPSK63", "QPSK125", "QPSK250",
         "OLIVIA-4/250", "OLIVIA-16/500", "OLIVIA-32/1K", "MFSK8", "MFSK32",

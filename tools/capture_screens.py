@@ -104,6 +104,22 @@ def tuning_screen(width=W, height=H):
     return lines
 
 
+# Invented networks. The real ones belong to the operator's neighbours, and a
+# screenshot in a public repository is not the place for their names.
+WIFI_NETWORKS = [
+    ("Fieldhouse", 88, "WPA2", True, True),
+    ("Fieldhouse-Guest", 74, "WPA2", False, False),
+    ("PARK-WIFI", 51, "", False, False),
+    ("Hamshack", 33, "WPA3", False, True),
+]
+
+
+def wifi_screen():
+    import wifi
+    nets = [wifi.Network(*n) for n in WIFI_NETWORKS]
+    return render.wifi_screen("list", nets, W, H, radio="on")
+
+
 if __name__ == "__main__":
     s = scripted_session()
     print("## The conversation screen\n")
@@ -133,6 +149,11 @@ if __name__ == "__main__":
     print("## The mode picker — F3\n")
     print("```")
     print(frame(menus.render(menus.mode_menu("BPSK63"), W, H)))
+    print("```\n")
+
+    print("## WiFi — F1 then 7 then w\n")
+    print("```")
+    print(frame(wifi_screen()))
     print("```\n")
 
     names = menus.keyboard_modes([n for _, n in menus.MODE_TIER1] + [
