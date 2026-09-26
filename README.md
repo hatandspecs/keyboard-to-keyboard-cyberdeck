@@ -136,6 +136,39 @@ Put the keyboard into pairing mode, tap the panel, and type the passkey it
 shows. A keyboard with channel buttons appears once per channel under one
 name; the address tail is what tells them apart.
 
+**WiFi is set from the panel too.** `F1` → `7` → `w` lists what is in range,
+with the connected network marked `●`, ones already known marked `·`, signal
+as four blocks and a lock on anything needing a passphrase. `Enter` or a tap
+joins; a known network needs no passphrase, because the deck already wrote it
+down. `n` joins a network by name for one that does not broadcast it, `f`
+forgets a saved one, `s` scans again, and `r` switches the radio off and on.
+
+Passphrases are masked as they are typed and go to NetworkManager, never to
+the deck's own state file — the one thing edited on this deck that is not
+written to the card. `^R` shows the passphrase and hides it again, which a
+long key typed onto a panel showing nothing back genuinely needs; it starts
+hidden every time, since whether to reveal it depends on the room.
+
+**A wrong passphrase can simply be retyped.** `nmcli` saves the profile on its
+way to failing, so without help a bad key becomes a saved network and every
+later `Enter` reuses it silently — the only way out being to forget the
+network first. A failed join now removes the profile it created, and `Enter`
+on the failure offers the passphrase again. A network that was already saved
+before the attempt is left alone, because the failure may be range rather than
+the key.
+
+It needs `polkit/10-cyberdeck-networkmanager.rules`, which a flashed card gets
+at build time. Without it the screen lists networks normally and refuses every
+key on it, because listing needs no authorisation and everything else does —
+and it is not about group membership. NetworkManager's stock policy grants
+those actions to an active local session, and the terminal is a systemd
+service with no seat and no session.
+
+Switching the radio off is a normal way to run rather than a fault state.
+With the real-time clock fitted the deck keeps time without NTP, so a field
+session can have the WiFi off from the start and still stamp every line
+correctly.
+
 **The three screens are a flat set, not a tree.** `F2` and `F3` reach the
 tuning screen and the mode picker from wherever you are, and each key is its
 own way back, so tune → mode → tune is one keystroke each way. Identifying an
@@ -155,7 +188,7 @@ screen is indistinguishable from a crash.
 | `4` Display | The five color schemes, timestamps |
 | `5` Memories | Eight message memories, edited in place |
 | `6` Station | Callsign, name, QTH, grid, rig — edited in place |
-| `7` System | Pair a Bluetooth keyboard, transmit inhibit, clear transcript, quit |
+| `7` System | Pair a Bluetooth keyboard, WiFi, transmit inhibit, clear transcript, quit |
 
 `Ctrl-I` and `Tab` are the same byte — ASCII 9 — so `Tab` also toggles the
 inhibit. Watch the status line if you hit it by accident.
@@ -201,6 +234,7 @@ Nothing else in the repository reaches the deck.
 | [`src/colors.py`](src/colors.py) | The five schemes, console palette and ANSI fallback |
 | [`src/touch.py`](src/touch.py) | The panel's touchscreen, read from evdev. Absent hardware is not an error |
 | [`src/btpair.py`](src/btpair.py) | Pairing a keyboard over BlueZ, on one long-lived D-Bus connection |
+| [`src/wifi.py`](src/wifi.py) | Joining networks through `nmcli`. Long operations do not block the panel |
 | [`src/config.py`](src/config.py) | `cyberdeck.conf` — the station's own settings, message memories, remembered state |
 | [`src/rigctld_client.py`](src/rigctld_client.py) | Unused. Documents a hamlib bug and a raw-CAT workaround |
 | [`tools/build_deck_image.sh`](tools/build_deck_image.sh) | Builds and flashes the Pi's SD card |
@@ -210,6 +244,8 @@ Nothing else in the repository reaches the deck.
 | [`tests/test_screen_toggles.py`](tests/test_screen_toggles.py) | `F2` and `F3` moving between the three screens |
 | [`tests/test_state.py`](tests/test_state.py) | What survives a restart |
 | [`tests/test_pair.py`](tests/test_pair.py) | The pairing and no-keyboard screens, and refusing where BlueZ is absent |
+| [`tests/test_wifi.py`](tests/test_wifi.py) | The WiFi screen, nmcli's terse output, and the row a tap resolves to |
+| [`tests/test_cold_boot.py`](tests/test_cold_boot.py) | Starting before fldigi does, against a stand-in that arrives late |
 | [`tests/test_colors.py`](tests/test_colors.py) | The schemes, and the two properties that were real faults |
 | [`tests/test_sequences.py`](tests/test_sequences.py) | Over, hand and abort pressed in orders nobody designed for |
 | [`tools/bt_agent_probe.py`](tools/bt_agent_probe.py) | Proves a BlueZ agent survives a scan, before any of it is built on |
@@ -331,6 +367,83 @@ Find the address with `bluetoothctl scan on` on any Linux machine with the
 keyboard in pairing mode. The build refuses to proceed with the example
 address still in place: a headless deck whose keyboard will not pair, with its
 only USB port holding a radio, has no way in but SSH.
+
+### The real-time clock
+
+A Raspberry Pi has no clock of its own. From power-on its time is whatever
+`fake-hwclock` saved at the last shutdown, until NTP corrects it — so a field
+session with no WiFi is timestamped wrong from end to end, and those stamps are
+what the status line and every transcript line are drawn from.
+
+`DECK_RTC` in `deck.conf` makes a flashed card come up with the clock already
+working. It names the chip as the `i2c-rtc` overlay does:
+
+```
+DECK_RTC = ds3231
+```
+
+The build then writes `dtparam=i2c_arm=on` and `dtoverlay=i2c-rtc,ds3231` into
+`config.txt`, and first boot removes `fake-hwclock` and writes the system time
+into the chip once NTP reports synchronized. Leave it blank for no RTC.
+
+Tested on an **Adafruit PiRTC, product 4282** — a DS3231 that plugs onto header
+pins 1-10 with nothing to wire. Prefer a board like it over a common ZS-042
+module: those trickle-charge their coin cell, which is wrong for the
+non-rechargeable CR2032 usually found in one, in a deck that lives in a bag.
+
+It also loosens something the design settled for reluctantly. WiFi stayed on
+partly because NTP was the only correct clock; with an RTC the radio can be
+switched off in the field to save power without losing the time.
+
+Verified on the deck: with NTP switched off and the power pulled, it came back
+up with the right time, the kernel logging `setting system clock to ...` from
+the chip. Switching NTP off is what makes that test mean anything — with it on,
+`WIFI_ON_START` restores the radio at boot and the network sets the clock
+within seconds of an RTC that might be doing nothing.
+
+To check it after the first boot:
+
+```bash
+timedatectl                    # "RTC time" is now a real line
+sudo hwclock -r                # what the chip itself holds
+cat /sys/class/rtc/rtc0/name   # rtc-ds1307 1-0068
+```
+
+`hwclock` itself is in the **`util-linux-extra`** package on Debian Bookworm and
+later, not in `util-linux`. The image build installs it; on a card built before
+that it is `sudo apt install -y util-linux-extra`, and until then every
+`hwclock` call reports `command not found`.
+
+`rtc-ds1307` for a DS3231 is correct and not a sign of the wrong overlay: one
+driver covers the whole DS1307/1337/1339/3231 family. The `1-0068` is the bus
+and address.
+
+`i2cdetect` is the other obvious check and it needs a step that nothing else
+does — `/dev/i2c-1` is created by the `i2c-dev` module, which neither the
+overlay nor `dtparam=i2c_arm=on` loads:
+
+```bash
+sudo modprobe i2c-dev
+sudo i2cdetect -y 1            # UU at 0x68 — claimed by the driver
+```
+
+Without the modprobe it reports `Could not open file /dev/i2c-1`, and without
+`sudo` it reports `Permission denied`. **Neither means the clock is broken.**
+The RTC driver binds inside the kernel and never uses `/dev/i2c-1`, so the chip
+can be keeping perfect time while `i2cdetect` claims the bus does not exist.
+`/sys/class/rtc/rtc0/name` is the check that does not lie.
+
+On a new board the first boot logs two messages that look like faults and are
+not:
+
+```
+rtc-ds1307 1-0068: SET TIME!
+rtc-ds1307 1-0068: hctosys: unable to read the hardware clock
+```
+
+Both say the same thing — the chip has never been set, so the kernel would not
+take the time from it. They stop after the first `hwclock -w`. If they come
+back after a power cycle, the coin cell is dead or not seated.
 
 `deck.secrets` carries the account password and the WiFi networks. Both the
 image and the finished card contain these in recoverable form — Raspberry Pi

@@ -17,7 +17,7 @@ import pyte
 
 
 def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path="",
-        settle_s="10"):
+        settle_s="10", conf="", after=0.35):
     """Drive the real application in a pty and return the reconstructed screen.
 
     `term` is a parameter because it is not cosmetic. The deck runs on the
@@ -39,6 +39,12 @@ def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path="",
         os.environ["CYBERDECK_STATE_PATH"] = state_path
         # A test cannot wait out the deck's ten-second settle window.
         os.environ["CYBERDECK_STATE_SETTLE_S"] = settle_s
+        # A configuration of the test's own, used to point the deck at a
+        # fldigi that a test controls — above all one that is not there yet.
+        if conf:
+            os.environ["CYBERDECK_CONF"] = conf
+        else:
+            os.environ.pop("CYBERDECK_CONF", None)
         os.environ["LINES"], os.environ["COLUMNS"] = str(rows), str(cols)
         os.chdir(_PROJECT)          # cyberdeck.conf is read from here
         os.execvp(sys.executable,
@@ -60,9 +66,16 @@ def run(keys=(), cols=66, rows=20, settle=1.2, term="xterm", state_path="",
         return True
 
     pump(settle)
+    # `after` is the wait following each key, and it is a parameter because
+    # some keys start an XML-RPC call before they produce anything on screen.
+    # Ctrl-X is the clear case: it calls text.clear_rx, whose client timeout
+    # is two seconds, and only then writes "transcript cleared". At the
+    # default 0.35 the note could land after the quit keys were already
+    # queued, so the check passed or failed according to how busy fldigi
+    # happened to be — which late in a long suite is busy.
     for k in keys:
         os.write(fd, k if isinstance(k, bytes) else k.encode())
-        pump(0.35)
+        pump(after)
     # Ctrl-Q twice: the first asks for confirmation, the second exits. Sending
     # one and closing the pty would also end the process, by hanging up its
     # terminal rather than by leaving the main loop — which would pass while

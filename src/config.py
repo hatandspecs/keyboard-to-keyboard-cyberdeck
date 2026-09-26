@@ -21,6 +21,11 @@ _CANDIDATES = (
 )
 DEFAULT_PATH = next((c for c in _CANDIDATES if os.path.exists(c)), _CANDIDATES[0])
 
+# The environment wins, so a test can hand the deck a configuration of its own
+# without editing the one in the checkout — the same reason
+# CYBERDECK_STATE_PATH exists. Nothing on the deck sets it.
+DEFAULT_PATH = os.environ.get("CYBERDECK_CONF") or DEFAULT_PATH
+
 # key -> (default, converter, description)
 SCHEMA = {
     "CALLSIGN":        ("", str, "this station's callsign"),
@@ -32,6 +37,7 @@ SCHEMA = {
                                  "e.g. '80 m, 40 m, 20 m'. Empty means all of "
                                  "them — the FTX-1 covers every band listed"),
 
+    "WIFI_ON_START":   ("yes", str, "switch the WiFi radio back on at every start"),
     "DEFAULT_MODE":    ("BPSK31", str, "modem selected at startup"),
     "DEFAULT_CARRIER": (1500, int, "audio carrier parked here, in Hz"),
     "COLOR":          ("matrix", str, "matrix | deckard | hal | tron | ripley"),

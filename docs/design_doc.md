@@ -1249,6 +1249,68 @@ the card: the carrier moves continuously while a signal is being hunted, and
 only where it comes to rest is worth recording. It also captures a mode or
 carrier reached any other way than a menu, which is the whole point.
 
+**Starting up before fldigi does, which is every power-on.** The terminal's
+unit is ordered `After=cyberdeck-fldigi.service`, and systemd means by that
+only that the fldigi process has been spawned. Under Xvfb on a 3A+ fldigi
+takes seconds longer to open its XML-RPC port, and the terminal is drawing a
+screen before then. Everything the deck does to the radio at startup — the
+configured `DEFAULT_MODE`, the remembered mode and carrier, the rig mode, the
+RSID setting — sat behind a single `if self.fldigi.connected` in `__init__`,
+evaluated once, with nothing to retry it. On a cold boot every branch was
+skipped and fldigi stayed in the mode fldigi itself had saved, which is CW on
+a stock configuration.
+
+That alone would have been an annoyance. What made it permanent was the
+saver. `_saved_mode` starts as `None`, and it was only assigned inside the
+same `if connected`, so after a cold boot the first reading always differed
+from it — and `STATE_SETTLE_S` later the deck wrote the CW it had come up in
+over the mode the operator had chosen. Every power cycle destroyed the setting
+again, which is why it never recovered on its own and why turning the deck off
+and on "always came back in CW".
+
+Neither fault is visible from restarting the terminal, because fldigi is
+already up by then — the same shape of asymmetry as the missing `fsync` below,
+and the reason both reports were about power cycles specifically.
+
+The radio half of startup is now `_apply_radio_startup()`, run from `__init__`
+when fldigi is answering and otherwise from `_finish_startup()` on the first
+poll where it starts to. `_persist_settled` refuses to write until that has
+happened, so there is no window in which the deck can record a mode it has not
+yet chosen. `_load_state` stashes the remembered mode and carrier rather than
+sending them, because at that point there may be nothing to send them to.
+
+The same reasoning applies to `_save_state` itself, which runs from colour
+changes and memory edits whether or not fldigi is reachable and wrote a null
+mode when it was not — erasing the remembered mode for a reason having nothing
+to do with the radio. It now writes back what is still pending instead.
+
+Applying it once is not enough either. Every one of those is an XML-RPC call
+that returns a usable value whether or not it succeeded, so a call lost to a
+busy fldigi is invisible — and fldigi is at its busiest in the seconds after
+it starts, which is exactly when this runs. `_apply_radio_startup` reads the
+mode back and tries again for up to five polls, then says `fldigi stayed in X;
+wanted Y` rather than presenting a mode nobody asked for as though it were a
+choice.
+
+**Deferring it opens a window, and the obvious way to close it is wrong.** The
+operator can press a mode key in the seconds before fldigi answers, and the
+restore then fires afterwards. The first guard written for this cancelled the
+restore whenever the operator touched the radio — and made things worse. A
+mode key pressed while fldigi is still starting *reaches nothing*: `set_modem`
+fails silently, like every call on that client. There was no choice to
+protect, and cancelling the restore on the strength of it left the deck in
+fldigi's own mode, which is the original fault by another route. The guard now
+requires `fldigi.connected`: keys pressed into the void do not count. What
+remains is a window of one poll, 200 ms, between fldigi becoming reachable and
+the restore running — too narrow to reach by hand.
+
+`tests/test_cold_boot.py` covers all of it against a stand-in fldigi whose
+moment of arrival the test chooses, which is the one thing the real fldigi
+cannot be asked to do: it is either up for the whole suite or not at all. The
+third case there had to be rewritten once, because as first written the keys
+landed *after* the stand-in appeared and the test proved nothing — it passed
+with the guard removed entirely.
+
 **A save that fails says so.** The write was wrapped in a bare `except OSError:
 pass`, so a state file that could not be written — wrong owner, full card —
 made every remembered setting appear to work and then revert at the next
@@ -1648,7 +1710,7 @@ reproducible from a test, and all but one turned out to be software.
 | Local chat variant | Not built. One transmit model for every band | 15.2 |
 | QSO logging | Not built. The transcript holds what a log would draw from | 15.2 |
 | Bands | Eleven presets, 80 m to 70 cm, ordered by frequency | 8.3, 15.2 |
-| WiFi | Stays, and gains a toggle. The 3A+ has no RTC, so NTP is the only correct clock | 15.2, 16 |
+| WiFi | Stays, with a toggle and a network picker on the panel (§17). The RTC removed the NTP argument for keeping it on | 15.2, 16 |
 | A second radio | In scope eventually, as per-rig profiles. Not now | 15.2 |
 | Touch | Two gestures and no pointer: drag scrolls, tap chooses on the pairing screens only. No X | 17.1 |
 | Pairing a keyboard | On the deck, no SSH. One D-Bus connection holds the agent; the terminal drives it from its own loop | 17.2 |
@@ -1895,18 +1957,105 @@ band. The two things still needing SSH are **adding a Bluetooth keyboard** and
    D-Bus API delivers the passkey as a method call, which is the whole reason
    to use it.
 
-6. **WiFi on the deck — the one thing here still outstanding.** Deferred
-   deliberately rather than forgotten; §15.2 question 12 settles what it
-   should do and this is what is left to build. Second in this list because
-   adding a network needs a keyboard to type a PSK, and that dependency is
-   now satisfied: the deck pairs its own keyboard (§17).
+6. ~~**WiFi on the deck.**~~ **Built.** `F1` `7` `w` lists what is in range,
+   joins it, forgets it, and switches the radio off and on. Adding a network
+   needs a keyboard to type a passphrase, which is why it waited on §17.
 
-   `nmcli radio wifi off` persists across reboots, so the deck
-   must *explicitly* enable WiFi at startup rather than relying on a default —
-   and that rule is not a convenience. It is what makes the radio safe to
-   switch off at all: with WiFi off and the keyboard flat, there is no SSH, no
-   keyboard, and a radio in the only USB port. Power-cycling is the recovery,
-   and it only works if WiFi always returns.
+   `nmcli radio wifi off` persists across reboots, so the deck enables WiFi
+   *explicitly* at every start — `_wifi_on_start`, controlled by
+   `WIFI_ON_START`. That rule is not a convenience. It is what makes the radio
+   safe to switch off at all: with WiFi off and the keyboard flat there is no
+   SSH, no keyboard, and a radio in the only USB port. Power-cycling is the
+   recovery, and it only works if WiFi always returns. So the toggle is for
+   this session and not for the next one, which is the opposite of what nmcli
+   does by itself and has to be stated on the screen and in the config file.
+
+   **`nmcli`, not D-Bus, which is the opposite of the choice `btpair` made.**
+   That is not inconsistency. BlueZ ties an agent's lifetime to the D-Bus
+   connection that registered it, so pairing could not be done with a
+   subprocess per command — a defect that cost real time to find (§17).
+   NetworkManager has no agent and no such requirement; every command here is
+   complete in itself. The simple mechanism is also the correct one, and it
+   keeps `wifi.py` on the standard library, importable where PyGObject is not.
+
+   **Nothing blocks the panel.** Joining a network is seconds at best and can
+   be most of a minute on the marginal signal that is exactly when this screen
+   gets used. The terminal polls five times a second and has to keep drawing,
+   so a join is an `Op` — started, then asked on each poll whether it has
+   finished — and `Esc` cancels it.
+
+   **The passphrase does not take the path every other edited field takes.**
+   Memories, the callsign and the station fields are all written to the state
+   file on the card; a passphrase belongs to NetworkManager instead. The
+   editor grew a `sink` for that, and a `secret` flag that masks it while it
+   is typed, because the deck's screen is a panel someone can stand behind.
+   The transcript records that a passphrase was entered and never what it was.
+
+   It does go on nmcli's command line, briefly visible in the process list.
+   That is a real exposure and it is not the weak point: the same passphrase
+   is already in `deck.secrets` and in a NetworkManager keyfile, on a card
+   with no encryption that pulls out with a fingernail. Anything able to read
+   the process list here already owns the account holding those files.
+
+   **Privilege went to polkit rather than to a root helper**, against the
+   suggestion below — and the first attempt at it was wrong in the way that
+   section predicted, though not in the direction it predicted.
+
+   The assumption was that `netdev` membership would be enough, because that
+   is what it is for and Raspberry Pi OS puts the account there by default.
+   It is not. The stock NetworkManager policy grants these actions to an
+   **active local session** — a person logged in at a seat — and
+   `cyberdeck-ui` is a systemd service with no seat and no session. polkit
+   sees a subject that is neither active nor inactive, falls through to
+   `auth_admin`, finds no agent to ask, and refuses. Group membership never
+   enters into it, and the deck's account was in `netdev` the whole time.
+
+   nmcli reports this as "not authorized to control networking", which names
+   neither sessions nor rules. `_explain` turned it into a sentence naming the
+   `netdev` group, which was worse than the raw message: it sent the operator
+   to verify the one thing that was already correct. It now names
+   `polkit/10-cyberdeck-networkmanager.rules`, which is the file that fixes
+   it.
+
+   That rule is scoped to one user and four action ids rather than to the
+   `org.freedesktop.NetworkManager` prefix, which is the specific objection
+   below — a polkit rule is easy to write too broadly. A root helper remains
+   the alternative and nothing on this side would change if it were built.
+
+   **Three more faults came out of operating it, all of them nmcli's output
+   rather than the interface:**
+
+   * **`IN-USE` is empty in terse mode.** It is the column carrying the `*` in
+     nmcli's human output and the obvious field to ask for, but `-t` returns
+     it blank on every row, connected or not, so the connected marker could
+     never appear. `ACTIVE` answers `yes`/`no` on the same rows.
+   * **One row per access point, not per network.** A dual-band router in a
+     mesh gives six rows for one SSID, ordered by signal — and the associated
+     one is whichever radio the deck settled on, frequently not the strongest.
+     Deduplicating by first-seen therefore discarded the only row marked
+     active. The rows are merged instead: strongest signal, and active if any
+     of them is.
+   * **A failed join still saves the profile.** So a mistyped passphrase
+     became a saved network, and the next `Enter` used the stored key without
+     asking — failing identically forever, with forgetting the network by hand
+     the only escape. A join that fails now removes a profile it created
+     itself, and the failure screen offers the passphrase again. A profile
+     that existed *before* the attempt is left alone: the failure may be range
+     rather than the key, and that passphrase is the operator's.
+
+   **The passphrase can be revealed with `^R`.** It is a long string typed on
+   a keyboard held in one hand, onto a panel that shows nothing back, where a
+   single wrong character returns a minute later as "wrong passphrase" with no
+   way to tell which one. Revealing starts off on every open rather than being
+   remembered, because whether it is safe to show depends on the room the deck
+   is in at that moment and not on the last decision made somewhere else.
+
+   **The failure was also invisible until something was pressed**, because
+   listing networks needs no authorisation at all. The screen drew a perfectly
+   normal list of nearby networks and then refused the radio toggle, the
+   rescan and the join. `blocked_reason()` now asks NetworkManager what it
+   will permit when the screen opens, and a refused rescan reports why rather
+   than returning an empty list that reads as a quiet band.
 
 7. ~~**Touch**, for transcript scrolling during a contact.~~ **Built** (§17.1). A
    vertical drag on the transcript scrolls it; `src/touch.py` reads the
@@ -2037,9 +2186,25 @@ binding is what an earlier `ModuleNotFoundError` was really reporting.
 * A `DECK_PERSISTENT_JOURNAL` setting. The build puts the journal in RAM to
   spare the card, which is right for normal use and exactly wrong while
   bringing hardware up — the boot that failed left no log to read.
-* **An RTC — decided, hardware on order (2026-09-22).** A DS3231 from Adafruit
-  rather than one of the common ZS-042 boards, for the reason in the battery
-  note below. Unfinished business until it arrives.
+* **An RTC — done and verified on the deck (2026-09-25).** An Adafruit PiRTC,
+  product 4282, carrying a DS3231 — chosen over the common ZS-042 boards for
+  the reason in the battery note below. It plugs onto header pins 1-10 and
+  needs no wiring. Built into the image as `DECK_RTC` in `deck.conf`.
+
+  Verified by switching NTP off, powering the deck down, and powering it up
+  again with nothing able to correct the clock. The proof is one line:
+
+  ```
+  rtc-ds1307 1-0068: setting system clock to 2026-09-26T01:59:50 UTC
+  ```
+
+  The kernel took the time from the chip, `timedatectl` reported `NTP
+  service: inactive` and `System clock synchronized: no`, and `SET TIME!` was
+  absent — so the oscillator kept running on the coin cell through the cut
+  rather than the time arriving from anywhere else. Switching NTP off is what
+  makes that test mean anything: with it on, `WIFI_ON_START` restores the
+  radio at boot and the network sets the clock within seconds of a chip that
+  might be doing nothing at all.
 
   The 3A+ has no clock of its own, so from power-on the system time is
   whatever `fake-hwclock` saved at the last shutdown until NTP corrects it.
@@ -2054,32 +2219,63 @@ binding is what an earlier `ModuleNotFoundError` was really reporting.
   logging accuracy is almost incidental.
 
   Nothing in the application changes: it reads the system clock, so the fix
-  lands underneath it. What it needs is four things, none automatic:
+  lands underneath it. What it needs is four things, none of which happens on
+  its own. `DECK_RTC` in `deck.conf` now does all four at build and first boot:
 
   1. I²C on the GPIO header — SDA pin 3, SCL pin 5, 3V3 pin 1, GND pin 9,
-     address 0x68.
+     address 0x68. The PiRTC plugs onto those, so there is nothing to wire.
   2. `dtparam=i2c_arm=on` and `dtoverlay=i2c-rtc,ds3231` in `config.txt`. The
-     overlay is what creates `/dev/rtc0`; without it the chip is inert.
-  3. `fake-hwclock` removed, or it competes to restore a saved timestamp.
-  4. `hwclock -w` once while NTP is good.
+     overlay is what creates `/dev/rtc0`; without it the chip sits on the bus
+     being ignored, and the symptom is indistinguishable from not owning one.
+  3. `fake-hwclock` removed. It restores the timestamp of the last shutdown at
+     every boot and saves it back at every shutdown, so with a real clock
+     fitted the two compete to set the same system clock and the saved value
+     can win.
+  4. `hwclock -w` once while NTP is good. A battery-backed clock nobody has
+     ever set holds an arbitrary time with complete confidence.
 
-  **Check it against the panel first.** The touchscreen is on the same I²C
-  controller — `3f205000.i2c/i2c-11/i2c-10/10-0038` — at a different address,
-  so they should coexist, but `i2cdetect` before trusting it.
+  **The panel is not a concern, and the earlier note here was wrong to imply
+  it might be.** The touchscreen is not merely at a different address: it is on
+  a different bus behind a different controller —
+  `3f205000.i2c/i2c-11/i2c-10/10-0038` — while `i2c_arm` is the GPIO header's
+  own bus, `i2c-1`. They cannot collide whatever addresses they use.
+  `i2cdetect -y 1` after fitting is still the quickest proof the chip is alive,
+  and it should answer at 0x68.
 
   **The battery warning is why the part is being bought rather than found.**
   The common ZS-042 module carries a diode-and-resistor charging circuit for a
   rechargeable LIR2032. A non-rechargeable CR2032 in that holder is being
   trickle-charged and can leak or vent — in a deck that lives in a bag. Either
-  fit an LIR2032, or remove the charging resistor and fit a CR2032.
-
-  Worth doing as a `DECK_RTC` option in the image build, so a flashed card
-  comes up with the overlay set and `fake-hwclock` gone rather than needing
-  four manual steps repeated at every reflash.
+  fit an LIR2032, or remove the charging resistor and fit a CR2032. The
+  Adafruit board has no charging circuit at all, so its CR1220 is a plain
+  primary cell and is correct as supplied; that, not the DS3231 itself, is what
+  the extra money bought.
 
 **What not to re-derive**, because it cost time to find and is easy to hit
 again: the rfkill block on both radios, the LE bonding passkey requirement, and
-the eight-digit frequency command. All three are in §14.
+the eight-digit frequency command. All three are in §14. Two more came out of
+fitting the RTC, and both are cases of a working part looking broken:
+
+* **`i2cdetect` cannot see a bus the RTC is using.** `/dev/i2c-1` is created by
+  the `i2c-dev` module, which neither the `i2c-rtc` overlay nor
+  `dtparam=i2c_arm=on` loads. The RTC driver binds inside the kernel and never
+  touches `/dev/i2c-1`, so `Could not open file /dev/i2c-1` proves nothing
+  about the chip. `sudo modprobe i2c-dev` first, and then `sudo i2cdetect`:
+  the unprivileged call fails differently, with `Permission denied`, even
+  though `deck` is in the `i2c` group — a node created by a hand-run
+  `modprobe` does not necessarily carry the ownership udev would give it. The
+  check that does not lie is `cat /sys/class/rtc/rtc0/name`, and it needs no
+  privilege at all.
+* **A DS3231 is driven by `rtc-ds1307`.** One driver covers the DS1307, 1337,
+  1339 and 3231, so `rtc-ds1307 1-0068` is the right answer and not evidence of
+  the wrong overlay — the same shape of trap as `vc4-kms-dsi-7inch` naming a
+  5-inch panel. Do not "correct" either one.
+
+On a chip that has never been set the first boot logs `SET TIME!` and `hctosys:
+unable to read the hardware clock`. Both are the same fact stated twice and
+neither is a fault; they stop after the first `hwclock -w`. If they return after
+a power cycle, the coin cell is dead or unseated — which makes them the battery
+test, not a nuisance.
 
 ---
 

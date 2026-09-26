@@ -23,7 +23,7 @@ import touch as touchmod
 from fldigi_client import Fldigi
 from session import Entry, Session, RX, TX
 
-CHAT, TUNE, PAIR, NOKB = "chat", "tune", "pair", "nokb"
+CHAT, TUNE, PAIR, NOKB, WIFI = "chat", "tune", "pair", "nokb", "wifi"
 
 # Releasing the post-over receive hold. Not configuration: these describe how
 # a decaying transient is told apart from a station answering, which is a
@@ -98,6 +98,12 @@ class Deck:
         self._saved_mode = None
         self._saved_carrier = None
         self._saved_at = 0.0
+        # The remembered mode and carrier, read from the state file but not
+        # yet pushed to fldigi. See _apply_radio_startup().
+        self._boot_mode = ""
+        self._boot_carrier = 0
+        self._startup_done = False
+        self._startup_tries = 0
         # fldigi's transmit state as of the last poll, for the status line and
         # for the stuck-transmit check. Read once per poll rather than again
         # at draw time, so both agree.
@@ -121,6 +127,22 @@ class Deck:
         # of which exists on every machine this terminal runs on.
         self.pairing = None
         self.pair_sel = 0
+        # WiFi, set up properly by _open_wifi. Named here so the poll and the
+        # touch handler can ask about them before the screen has ever opened.
+        self._wifi = None
+        self.wifi_state = "list"
+        self.wifi_radio = ""
+        self.wifi_nets = []
+        self.wifi_sel = 0
+        self.wifi_op = None
+        self.wifi_error = ""
+        self.wifi_message = ""
+        self.wifi_joined = ""
+        self.wifi_target = ""
+        self.wifi_target_known = False
+        self.wifi_target_secured = True
+        self._wifi_tick = 0
+        self._wifi_refreshed = 0.0
         self._pair_refreshed = 0.0
         self._pair_tick = 0
         # The no-keyboard screen's state: which keyboards are already bonded,
@@ -135,44 +157,53 @@ class Deck:
             scrollback=settings["SCROLLBACK"],
             tx_timeout=settings["TX_TIMEOUT"],
         )
-        if self.fldigi.connected:
-            if settings["DEFAULT_MODE"]:
-                self.fldigi.set_modem(settings["DEFAULT_MODE"])
-            self.fldigi.set_carrier(settings["DEFAULT_CARRIER"])
-            self.session.note(f"fldigi {self.fldigi.version()} — {self.fldigi.modem()} "
-                              f"at {self.fldigi.carrier()} Hz")
-        else:
-            self.session.note("no connection to fldigi — check it is running")
-
-        # After the configured defaults, so that what was last chosen wins.
+        # Reads the remembered mode and carrier but does not send them; see
+        # _apply_radio_startup for why that cannot happen here.
         self._load_state()
-        # Baseline for _persist_settled: what the file already says is what is
-        # on screen, so an untouched deck does not rewrite the card at boot.
-        if self.fldigi.connected:
-            self._saved_mode = self.fldigi.modem()
-            self._saved_carrier = self.fldigi.carrier()
         self._saved_at = time.monotonic()
-        if self.fldigi.connected and settings.get("REMEMBER_STATE") == "yes":
-            self.session.note(f"resumed {self.fldigi.modem()} at "
-                              f"{self.fldigi.carrier()} Hz, "
-                              f"{colors.SCHEMES[self.scheme]['name']}")
+
+        if self.fldigi.connected:
+            self._apply_radio_startup()
+        else:
+            self.session.note("no connection to fldigi — waiting for it")
 
         # Powering on into a transmit-capable state is the wrong default for a
         # deck that lives in a bag: a stray Ctrl-T on a radio connected to an
         # unknown antenna is worse than an extra keystroke before the first
         # over. Cleared with Ctrl-I, or F1 6 i.
-        if self.fldigi.connected:
-            self._set_rig_mode()
-            if settings["RSID_ON_START"] == "yes" and not self.fldigi.rsid():
-                self.fldigi.set_rsid(True)
-                self.session.note("RSID on — will follow other stations' modes")
-
         if settings["INHIBIT_ON_START"] == "yes":
             self.session.inhibit(True)
             self.fldigi.receive_only(True)
             self.session.note("transmit INHIBITED at startup — Ctrl-I to enable")
 
+        self._wifi_on_start(settings)
         self._pair_if_no_keyboard(settings)
+
+    def _wifi_on_start(self, settings):
+        """Switch the WiFi radio back on, every time.
+
+        `nmcli radio wifi off` persists across reboots, and that is what makes
+        the toggle on the WiFi screen safe to offer at all. With the radio off
+        and the Bluetooth keyboard flat there is no SSH, no keyboard, and a
+        radio occupying the only USB port — the deck would be unreachable by
+        every route it has. Power-cycling is the recovery, and it is only a
+        recovery if WiFi comes back on its own.
+
+        So the toggle is for this session, not for the next one, and a deck
+        that is switched off with WiFi off comes back with WiFi on. Setting
+        WIFI_ON_START = no removes that and there is no other way back in.
+
+        Fire and forget: no availability check, because that is a subprocess
+        of its own and this must not add a second to every start. A machine
+        with no nmcli fails the spawn, which Op records and nothing reads.
+        """
+        if settings.get("WIFI_ON_START", "yes") != "yes":
+            return
+        try:
+            import wifi as wifimod
+            wifimod.Op(["radio", "wifi", "on"], label="wifi on at start")
+        except Exception:       # pragma: no cover - never worth failing a start
+            pass
 
     def _pair_if_no_keyboard(self, settings):
         """Open the pairing screen when there is no keyboard to open it with.
@@ -275,6 +306,8 @@ class Deck:
         self._check_keyboard()
         self._scroll_by_touch()
         self._poll_pair()
+        self._poll_wifi()
+        self._finish_startup()
         self._persist_settled()
         self._watch_drain(sending)
 
@@ -361,6 +394,12 @@ class Deck:
             self.touch.poll()
             for row, _col in self.touch.taps():
                 self._pair_choose(row - render.PAIR_ROW0)
+            return
+        if self.screen == WIFI and self.wifi_state == "list":
+            self.touch.poll()
+            for row, _col in self.touch.taps():
+                if row >= render.WIFI_ROW0:
+                    self._wifi_join(row - render.WIFI_ROW0)
             return
         if self.menu or self.edit is not None:
             return
@@ -511,6 +550,324 @@ class Deck:
             self._pair_refreshed = now
             self.pairing.refresh()
 
+    def _apply_radio_startup(self):
+        """Put the radio into its starting mode and carrier, once fldigi answers.
+
+        Every line here used to sit behind `if self.fldigi.connected` in
+        __init__, which on a cold boot is false. The UI unit is ordered
+        `After=cyberdeck-fldigi.service`, and that means only that the process
+        has been spawned: fldigi under Xvfb on a 3A+ takes seconds longer to
+        open its XML-RPC port, and the terminal is already drawing a screen.
+        So none of it ran, nothing retried it, and fldigi stayed in whatever
+        mode fldigi itself had saved — CW on a stock configuration. Restarting
+        the terminal alone never showed the fault, because fldigi was up by
+        then; only a power cycle did.
+        """
+        settings, f = self.cfg, self.fldigi
+        if settings["DEFAULT_MODE"]:
+            f.set_modem(settings["DEFAULT_MODE"])
+        f.set_carrier(settings["DEFAULT_CARRIER"])
+        # The remembered choice overrides the configured default, which is
+        # where a deck with no history starts rather than where this one does.
+        if self._boot_mode:
+            f.set_modem(self._boot_mode)
+        if self._boot_carrier:
+            f.set_carrier(self._boot_carrier)
+
+        # Did it take? Each of those is an XML-RPC call that returns a usable
+        # value whether or not it succeeded, so a call lost to a busy fldigi
+        # is invisible from here — and fldigi is at its busiest in the seconds
+        # after it starts, which is exactly when this runs. Marking startup
+        # done regardless would leave the deck in the mode fldigi chose, with
+        # nothing to try again, which is the fault this whole method exists to
+        # fix reappearing one layer up.
+        want = self._boot_mode or settings["DEFAULT_MODE"]
+        got = f.modem()
+        if want and got and got != want and self._startup_tries < 5:
+            self._startup_tries += 1
+            return                  # not done; the next poll tries again
+
+        self.session.note(f"fldigi {f.version()} — {got} at {f.carrier()} Hz")
+        if settings.get("REMEMBER_STATE") == "yes" and (self._boot_mode or self._boot_carrier):
+            self.session.note(f"resumed {got} at {f.carrier()} Hz, "
+                              f"{colors.SCHEMES[self.scheme]['name']}")
+        if want and got and got != want:
+            # Five attempts and it still disagrees. Say so rather than showing
+            # a mode nobody asked for as though it were a choice.
+            self.session.note(f"fldigi stayed in {got}; wanted {want}")
+
+        # Baseline for _persist_settled: what is on screen is what the file
+        # already says, so an untouched deck does not rewrite the card at boot.
+        self._saved_mode = f.modem()
+        self._saved_carrier = f.carrier()
+        self._saved_at = time.monotonic()
+
+        self._set_rig_mode()
+        if settings["RSID_ON_START"] == "yes" and not f.rsid():
+            f.set_rsid(True)
+            self.session.note("RSID on — will follow other stations' modes")
+        # The inhibit is set on this side whether or not fldigi was reachable.
+        # If it was not, the call that told fldigi went nowhere.
+        if self.session.inhibited:
+            f.receive_only(True)
+        self._startup_done = True
+
+    def _finish_startup(self):
+        """Run the deferred radio startup the moment fldigi first answers."""
+        if self._startup_done or not self.fldigi.connected:
+            return
+        self._apply_radio_startup()
+
+    def _operator_chose(self):
+        """Cancel a startup that has not happened yet.
+
+        The deferred apply exists because fldigi may not be answering when the
+        terminal comes up. The gap it opens is that the operator can choose a
+        mode or move the carrier inside those seconds, and the startup would
+        then fire afterwards and put its own values over the top — restoring a
+        remembered setting by overwriting a deliberate one, which is worse
+        than the fault it was written to fix.
+
+        Startup state is for an untouched deck. Once someone has touched the
+        radio, there is nothing left to restore.
+
+        Only when fldigi is answering, and that condition is the whole of the
+        subtlety. A mode key pressed while fldigi is still starting reaches
+        nothing — `set_modem` fails silently and returns a usable value like
+        every other call on that client — so there was no effective choice to
+        protect. Cancelling the restore on the strength of it would leave the
+        deck in the mode fldigi itself came up in, which is the fault this was
+        all written to fix. Keys pressed into the void do not count.
+        """
+        if self.fldigi.connected:
+            self._startup_done = True
+
+    # ---- WiFi ----------------------------------------------------------
+    #
+    # Deliberately the same shape as pairing: open a screen, list what is
+    # nearby, choose one, prove you may use it. The module underneath is
+    # simpler — nmcli rather than D-Bus — but nothing about that reaches here.
+
+    def _open_wifi(self):
+        import wifi as wifimod            # not imported on machines that never open this
+        self._wifi = wifimod
+        self.wifi_sel = 0
+        self.wifi_op = None
+        self.wifi_nets = []
+        self.wifi_error = ""
+        self.wifi_message = ""
+        self.wifi_joined = ""
+        self.wifi_target = ""
+        self.wifi_target_known = False
+        self.wifi_target_secured = True
+        self._wifi_tick = 0
+        self._wifi_refreshed = 0.0
+        self._close_menu()
+        self.screen = WIFI
+        if not wifimod.available():
+            self.wifi_state = "unavailable"
+            self.wifi_error = "nmcli is not installed or NetworkManager is not running"
+            return
+        self.wifi_state = "list"
+        self.wifi_radio = wifimod.radio()
+        # Ask before offering. Listing networks needs no authorisation, so
+        # without this the screen looks entirely normal and refuses every key
+        # on it — which is exactly how this was first met.
+        self.wifi_error = wifimod.blocked_reason()
+        self._wifi_refresh()
+
+    def _close_wifi(self):
+        if self.wifi_op is not None:
+            # A join left running would finish into a screen that is gone, and
+            # its result would appear as a surprise minutes later.
+            self.wifi_op.cancel()
+            self.wifi_op = None
+        self.screen = CHAT
+
+    def _wifi_refresh(self, rescan=False):
+        """Re-read the network list. A rescan is a radio operation and slow."""
+        if self._wifi is None or self.wifi_radio == "off":
+            self.wifi_nets = []
+            return
+        self.wifi_nets, err = self._wifi.scan(rescan=rescan)
+        # Only an explicit rescan reports its failure. The background refresh
+        # runs every five seconds, and a message that reappears on its own is
+        # indistinguishable from one the operator caused.
+        if rescan and err:
+            self.wifi_error = err
+        self.wifi_sel = min(self.wifi_sel, max(0, len(self.wifi_nets) - 1))
+        self._wifi_refreshed = time.monotonic()
+
+    def _wifi_start(self, op, message, ssid="", was_known=False, secured=True):
+        # `was_known` decides what happens to the profile if this fails, and
+        # it has to be read before the attempt: nmcli creates the profile on
+        # its way to failing, so afterwards every network looks known.
+        self.wifi_op = op
+        self.wifi_message = message
+        self.wifi_state = "working"
+        self.wifi_error = ""
+        self.wifi_target = ssid
+        self.wifi_target_known = was_known
+        self.wifi_target_secured = secured
+
+    def _wifi_join(self, index):
+        """Join the selected network, asking for a passphrase only if needed."""
+        if not (0 <= index < len(self.wifi_nets)):
+            return
+        net = self.wifi_nets[index]
+        self.wifi_sel = index
+        if net.known:
+            # An existing profile already holds the passphrase. Asking again
+            # would be the deck forgetting something it has written down.
+            self._wifi_start(self._wifi.connect_saved(net.ssid),
+                             f"joining {net.ssid}", net.ssid, True, net.secured)
+        elif net.secured:
+            self._ask_passphrase(net.ssid)
+        else:
+            self._wifi_start(self._wifi.connect(net.ssid),
+                             f"joining {net.ssid}", net.ssid, False, False)
+
+    def _ask_passphrase(self, ssid):
+        """Open the editor for a passphrase: masked, and not written to the
+        state file the way every other edited field is."""
+        self._open_editor(
+            None, f"passphrase for {ssid}", secret=True,
+            sink=lambda text, ssid=ssid: self._wifi_start(
+                self._wifi.connect(ssid, text), f"joining {ssid}",
+                ssid, False, True))
+
+    def _ask_hidden_ssid(self):
+        """Join a network by name, for one that does not broadcast it."""
+        self._open_editor(None, "network name", sink=self._hidden_named)
+
+    def _hidden_named(self, ssid):
+        if not ssid:
+            return
+        self._ask_passphrase(ssid)
+
+    def _poll_wifi(self):
+        if self.screen != WIFI or self._wifi is None:
+            return
+        if self.wifi_op is not None and self.wifi_op.poll():
+            op, self.wifi_op = self.wifi_op, None
+            if op.ok:
+                self.wifi_state = "joined"
+                self.wifi_joined = self._wifi.active_ssid() or op.label
+                self.session.note(f"joined {self.wifi_joined}")
+            else:
+                self.wifi_state = "failed"
+                self.wifi_error = op.error or "no reason given"
+                # nmcli saves the profile on its way to failing, so a wrong
+                # passphrase becomes a saved network — and the next Enter then
+                # reuses it without asking, failing identically forever. The
+                # only way out was to forget the network by hand first, which
+                # is a workaround for this and not a feature. A profile this
+                # attempt created is removed again; one that existed before is
+                # left alone, because the failure may be range rather than the
+                # key and that passphrase is still the operator's.
+                if self.wifi_target and not self.wifi_target_known:
+                    self._wifi.forget(self.wifi_target)
+            self.wifi_radio = self._wifi.radio()
+            self._wifi_refresh()
+            return
+        # The list goes stale while the screen is open — signal moves, and a
+        # network joined from elsewhere should show as connected. Re-read at a
+        # human rate, never at the poll rate: each one is a subprocess.
+        if self.wifi_state == "list" and time.monotonic() - self._wifi_refreshed >= 5.0:
+            self.wifi_radio = self._wifi.radio()
+            self._wifi_refresh()
+
+    def _draw_wifi(self, h, w):
+        self._wifi_tick += 1
+        lines = render.wifi_screen(
+            self.wifi_state, self.wifi_nets, w, h,
+            radio=self.wifi_radio, selected=self.wifi_sel,
+            message=self.wifi_message, error=self.wifi_error,
+            # Divided down so the working dots move at a readable rate rather
+            # than five times a second.
+            tick=self._wifi_tick // 3,
+            ssid=self.wifi_joined if self.wifi_state == "joined" else self.wifi_target,
+            retry=self._wifi_can_retry())
+        for i, line in enumerate(lines):
+            self._put(i, 0, line, w)
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
+
+    def _wifi_can_retry(self):
+        """Retrying means retyping a passphrase, so an open network has
+        nothing to retry with and the offer would be a dead key."""
+        return bool(self.wifi_state == "failed" and self.wifi_target
+                    and self.wifi_target_secured)
+
+    def _handle_wifi(self, ch):
+        key = chr(ch).lower() if 32 <= ch < 127 else ""
+        nets = self.wifi_nets
+
+        if ch == 27 or ch == curses.KEY_F1:
+            if self.wifi_state in ("joined", "failed"):
+                self.wifi_state = "list"
+                self.wifi_error = ""
+            elif self.wifi_state == "working":
+                self.wifi_op.cancel() if self.wifi_op else None
+                self.wifi_op = None
+                self.wifi_state = "list"
+            else:
+                self._close_wifi()
+            return True
+        if self.wifi_state in ("working", "unavailable"):
+            return True
+        if self.wifi_state == "failed":
+            if ch in (10, 13, curses.KEY_ENTER) and self._wifi_can_retry():
+                # Whatever is saved for it is wrong, or we would not be here.
+                # Removing it first means the new passphrase is used rather
+                # than the stored one being tried again.
+                self._wifi.forget(self.wifi_target)
+                self._ask_passphrase(self.wifi_target)
+                return True
+            self.wifi_state = "list"
+            self.wifi_error = ""
+            self._wifi_refresh()
+            return True
+        if self.wifi_state == "joined":
+            self.wifi_state = "list"
+            self.wifi_error = ""
+            return True
+
+        if ch == curses.KEY_UP and nets:
+            self.wifi_sel = (self.wifi_sel - 1) % len(nets)
+        elif ch == curses.KEY_DOWN and nets:
+            self.wifi_sel = (self.wifi_sel + 1) % len(nets)
+        elif ch in (10, 13, curses.KEY_ENTER):
+            self._wifi_join(self.wifi_sel)
+        elif key.isdigit() and key != "0":
+            self._wifi_join(int(key) - 1)
+        elif key == "r":
+            on = self.wifi_radio != "on"
+            ok, err = self._wifi.set_radio(on)
+            self.wifi_error = "" if ok else err
+            self.wifi_radio = self._wifi.radio()
+            self.session.note("wifi radio " + ("on" if on else "off"))
+            self._wifi_refresh()
+        elif key == "s":
+            self._wifi_refresh(rescan=True)
+        elif key == "n":
+            self._ask_hidden_ssid()
+        elif key == "f" and nets:
+            net = nets[self.wifi_sel]
+            if net.known:
+                ok, err = self._wifi.forget(net.ssid)
+                self.wifi_error = "" if ok else err
+                if ok:
+                    self.session.note(f"forgot {net.ssid}")
+                self._wifi_refresh()
+            else:
+                self.wifi_error = "nothing saved for that network"
+        elif ch == 17:                       # Ctrl-Q still quits
+            return False
+        return True
+
     def _persist_settled(self):
         """Write the mode and carrier once they have stopped changing.
 
@@ -526,6 +883,15 @@ class Deck:
         and only where it comes to rest is worth remembering.
         """
         if not self.fldigi.connected:
+            return
+        # Before the remembered state has been restored there is nothing on
+        # screen worth recording, and recording it destroys what is on the
+        # card. With _saved_mode still None, the first reading after a cold
+        # boot always differs, so ten seconds later the mode fldigi happened
+        # to start in was written over the mode the operator chose. That is
+        # what made "it comes back in CW" permanent rather than merely
+        # annoying: every power cycle overwrote the file.
+        if not self._startup_done:
             return
         mode, carrier = self.fldigi.modem(), self.fldigi.carrier()
         if not mode or not carrier:
@@ -690,6 +1056,8 @@ class Deck:
                 pass
         elif self.screen == PAIR:
             self._draw_pair(h, w)
+        elif self.screen == WIFI:
+            self._draw_wifi(h, w)
         elif self.screen == TUNE:
             self._draw_tune(h, w)
         else:
@@ -853,6 +1221,9 @@ class Deck:
         if self.screen == PAIR:
             return self._handle_pair(ch)
 
+        if self.screen == WIFI:
+            return self._handle_wifi(ch)
+
         if self.screen == TUNE:
             return self._handle_tune(ch)
 
@@ -935,9 +1306,9 @@ class Deck:
         # ncurses sees a plain KEY_UP whether or not Ctrl is held. That would
         # have worked over SSH from an xterm and silently not on the panel.
         elif ch == 1:                        # Ctrl-A
-            self.fldigi.nudge_carrier(-10)
+            self._operator_chose(); self.fldigi.nudge_carrier(-10)
         elif ch == 4:                        # Ctrl-D
-            self.fldigi.nudge_carrier(10)
+            self._operator_chose(); self.fldigi.nudge_carrier(10)
         elif ch == 23:                       # Ctrl-W
             self._search(self.fldigi.search_up, "up")
         elif ch == 19:                       # Ctrl-S
@@ -1027,11 +1398,11 @@ class Deck:
         if scheme in colors.SCHEMES:
             self.scheme = scheme
             colors.apply(scheme)
-        if self.fldigi.connected:
-            if state.get("mode"):
-                self.fldigi.set_modem(state["mode"])
-            if state.get("carrier"):
-                self.fldigi.set_carrier(state["carrier"])
+        # Stashed, not applied. On a cold boot fldigi is not answering yet and
+        # sending these here would do nothing whatsoever, with no error and no
+        # retry — which is exactly what used to happen.
+        self._boot_mode = state.get("mode") or ""
+        self._boot_carrier = state.get("carrier") or 0
 
     def _save_state(self):
         """Never raises: failing to remember a preference must not disturb a
@@ -1039,11 +1410,21 @@ class Deck:
         path = self._state_path()
         if not path:
             return
+        # What the radio is doing, or — when it cannot be asked — what was
+        # remembered about it. Writing a null here instead was a quiet way to
+        # forget: every _save_state from a colour change or a memory edit runs
+        # whether or not fldigi is answering, so one of those while it was
+        # down erased the mode and carrier the operator had chosen.
+        if self.fldigi.connected and self._startup_done:
+            mode, carrier = self.fldigi.modem(), self.fldigi.carrier()
+        else:
+            mode = self._saved_mode or self._boot_mode or None
+            carrier = self._saved_carrier or self._boot_carrier or None
         state = {
             "color": self.scheme,
             "timestamps": self.cfg["TIMESTAMPS"],
-            "mode": self.fldigi.modem() if self.fldigi.connected else None,
-            "carrier": self.fldigi.carrier() if self.fldigi.connected else None,
+            "mode": mode,
+            "carrier": carrier,
             "memories": {str(n): self.cfg.get(f"MEMORY_{n}", "")
                          for n in range(5, 13)},
             "station": {k: self.cfg.get(k, "")
@@ -1237,7 +1618,7 @@ class Deck:
                 f.set_squelch(not f.squelch())
             elif key == "r":
                 f.set_rsid(not f.rsid())
-            elif key == "x":
+            elif key == "t":
                 f.set_txid(not f.txid())
             elif key == "v":
                 on = not f.reverse()
@@ -1270,6 +1651,7 @@ class Deck:
                     f"RX hold {least} ms"
                     + (f" to {most} ms" if most else " (fixed window)"))
             elif key == "c":
+                self._operator_chose()
                 f.set_carrier(self.cfg["DEFAULT_CARRIER"])
                 self.session.note(f"carrier parked at {self.cfg['DEFAULT_CARRIER']} Hz")
                 self._save_state()
@@ -1304,6 +1686,8 @@ class Deck:
         if m == "system":
             if key == "b":
                 self._open_pair()
+            elif key == "w":
+                self._open_wifi()
             elif key == "i":
                 self._toggle_inhibit()
                 self._close_menu()
@@ -1373,10 +1757,23 @@ class Deck:
         self.scroll = 0
         self.session.note("transcript cleared")
 
-    def _open_editor(self, key, title):
-        text = self.cfg.get(key, "") or ""
+    def _open_editor(self, key, title, secret=False, sink=None):
+        """Edit a config field, or — with `sink` — anything else.
+
+        `sink` exists for the WiFi passphrase, which must not take the normal
+        path: every other edited field is written into the state file on the
+        card, and a passphrase typed here belongs to NetworkManager instead.
+        `secret` stops it being drawn, because the deck's screen is a panel
+        someone else can be standing behind.
+        """
+        text = "" if key is None else (self.cfg.get(key, "") or "")
+        # `reveal` is deliberately not remembered between editors. Showing a
+        # passphrase is a decision about the room the deck is in at that
+        # moment, and it should have to be made again rather than carried in
+        # from the last network joined somewhere else.
         self.edit = {"key": key, "title": title, "text": text,
-                     "cursor": len(text)}
+                     "cursor": len(text), "secret": secret, "sink": sink,
+                     "reveal": False}
 
     def _draw_edit(self, h, w):
         e = self.edit
@@ -1384,14 +1781,23 @@ class Deck:
         self._put(1, 0, render.rule(w), w)
 
         body_h = max(1, h - 5)
+        masked = e.get("secret") and not e.get("reveal")
+        shown = "•" * len(e["text"]) if masked else e["text"]
         lines, (crow, ccol) = render.compose_lines(
-            e["text"], "", w, body_h, cursor=e["cursor"])
+            shown, "", w, body_h, cursor=e["cursor"])
         for i, line in enumerate(lines):
             self._put(2 + i, 0, line, w)
 
         self._put(h - 3, 0, render.rule(w), w)
-        self._put(h - 2, 0, [(render.EDIT_HINT[:w - 1], "dim")], w)
-        if e["key"].startswith("MEMORY_"):
+        self._put(h - 2, 0, [(render.edit_hint(e.get("secret"),
+                                               e.get("reveal"))[:w - 1], "dim")], w)
+        # `key` is None for an editor with a sink — a WiFi passphrase or a
+        # network name, which belong to NetworkManager rather than to any
+        # config field. Calling .startswith on that None raised on the first
+        # draw, so the deck crashed the instant the passphrase editor opened
+        # and systemd restarted it: from the panel, a pause and then the
+        # conversation screen again, which looks nothing like a traceback.
+        if (e["key"] or "").startswith("MEMORY_"):
             self._put(h - 1, 0, [(render.EDIT_TOKENS_HINT[:w - 1], "dim")], w)
         try:
             curses.curs_set(1)
@@ -1405,6 +1811,13 @@ class Deck:
             self.edit = None
         elif ch in (10, 13, curses.KEY_ENTER):         # Enter: store
             text = e["text"].strip()
+            if e.get("sink") is not None:
+                # Not stored here and never written to the card: the sink owns
+                # it. The transcript note says the field, never the value.
+                self.edit = None
+                self.session.note(f"{e['title']} entered")
+                e["sink"](text)
+                return True
             self.cfg[e["key"]] = text
             if e["key"] == "CALLSIGN":
                 # The transcript attributes our own overs by callsign, so the
@@ -1414,6 +1827,8 @@ class Deck:
             self.session.note(f"{e['title']} "
                               + ("cleared" if not text else "saved"))
             self.edit = None
+        elif ch == 18 and e.get("secret"):             # Ctrl-R: show or hide
+            e["reveal"] = not e.get("reveal")
         elif ch == 21:                                 # Ctrl-U: clear the line
             e["text"], e["cursor"] = "", 0
         elif ch in (curses.KEY_BACKSPACE, 127, 8):
@@ -1479,6 +1894,7 @@ class Deck:
         was, and the difference is invisible on a screen with no waterfall —
         which reads as a dead key when the band is quiet. Report the move.
         """
+        self._operator_chose()
         f = self.fldigi
         before = f.carrier()
         fn()
@@ -1552,6 +1968,7 @@ class Deck:
         if self.session.state == TX or self.fldigi.trx_state() != "RX":
             self.session.note("still transmitting — Ctrl-Y first, then change mode")
             return
+        self._operator_chose()
         was = self.fldigi.carrier()
         self.fldigi.set_modem(name)
         # Only if it actually moved, and only to somewhere sane: a failed read
@@ -1583,9 +2000,9 @@ class Deck:
         if ch in (curses.KEY_F2, 27):
             self.screen = CHAT
         elif ch == curses.KEY_LEFT:
-            f.nudge_carrier(-10)
+            self._operator_chose(); f.nudge_carrier(-10)
         elif ch == curses.KEY_RIGHT:
-            f.nudge_carrier(10)
+            self._operator_chose(); f.nudge_carrier(10)
         elif ch == curses.KEY_UP:
             self._search(f.search_up, "up")
         elif ch == curses.KEY_DOWN:
@@ -1596,7 +2013,7 @@ class Deck:
             f.set_squelch(not f.squelch())
         elif key == "r":
             f.set_rsid(not f.rsid())
-        elif key == "x":
+        elif key == "t":
             f.set_txid(not f.txid())
         elif key == "v":
             on = not f.reverse()

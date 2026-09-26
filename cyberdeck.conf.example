@@ -14,6 +14,17 @@ RIG = FTX-1
 
 # --- Operating defaults ---
 DEFAULT_MODE = BPSK31
+
+# --- WiFi ---
+# The WiFi screen (F1 7 w) can switch the radio off, and nmcli remembers that
+# across a reboot. This switches it back on at every start, which is what
+# makes the toggle safe to offer: with WiFi off and the Bluetooth keyboard
+# flat there is no SSH, no keyboard, and the radio in the only USB port, so a
+# power cycle is the only recovery — and it only recovers if WiFi returns.
+#
+# The toggle is therefore for this session, not the next one. Setting this to
+# no removes the recovery path and there is no other way back in.
+WIFI_ON_START = yes
 # The audio carrier is parked here and left alone; the radio's own waterfall
 # and VFO bring a signal to this offset. See design_doc.md §8.
 DEFAULT_CARRIER = 1500

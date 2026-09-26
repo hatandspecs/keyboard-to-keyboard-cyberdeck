@@ -261,6 +261,12 @@ password on every login later.
 these credentials in recoverable form — Raspberry Pi OS has no disk encryption
 and the card pulls out with a fingernail.
 
+**Only the first network has to go here.** `DECK_WIFI_SSID_1` is what the deck
+needs to reach the internet on its first boot, to install fldigi and build
+hamlib. Every network after that can be added from the panel instead — `F1`
+`7` `w` lists what is in range and joins it — so a network at a park or a
+friend's house is no longer a reason to edit a file and reflash a card.
+
 ### 4. Check the panel overlay
 
 `deck.conf` ships with:
@@ -1092,6 +1098,22 @@ systemctl is-active cyberdeck-ui
 `/opt/cyberdeck` holds the flat set of modules the unit runs, plus
 `configure_fldigi.py`, `cyberdeck.conf` and the fldigi seed. Tests, the rest of
 `tools/`, and documentation stay on the build machine.
+
+**The polkit rule is not a `.py` file and the copy above misses it.** A card
+built before the WiFi screen existed has no
+`/etc/polkit-1/rules.d/10-cyberdeck-networkmanager.rules`, and without it the
+screen lists networks perfectly and refuses every key on it. Install it once,
+from the laptop:
+
+```bash
+sed 's/@DECK_USER@/deck/' polkit/10-cyberdeck-networkmanager.rules \
+  | ssh deck@cyberdeck.local 'sudo install -D -m 644 /dev/stdin \
+      /etc/polkit-1/rules.d/10-cyberdeck-networkmanager.rules && sudo systemctl restart polkit'
+```
+
+Check it with `nmcli -t -f PERMISSION,VALUE general permissions | grep wifi` —
+`enable-disable-wifi` and `wifi.scan` should read `yes`. A freshly flashed card
+gets this from `install_polkit` and needs none of it.
 
 **`configure_fldigi.py` is in that list and is easy to forget.** It lives in
 `tools/` here and in `/opt/cyberdeck` there, so a copy of `src/*.py` alone

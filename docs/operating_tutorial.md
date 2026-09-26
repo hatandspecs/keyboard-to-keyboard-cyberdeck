@@ -544,7 +544,7 @@ Its limits, stated plainly:
 * The other station must be **sending** RSID. Many do; not all.
 * It identifies the mode, not the frequency — the carrier still has to be near
   the signal, so `↑`/`↓` search still matters.
-* Turn on **TXID** (`F1` → `2` → `x`) so you extend the same courtesy. It sends
+* Turn on **TXID** (`F1` → `2` → `t`) so you extend the same courtesy. It sends
   one identifier before each of your overs.
 
 Leave both on unless you have a reason not to.
@@ -729,7 +729,7 @@ instead.
 | Key | Submenu | Contents |
 |---|---|---|
 | `1` | Mode | `a` AUTO (RSID) · the twelve modes above · `m` for all |
-| `2` | Tune Settings | `a` AFC · `s` squelch · `+`/`-` level · `r` RSID · `x` TXID · `v` reverse · `c` park carrier |
+| `2` | Tune Settings | `a` AFC · `s` squelch · `+`/`-` level · `r` RSID · `t` TXID · `v` reverse · `c` park carrier |
 | `3` | Band | `1`–`9`, `0`, `a` — eleven presets, 80 m up to 70 cm |
 | `4` | Display | `1` Matrix · `2` Deckard · `3` Hal · `4` Tron · `t` timestamps |
 | `5` | Memories | The eight message memories; `Enter` edits one in place |
@@ -814,7 +814,7 @@ and guessing.
 | `↑` `↓` | **Search for the next signal** up or down | **No** |
 | `,` `.` | VFO −100 / +100 Hz | Yes |
 | `<` `>` | VFO −1 / +1 kHz | Yes |
-| `a` `s` `r` `x` `v` | AFC · squelch · RSID · TXID · reverse | No |
+| `a` `s` `r` `t` `v` | AFC · squelch · RSID · TXID · reverse | No |
 | `+` `-` | Squelch level, 2 at a time | No |
 | `[` `]` | Receive hold after an over, least — down / up | No |
 | `{` `}` | Receive hold after an over, most — down / up | No |

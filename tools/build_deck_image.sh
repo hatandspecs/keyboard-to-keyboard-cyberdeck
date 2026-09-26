@@ -580,6 +580,24 @@ install_project() {
   note "installed to /opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
 }
 
+install_polkit() {
+  step "WiFi control from the terminal"
+  local src="${SCRIPT_DIR}/../polkit/10-cyberdeck-networkmanager.rules"
+  local dst="${ROOT_MNT}/etc/polkit-1/rules.d/10-cyberdeck-networkmanager.rules"
+  if [[ ! -f "$src" ]]; then
+    note "polkit rule not found; WiFi control from the panel will be refused"
+    return 0
+  fi
+  # Without this the WiFi screen looks entirely normal and refuses every key
+  # on it. Listing networks needs no authorisation, so the failure appears
+  # only when something is pressed — and nmcli reports it as "not authorized
+  # to control networking", which says nothing about the actual cause. See the
+  # comment at the top of the rule.
+  sed "s/@DECK_USER@/${CFG[DECK_USER]}/" "$src" \
+    | sudo install -D -m 644 /dev/stdin "$dst"
+  note "polkit: ${CFG[DECK_USER]} may control WiFi"
+}
+
 configure_boot() {
   step "Boot settings"
 
@@ -619,14 +637,16 @@ KBD
   note "console keymap ${kbd}"
   local cfg="${BOOT_MNT}/config.txt" cmd="${BOOT_MNT}/cmdline.txt"
 
-  if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" ]]; then
-    # config.txt is divided into conditional sections ([cm4], [pi5], [all]...)
-    # and a bare append inherits whichever section happens to be last in the
-    # stock file. Today that is [all]; if an image ever ended with [pi5] the
-    # overlay would silently not apply to a 3A+. Open [all] explicitly, once,
-    # and write everything below it.
+  # config.txt is divided into conditional sections ([cm4], [pi5], [all]...)
+  # and a bare append inherits whichever section happens to be last in the
+  # stock file. Today that is [all]; if an image ever ended with [pi5] the
+  # overlays would silently not apply to a 3A+. Open [all] explicitly, once,
+  # and write everything below it.
+  if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" || -n "${CFG[DECK_RTC]:-}" ]]; then
     printf '\n[all]\n' | sudo tee -a "$cfg" >/dev/null
+  fi
 
+  if [[ -n "${CFG[DECK_PANEL_OVERLAY]:-}" ]]; then
     # The panel overlay needs the KMS driver loaded first. Raspberry Pi OS
     # ships vc4-kms-v3d enabled, but a config.txt where it has been commented
     # out gives a blank panel and no other symptom, so assert it rather than
@@ -642,6 +662,20 @@ KBD
     printf '# Cyberdeck: the DSI panel.\ndtoverlay=%s\n' "${CFG[DECK_PANEL_OVERLAY]}" \
       | sudo tee -a "$cfg" >/dev/null
     note "dtoverlay=${CFG[DECK_PANEL_OVERLAY]} (under [all])"
+  fi
+
+  if [[ -n "${CFG[DECK_RTC]:-}" ]]; then
+    # The overlay is what creates /dev/rtc0. Without it the chip sits on the
+    # bus being ignored, and the symptom is indistinguishable from not having
+    # bought one.
+    #
+    # i2c_arm is the GPIO header's bus, i2c-1, and it is off in a stock image.
+    # The panel's touch controller shares neither bus nor controller with it —
+    # it is at 10-0038, behind the DSI mux on i2c-10 — so the two cannot
+    # collide whatever addresses they use.
+    printf '# Cyberdeck: real-time clock on the GPIO header.\ndtparam=i2c_arm=on\ndtoverlay=i2c-rtc,%s\n' \
+      "${CFG[DECK_RTC]}" | sudo tee -a "$cfg" >/dev/null
+    note "dtoverlay=i2c-rtc,${CFG[DECK_RTC]} (under [all])"
   fi
 
   if [[ "${CFG[DECK_HIDE_BOOT_MESSAGES]:-yes}" == yes && -f "$cmd" ]]; then
@@ -733,7 +767,7 @@ apt-get update -y || exit 1
 # Nothing else in the deck imports it, and the terminal runs without it.
 apt-get install -y --no-install-recommends \\
   fldigi xvfb libhamlib-utils python3 console-setup fonts-terminus \\
-  kbd bluez alsa-utils python3-gi || exit 1
+  kbd bluez alsa-utils python3-gi i2c-tools util-linux-extra || exit 1
 
 # --- hamlib from source ------------------------------------------------
 #
@@ -788,6 +822,43 @@ fi
   ln -s "$dir" "\$HOME_DIR/$(basename "$dir")" && \\
   chown -h ${user}:${user} "\$HOME_DIR/$(basename "$dir")"
 
+# --- Real-time clock ----------------------------------------------------
+# DECK_RTC put the overlay in config.txt, which is what creates /dev/rtc0.
+# Two things remain, and neither happens on its own.
+RTC_CHIP="${CFG[DECK_RTC]:-}"
+if [[ -n "\$RTC_CHIP" ]]; then
+  # fake-hwclock restores the timestamp of the last shutdown at every boot and
+  # saves it back at every shutdown. With a real clock fitted the two compete
+  # to set the same system clock, and the saved value can win.
+  systemctl disable --now fake-hwclock.service >/dev/null 2>&1 || true
+  apt-get -y remove fake-hwclock >/dev/null 2>&1 || true
+
+  # hwclock is in util-linux-extra on Debian Bookworm and later, not in
+  # util-linux, and Raspberry Pi OS Trixie follows that split. It is in the
+  # install list above; check anyway, because the failure without it is
+  # "sudo: hwclock: command not found" at the one moment nobody is watching.
+  if ! command -v hwclock >/dev/null; then
+    echo "hwclock missing (util-linux-extra); RTC left unset" >&2
+  elif [[ -e /dev/rtc0 ]]; then
+    # A battery-backed clock nobody has ever set holds an arbitrary time with
+    # complete confidence. Write the system clock into it once, while NTP is
+    # known good, or the whole exercise buys nothing.
+    for i in \$(seq 1 30); do
+      [[ "\$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" == yes ]] && break
+      sleep 5
+    done
+    if [[ "\$(timedatectl show -p NTPSynchronized --value 2>/dev/null)" == yes ]]; then
+      hwclock -w && echo "RTC (\$RTC_CHIP) set from NTP: \$(hwclock -r)"
+    else
+      echo "NTP never synchronized; RTC left unset. Run 'sudo hwclock -w' once it is." >&2
+    fi
+  else
+    echo "DECK_RTC=\$RTC_CHIP but /dev/rtc0 is missing. Check the wiring, then:" >&2
+    echo "  i2cdetect -y 1     # the chip should answer at 0x68" >&2
+    echo "  dmesg | grep -i rtc" >&2
+  fi
+fi
+
 chown -R ${user}:${user} "$dir"
 touch /var/lib/cyberdeck-firstboot-done
 systemctl start cyberdeck-xvfb cyberdeck-fldigi cyberdeck-ui 2>/dev/null || true
@@ -835,6 +906,7 @@ cmd_build() {
   mount_image
   configure_access
   configure_wifi
+  install_polkit
   install_project
   configure_boot
   harden_card

@@ -48,7 +48,7 @@
 │──────────────────────────────────────────────────────────────────│
 │  ← →   carrier ±10 Hz        ↑ ↓   search signal                 │
 │  ,  .   VFO ±100 Hz          <  >   VFO ±1 kHz                   │
-│  a AFC    s squelch    + - level    r RSID    x TXID    v REV    │
+│  a AFC    s squelch    + - level    r RSID    t TXID    v REV    │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,7 +90,7 @@
 │  +  Squelch level up       (15)                                  │
 │  -  Squelch level down     (15)                                  │
 │  r  RSID        ON    follow others' identifiers                 │
-│  x  TXID        off   send one before our overs                  │
+│  t  TXID        off   send one before our overs                  │
 │  v  Reverse     off   mark/space sense, for RTTY                 │
 │  c  Park carrier at the configured offset                        │
 │  [  RX hold least  down   (1000 ms)                              │

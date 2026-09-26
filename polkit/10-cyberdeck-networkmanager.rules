@@ -1,0 +1,40 @@
+// Let the terminal control WiFi.
+//
+// The WiFi screen runs nmcli as the deck's own account, and NetworkManager
+// asks polkit whether that is allowed. Membership of `netdev` is not the
+// answer people expect it to be: the stock policy grants these actions to an
+// *active local session* — someone logged in at a seat — and `cyberdeck-ui`
+// is a systemd service. It has no seat and no session, so polkit sees a
+// subject that is neither active nor inactive and falls through to
+// auth_admin. There is no agent to ask, so the call is refused.
+//
+// The symptom is nmcli's "not authorized to control networking", which says
+// nothing about sessions and sends you to check group membership that was
+// never the problem. src/wifi.py turns that message into a sentence naming
+// this file.
+//
+// Scoped deliberately narrowly, because the design doc's objection to polkit
+// was that a rule is easy to write too broadly:
+//
+//   * one user, not a group. DECK_USER is substituted at build time.
+//   * four action ids, not the org.freedesktop.NetworkManager prefix. Between
+//     them they cover exactly what the screen does — switch the radio, scan,
+//     join, and save or delete a profile — and nothing else. Notably absent
+//     is anything about the system's own connectivity checking or
+//     modify.own vs modify.system distinctions beyond what joining needs.
+//
+// Install: /etc/polkit-1/rules.d/10-cyberdeck-networkmanager.rules, root-owned,
+// mode 644. build_deck_image.sh writes it; on a running deck see
+// "Updating the code on a running deck" in the runbook.
+
+polkit.addRule(function (action, subject) {
+    var allowed = [
+        "org.freedesktop.NetworkManager.enable-disable-wifi",
+        "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.settings.modify.system"
+    ];
+    if (subject.user === "@DECK_USER@" && allowed.indexOf(action.id) !== -1) {
+        return polkit.Result.YES;
+    }
+});

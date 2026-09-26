@@ -166,7 +166,10 @@ check("the Tab collision is named", "also Tab" in body, body[:400])
 check("the clear hotkey is shown", "Ctrl-X" in body, body[:400])
 check("quit too", "Ctrl-Q" in body, body[:400])
 
-body = show("Ctrl-X clears", run(keys=[CTRL_X], settle=1.6))
+# after=2.5, longer than the fldigi client's two-second timeout: Ctrl-X calls
+# text.clear_rx before it writes its note, so a slow fldigi delays the note
+# rather than preventing it.
+body = show("Ctrl-X clears", run(keys=[CTRL_X], settle=1.6, after=2.5))
 check("the transcript is emptied", "transcript cleared" in body, body[:300])
 check("and the startup notes are gone", "fldigi 4.2" not in body, body[:300])
 

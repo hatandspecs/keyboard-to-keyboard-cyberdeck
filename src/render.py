@@ -174,7 +174,7 @@ def mode_bandwidth(name, reported=0):
 TUNE_HINTS = (
     "  \u2190 \u2192   carrier \u00b110 Hz        \u2191 \u2193   search signal",
     "  ,  .   VFO \u00b1100 Hz          <  >   VFO \u00b11 kHz",
-    "  a AFC    s squelch    + - level    r RSID    x TXID    v REV",
+    "  a AFC    s squelch    + - level    r RSID    t TXID    v REV",
 )
 
 
@@ -263,6 +263,24 @@ EDIT_HINT = "  Enter save   Esc cancel   ^U clear the line"
 # Only shown when editing a message memory: the tokens mean nothing when the
 # field being edited is the callsign they would be filled in from.
 EDIT_TOKENS_HINT = "  {call} {name} {qth} {grid} {rig} fill in;  \\n starts a new line"
+
+
+def edit_hint(secret=False, revealed=False):
+    """The key line under the editor.
+
+    A masked field gets its own, because the keys differ and because the one
+    that matters is not guessable. A WiFi passphrase is long, typed on a
+    keyboard the operator may be holding, onto a panel showing nothing back —
+    and a single wrong character returns as "wrong passphrase" a minute later
+    with no way to tell which character it was.
+
+    It says "show" or "hide" according to the current state rather than naming
+    the key twice, so the line describes what pressing it will do.
+    """
+    if not secret:
+        return EDIT_HINT
+    return "  Enter join   Esc cancel   ^U clear   ^R " + (
+        "hide it again" if revealed else "show the passphrase")
 
 
 def status_line(fields, width):
@@ -545,6 +563,114 @@ def pair_screen(state, devices, width, height, passkey="", error="",
                "paired": "Esc back", "failed": "Esc back"}
     footer = footers.get(state,
                          "Esc back   ↑↓ move   Enter pair   f forget   tap to choose")
+    out.append([(" " + footer[:width - 1], "dim")])
+    return out[:height]
+
+
+# Screen row of the first network on the WiFi screen: the title bar, the top
+# border, the radio line and one blank line come first. A tap becomes an index
+# through this, so it has to track wifi_screen() rather than be guessed at —
+# and it was guessed at first, one row out, which is a tap selecting the wrong
+# network and reads as a broken touchscreen. test_wifi.py asserts it against
+# the renderer instead.
+WIFI_ROW0 = 4
+
+
+def wifi_screen(state, networks, width, height, radio="on", selected=0,
+                message="", error="", tick=0, ssid="", retry=False):
+    """The WiFi screen, framed like the pairing screen and for the same reason.
+
+    Joining a network interrupts operating to do something else entirely, and
+    a border says so. It shares the pairing screen's shape deliberately: the
+    two are the same task from the operator's side — find a thing that is
+    nearby, choose it, prove you are allowed to use it — and a deck with two
+    unrelated-looking screens for that would be teaching two lessons where one
+    will do.
+
+    Signal is drawn as four blocks rather than a percentage. At arm's length
+    on a five inch panel the question is never "is this 58 or 62" but "is this
+    one of the strong ones".
+    """
+    inner = max(20, width - 2)
+    body = []
+
+    def line(text="", kind="bright"):
+        body.append([("│", "dim"), (text[:inner].ljust(inner), kind),
+                     ("│", "dim")])
+
+    out = [[(" WIFI".ljust(width), "reverse")]]
+    out.append([("┌" + "─" * inner + "┐", "dim")])
+
+    if state == "unavailable":
+        line()
+        line("  WiFi cannot be controlled from here.")
+        line()
+        line("  " + (error or "NetworkManager is not answering")[:inner - 2], "dim")
+        line()
+        line("  The deck's own networks still work; they are set", "dim")
+        line("  in deck.secrets when the card is built.", "dim")
+    elif state == "working":
+        line()
+        line("  " + (message or "working") + "." * (1 + tick % 3))
+        line()
+        line("  This can take most of a minute on a weak signal.", "dim")
+    elif state == "joined":
+        line()
+        line(f"  ✓  JOINED {ssid}"[:inner])
+        line()
+        line("  It will reconnect by itself from now on.", "dim")
+    elif state == "failed":
+        line()
+        line(f"  ✗  COULD NOT JOIN {ssid}"[:inner])
+        line()
+        line("  " + (error or "no reason given")[:inner - 2], "dim")
+        if retry:
+            line()
+            line("  Enter types the passphrase again.", "dim")
+            line()
+            line("  Nothing was kept: a wrong passphrase would", "dim")
+            line("  otherwise be saved and reused silently.", "dim")
+    else:
+        radio_text = {"on": "RADIO ON", "off": "RADIO OFF"}.get(
+            radio, "RADIO STATE UNKNOWN")
+        line(f"  {radio_text}        r turns it {'off' if radio == 'on' else 'on'}")
+        line()
+        if radio == "off":
+            line("  The radio is off, so nothing can be seen.")
+            line()
+            line("  Off is a legitimate way to run: the deck keeps", "dim")
+            line("  time on its own clock and the radio saves power.", "dim")
+        elif not networks:
+            line("  Nothing found yet.")
+            line()
+            line("  s scans again. A scan takes a few seconds and", "dim")
+            line("  finds nothing at all indoors surprisingly often.", "dim")
+        else:
+            for n, net in enumerate(networks[:8], start=1):
+                mark = "▸" if n - 1 == selected else " "
+                line(f" {mark} {n}  {net.label(inner - 6)}")
+            line()
+            line("  ● connected   · known   🔒 needs a passphrase", "dim")
+        if error:
+            line()
+            line("  " + error[:inner - 2], "dim")
+
+    out.extend(body)
+    while len(out) < height - 2:
+        out.append([("│", "dim"), (" " * inner, "bright"), ("│", "dim")])
+    out.append([("└" + "─" * inner + "┘", "dim")])
+
+    footers = {
+        "working": "Esc cancel",
+        "joined": "Esc back",
+        "failed": "Enter try the passphrase again   Esc back" if retry else "Esc back",
+        "unavailable": "Esc back",
+    }
+    # 65 characters at most, because the panel is 66 wide and the footer is
+    # drawn with a leading space. The obvious wording ran to 68 and was
+    # silently clipped to "w rad", losing the one key that is not guessable.
+    footer = footers.get(
+        state, "Esc back  ↑↓ move  Enter join  n name  f forget  s scan  r radio")
     out.append([(" " + footer[:width - 1], "dim")])
     return out[:height]
 
