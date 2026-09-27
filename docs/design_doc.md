@@ -421,12 +421,23 @@ Three regions, fixed:
 
 ### 5.2 Status line fields
 
-Left to right: own callsign, rig frequency, modem name, audio carrier, S/N,
-transmit state, UTC.
+Left to right: own callsign, rig frequency, modem name, audio carrier, and both
+of fldigi's status readouts; transmit state and UTC are right-aligned.
 
-Sideband and IMD are cut to fit 66 columns; both are available in the tuning
-screen, which has room. At 80 or 100 columns they return. Transmit state is the
-one field that changes appearance rather than only content — see section 9.
+**The radio's own sideband mode is deliberately absent.** It was shown until
+2026-09-27, where it cost the seven columns that fldigi's second readout needed
+at 66. The trade favours the readout: the rig mode is legible on the radio's
+front panel, changes about twice a session, and remains on the tuning screen
+beside the frequency, whereas the second readout is IMD under PSK — the only
+indication the deck gives that the transmitter is being overdriven — and
+becomes the signal-to-noise figure under RTTY, where the first readout is baud
+and shift instead. Dropping it therefore cost the S/N reading outright on that
+mode, which is what makes this more than a preference.
+
+Everything fits at 66 columns. Narrower terminals drop IMD first, then S/N,
+carrier, frequency and modem in that order; callsign, transmit state and the
+clock never drop. Transmit state is the one field that changes appearance
+rather than only content — see section 9.
 
 **The transmit state reports the radio, not this program.** Four values:
 

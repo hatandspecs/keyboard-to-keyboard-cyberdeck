@@ -591,11 +591,15 @@ dark**.
 The top row, in reverse video. Fields drop from the right as the terminal gets
 narrower, so a narrow font keeps callsign, state and clock.
 
+**The radio's own mode — `PKTUSB` and the like — is not here.** It is legible
+at a glance on the radio's front panel and changes perhaps twice a session, and
+the columns it occupied were the difference between the second readout fitting
+and not. It is still on the F2 tuning screen, beside the frequency.
+
 | Field | Meaning |
 |---|---|
 | **call** | Your callsign, from `cyberdeck.conf` |
 | **freq** | The radio's VFO, read back through rigctld. **If this is 0.0, rig control is not working** |
-| **sideband** | USB or LSB as the radio reports it |
 | **mode** | The current modem — BPSK31 and so on |
 | **carrier** | Audio offset in Hz: where inside the passband the modem is listening |
 | **two readouts** | **Mode-dependent, and they label themselves.** Under PSK they are `S/N 6 dB` and `IMD ---`. Under RTTY the first becomes `45 /170` — baud rate and shift in Hz — and the second becomes the S/N. Olivia reports neither and they go blank. Read the label, not the position |

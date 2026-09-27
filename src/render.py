@@ -19,7 +19,7 @@ WHO_W = 7           # callsign column, left-justified
 # Status fields in the order they are dropped when the screen is too narrow.
 # Callsign, transmit state and the clock are never dropped: they are the three
 # a glance is for.
-_DROP_ORDER = ("imd", "sideband", "snr", "carrier", "freq", "mode")
+_DROP_ORDER = ("imd", "snr", "carrier", "freq", "mode")
 
 
 def _wrap_spans(text, width):
@@ -288,17 +288,24 @@ def status_line(fields, width):
 
     Fields are dropped from the least useful end when the width will not take
     them all, so a 50-column deck still shows callsign, state and clock.
+
+    The radio's own mode (PKTUSB and friends) is deliberately absent. It is
+    legible at a glance on the radio's front panel, it changes about twice a
+    session, and at 66 columns the seven columns it cost were the difference
+    between fldigi's second status field fitting and not. That field is worth
+    more: under PSK it is IMD, which says whether the transmitter is being
+    driven too hard, and under RTTY it carries the signal-to-noise reading.
+    It is still on the F2 tuning screen, one keystroke away.
     """
     parts = {
         "call":     fields.get("call", ""),
         "freq":     fields.get("freq", ""),
-        "sideband": fields.get("sideband", ""),
         "mode":     fields.get("mode", ""),
         "carrier":  fields.get("carrier", ""),
         "snr":      fields.get("snr", ""),
         "imd":      fields.get("imd", ""),
     }
-    order = ["call", "freq", "sideband", "mode", "carrier", "snr", "imd"]
+    order = ["call", "freq", "mode", "carrier", "snr", "imd"]
     shown = [k for k in order if parts[k]]
     clock = fields.get("clock", "")
     state = fields.get("state", "")

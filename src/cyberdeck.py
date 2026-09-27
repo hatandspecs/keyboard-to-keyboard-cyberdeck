@@ -1022,7 +1022,6 @@ class Deck:
             # Three decimals is how a frequency is read aloud and written
             # in a log: 14.070, not 14.07.
             "freq": render.frequency(freq),
-            "sideband": f.rig_mode() or "",
             "mode": f.modem(),
             "carrier": f"{f.carrier()}Hz",
             "snr": (f.signal_to_noise() or "").strip(),
