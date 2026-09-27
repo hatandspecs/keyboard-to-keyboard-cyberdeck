@@ -253,7 +253,7 @@ It is a retrieval system over what other people have already worked out. Use it 
 
 # The interesting part was never the code
 
-**The bugs that cost the most were physical**, and no assistant would have found them: a USB-C connector that only works one way round, a radio whose CAT command was one digit short, an adapter cable plugged in backwards that keyed the transmitter permanently.
+**The bugs that cost the most lived in the gap between the bench and the real panel**, where an assistant cannot see: a radio whose CAT command was one digit short, so the display tracked the dial while every band change failed silently; and `Ctrl-Z` shipping dead on the console, because the terminal the tests run under defines that key differently. Every test passed.
 
 **You do not need to start here.** Start with one annoyance in your own shack that you have stopped noticing because you have worked around it for a year.
 
