@@ -17,7 +17,7 @@ style: |
     line-height: 1.45;
     padding: 44px 56px 56px;
     /* The built-in theme wins on specificity for these, and its selectors are
-       not ones a style block can match, so they are forced. The h1 colour is a
+       not ones a style block can match, so they are forced. The h1 color is a
        variable the theme exposes; the rest are not. */
     display: flex !important;
     flex-direction: column !important;
@@ -47,6 +47,14 @@ style: |
   section.title h1 { font-size: 42px; margin-bottom: 16px; }
   section.title p, section.closing p { font-size: 25px; color: #444444; }
   section .caption { display: block; font-size: 18px; color: #555555; margin-top: 10px; }
+  /* Two pieces of evidence side by side, each with its own label. Sized by
+     height so a tall photograph and a wide screenshot sit level, and so a
+     replacement image of any shape still fits the slide. */
+  section .pair { display: flex; gap: 30px; justify-content: center; align-items: flex-end; margin-top: 8px; }
+  section .pair figure { margin: 0; text-align: center; }
+  section .pair img { max-height: 232px; width: auto; margin: 0 0 6px 0; }
+  section .pair figcaption { font-size: 17px; color: #555555; }
+  section .trio img { max-height: 182px; }
   section footer { font-size: 14px; color: #888888; }
   section::after { font-size: 14px; color: #888888; }
 ---
@@ -111,7 +119,46 @@ Opening a laptop to operate also feels like clocking back in.
 
 Raspberry Pi 3A+ · Waveshare 5-inch DSI panel · 66 × 20 characters of text.
 
-No enclosure yet, and nothing in the build that a first-time solderer could not manage — the panel plugs into a ribbon cable and the standoffs hold it up.
+It ran like this to begin with — the panel plugs into a ribbon cable, the standoffs hold it up, and nothing in the build is beyond a first-time solderer.
+
+---
+
+<!-- _class: evidence -->
+
+# Standoffs are a stand. They are not a case
+
+<div class="pair">
+<figure><img src="img/shell-openscad-model.png"/><figcaption>drawn in OpenSCAD, around the real panel</figcaption></figure>
+<figure><img src="img/shell-stl-render.png"/><figcaption>the shell it exports</figcaption></figure>
+</div>
+
+<span class="caption">Parametric, so the panel, the Pi and the standoff heights are numbers at the top of the file rather than measurements baked into a mesh — which matters when the thing you are modeling is already built and cannot change to suit the model.</span>
+
+---
+
+![bg right:36%](img/cased-deck-side-profile.jpg)
+
+<!-- _class: panel -->
+
+# Printed, it leans back like the thing it is pretending to be
+
+The profile is a small CRT monitor on purpose: a wedge that props the screen at a readable angle and puts the mass at the back, so it does not tip when the ribbon cable pulls.
+
+Vents down one side, a cutout for the cable, and the Pi still on the same standoffs — the shell goes **around** the existing build rather than replacing any of it.
+
+Nothing inside changed. It is the same deck that worked before, now in something I can pick up with one hand.
+
+**Twelve days** from the first contacts on this thing to a printed shell around it.
+
+---
+
+<!-- _class: evidence -->
+
+# And it earns its place on the desk beside a radio twenty times its price
+
+![](img/cased-deck-with-ftx1.jpg)
+
+<span class="caption">Calling CQ on 20 m BPSK31. The FTX-1 does the radio; the deck does the conversation.</span>
 
 ---
 
