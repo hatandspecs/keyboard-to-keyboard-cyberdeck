@@ -24,6 +24,13 @@ ordinary laptop — start fldigi, run `./src/cyberdeck.py`, nothing else needed.
 - **fldigi must be running for the tests** — four of them drive the real
   program through a pseudo-terminal and read the screen back. No radio is
   needed, but a modem is.
+- **Card-durability settings live in two places and neither is obvious.**
+  `rootflags=data=journal` has to be on the kernel command line, because `data=`
+  cannot be changed by the remount `fstab` drives. The swap writeback file is
+  disabled by `[Main]\nMechanism=zram` in `/etc/rpi/swap.conf.d/` — stock Pi OS
+  defaults to `zram+file` and keeps a `/var/swap` file on the card that
+  `swapon --show` does not reveal; check `/sys/block/zram0/backing_dev` instead.
+  Both are written by `tools/build_deck_image.sh`.
 - **The console font has no emoji.** Only glyphs already proven on the shipped
   panel are safe: `█ · ✓ ▸ ✗ ↑↓` and box drawing. Anything else renders as a
   blank or a replacement box, and you will not see it from here.

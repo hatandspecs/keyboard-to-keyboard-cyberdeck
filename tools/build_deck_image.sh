@@ -694,6 +694,7 @@ KBD
 harden_card() {
   step "Reducing writes to the card"
   local dir="/opt/${CFG[DECK_INSTALL_DIR]:-cyberdeck}"
+  local cmd_boot="${BOOT_MNT}/cmdline.txt"
   local size="${CFG[DECK_RUN_TMPFS_SIZE]:-32M}"
   if ! sudo grep -q "${dir}/run" "${ROOT_MNT}/etc/fstab" 2>/dev/null; then
     printf 'tmpfs %s/run tmpfs defaults,noatime,nosuid,nodev,size=%s,mode=0755 0 0\n' \
@@ -704,6 +705,47 @@ harden_card() {
   printf '[Journal]\nStorage=volatile\nRuntimeMaxUse=16M\n' \
     | sudo tee "${ROOT_MNT}/etc/systemd/journald.conf.d/volatile.conf" >/dev/null
   note "journal in RAM"
+
+  # Swap is zram, a compressed block device in RAM, managed by rpi-swap. Its
+  # default Mechanism is `auto`, which resolves to `zram+file`: a /var/swap
+  # writeback file ON THE CARD that rpi-zram-writeback moves idle pages into on
+  # a timer. That is a card writer nobody asked for. Mechanism=zram keeps the
+  # compressed RAM swap — worth having on a 512 MB 3A+, and removing it would
+  # make things worse rather than safer — and per swap.conf(5) drops the file.
+  #
+  # Verified on a running deck 2026-10-02: before, /sys/block/zram0/backing_dev
+  # read /dev/loop0 and /var/swap was 444 MB; after, `none` and the file is gone
+  # while `swapon --show` still lists /dev/zram0, which is the expected result
+  # and not a leftover.
+  sudo mkdir -p "${ROOT_MNT}/etc/rpi/swap.conf.d"
+  printf '# build_deck_image.sh: compressed swap in RAM only, no writeback file\n# on the SD card. See swap.conf(5).\n[Main]\nMechanism=zram\n' \
+    | sudo tee "${ROOT_MNT}/etc/rpi/swap.conf.d/50-cyberdeck.conf" >/dev/null
+  note "swap is zram only (no /var/swap writeback file on the card)"
+
+  # ext4's default data=ordered journals metadata but not file contents, so a
+  # file being written when the power is pulled can be left torn. The deck's own
+  # state file is safe regardless — it is fsync'd and renamed (design doc §11) —
+  # but nothing else on the system takes that care: fldigi's configuration,
+  # NetworkManager connection files and the Bluetooth bond are all written
+  # plainly. data=journal journals data as well, at a write-throughput cost that
+  # is irrelevant on a machine whose steady-state output is a 300-byte JSON file
+  # every few minutes.
+  #
+  # It has to go on the kernel command line, not in fstab: data= cannot be
+  # changed by the remount that fstab drives, so the root filesystem must be
+  # mounted with it from the start.
+  if [[ "${CFG[DECK_DATA_JOURNAL]:-yes}" == yes && -f "$cmd_boot" ]]; then
+    local line; line="$(sudo cat "$cmd_boot")"
+    if [[ "$line" == *rootflags=data=journal* ]]; then
+      note "rootflags=data=journal already present"
+    elif [[ "$line" == *rootwait* ]]; then
+      line="${line/rootwait/rootwait rootflags=data=journal}"
+      echo "$line" | sudo tee "$cmd_boot" >/dev/null
+      note "root mounted data=journal (torn-file protection for everything that does not fsync)"
+    else
+      note "WARNING: no rootwait in cmdline.txt; data=journal not applied"
+    fi
+  fi
 }
 
 install_services() {

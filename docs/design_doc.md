@@ -194,8 +194,8 @@ demonstrated rather than what is intended.
 | NFR-5 | No pointer, no cursor, nothing selectable. Touch may act on content, or where a keyboard cannot be assumed, and may not become a menu. | met — §1, §17.1 |
 | NFR-6 | Command keys work with Caps Lock on, because RTTY is operated that way. | met — case-folded throughout; `tests/test_menu_arrows.py` |
 | NFR-7 | No transmission the operator did not ask for. A stray keystroke must not key a radio connected to an unknown antenna. | met — inhibit at start, `TX_TIMEOUT`, `IGMSP`-style courtesy features absent by construction |
-| NFR-8 | Survive having its power pulled. There is no clean shutdown in normal use. | met — `fsync` on file and directory before rename; §11 |
-| NFR-9 | Spare the SD card. State is written when it settles, not on every change; the journal and `run/` stay in RAM. | met — `STATE_SETTLE_S`, tmpfs, `Storage=volatile` |
+| NFR-8 | Survive having its power pulled. There is no clean shutdown in normal use. | met — `fsync` on file and directory before rename (§11) protects the deck's own state; `rootflags=data=journal` (2026-10-02) extends torn-file protection to everything else on the system, which writes without that care. Read-only root would close the category entirely and has not been done; see §15 |
+| NFR-9 | Spare the SD card. State is written when it settles, not on every change; the journal and `run/` stay in RAM. | met — `STATE_SETTLE_S`, tmpfs, `Storage=volatile`, and `Mechanism=zram` so rpi-swap keeps no `/var/swap` writeback file on the card (2026-10-02; the stock default is `zram+file`) |
 | NFR-10 | Run on an ordinary laptop as well as on the deck. Absent touchscreen, Bluetooth or panel are not errors. | met, and verified by somebody else — see §2.2 |
 | NFR-11 | The terminal imports only the standard library. PyGObject is needed for pairing and for nothing else. | met — lazy `gi` import in `btpair.py`; `wifi.py` shells out to `nmcli` |
 | NFR-12 | A failure says so. Nothing that cannot be done may appear to have been done. | met — state-write errors surfaced, drain watchdog, `fldigi stayed in X; wanted Y`, unhandled keys reported |
@@ -1455,6 +1455,36 @@ the way out, and a power cycle loses it. That asymmetry presents as "it
 sometimes remembers", which is a far harder report to act on than "it never
 does".
 
+**Four layers, and one deliberately not taken.** The state file above is the
+only thing the deck itself writes, and it is the only thing written carefully.
+Everything else on the card — fldigi's configuration, NetworkManager connection
+files, the Bluetooth bond — is written plainly by software that takes no such
+precautions, so the protection has to come from underneath it:
+
+| Layer | What it removes |
+|---|---|
+| `run/` and the journal in RAM | The steady-state write load entirely |
+| State written on settle, `fsync`ed either side of the rename | A torn or stale state file |
+| `Mechanism=zram`, no `/var/swap` writeback | A timer that moved idle pages onto the card. Stock Pi OS defaults to `zram+file`; this is an override |
+| `rootflags=data=journal` | Torn file *contents* for everything that does not `fsync`. ext4's default journals metadata only |
+
+`data=journal` has to be on the kernel command line rather than in `fstab`,
+because `data=` cannot be changed by the remount that `fstab` drives.
+
+**Read-only root is not done, and would close the category rather than narrow
+it.** The deck is well placed for it — the journal is already volatile, `run/`
+is already a tmpfs, and the only thing that must survive a power cut is a single
+small JSON file, which could live on a separate writable partition. It is not
+done because there have been no observed failures and the cost is a real one:
+every update, every `apt`, every hand-edit needs a remount. The measures above
+reduce the probability; this is the one that would change the kind of problem it
+is. It stays recorded here so a future session does not have to rediscover that
+it was considered.
+
+Nothing above helps if the card's own controller corrupts its mapping tables on
+power loss, which is a property of the card rather than the operating system.
+Industrial cards with power-loss protection address that and nothing else does.
+
 That is a deliberate shift. The deck began as a machine configured from a
 laptop and reflashed to change anything; it is becoming one an operator
 configures from its own keyboard. `cyberdeck.conf` describes how a *freshly
@@ -1830,6 +1860,7 @@ reproducible from a test, and all but one turned out to be software.
 | Tuning | The radio's own waterfall for RF; a parked audio carrier with AFC and RSID for the modem. No software spectrum | 8 |
 | Color schemes | Matrix, Deckard, Hal, Tron and Ripley — four hues on black plus white, Matrix the default | 5.8 |
 | Modem engine | fldigi headless under Xvfb, driven over XML-RPC | 4 |
+| Card durability | Four layers, cheapest first: `run/` and the journal in RAM, state written on settle and `fsync`ed before and after rename, swap kept in RAM with no writeback file, and the root filesystem mounted `data=journal`. Read-only root is the one measure deliberately not taken | 11 |
 | Front end | Python curses on a bare framebuffer console. No X, no window manager, no pointer | 4.3 |
 | Rig control | `rigctld` on 127.0.0.1:4532, bridging the FTX-1's separate CAT and PTT ports. Model **1051**, which supersedes the 1035 the iGate used: 1035 reads but cannot tune | 7, 7.1 |
 | Power | 5 V over USB from the station's own source — a power bank or LiFePO4 box — and no internal battery | 3.5 |
