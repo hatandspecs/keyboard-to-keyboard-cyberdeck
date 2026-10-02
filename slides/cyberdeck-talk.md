@@ -142,7 +142,7 @@ It ran like this to begin with — the panel plugs into a ribbon cable, the stan
 
 # Printed, it leans back like the thing it is pretending to be
 
-The profile is a small CRT monitor on purpose: a wedge that props the screen at a readable angle and puts the mass at the back, so it does not tip when the ribbon cable pulls.
+It does two jobs. It **encloses the electronics** — the Pi, the back of the panel, and the ribbon cable between them, which was the most exposed thing on the bare build. And it is **a stable stand**, which four brass posts only approximated.
 
 Vents down one side, a cutout for the cable, and the Pi still on the same standoffs — the shell goes **around** the existing build rather than replacing any of it.
 
