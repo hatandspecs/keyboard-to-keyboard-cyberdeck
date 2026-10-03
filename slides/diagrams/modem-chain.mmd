@@ -1,0 +1,12 @@
+flowchart LR
+  radio["<b>radio</b><br/><span class='sub'>audio in,<br/>audio out</span>"]
+  fldigi["<b>fldigi</b><br/><span class='sub'>headless, on a virtual<br/>screen nobody sees</span>"]
+  term["<b>my terminal program</b><br/><span class='sub'>conversations, macros,<br/>logging</span>"]
+  panel["<b>the panel</b><br/><span class='sub'>7 inches,<br/>keyboard only</span>"]
+
+  radio -- "USB" --> fldigi
+  fldigi -- "XML-RPC on the<br/>loopback interface" --> term
+  term --> panel
+
+  classDef box fill:#ffffff,stroke:#111111,stroke-width:2.5px,color:#111111;
+  class radio,fldigi,term,panel box;

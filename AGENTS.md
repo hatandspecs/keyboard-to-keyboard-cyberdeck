@@ -12,6 +12,7 @@ ordinary laptop — start fldigi, run `./src/cyberdeck.py`, nothing else needed.
 | `docs/design_doc.md` | Numbered FR/NFR with honest status |
 | `docs/` | Runbook and operating tutorial |
 | `docs/screens/` | Rendered screenshots of every screen |
+| `slides/cyberdeck-talk.md` | The talk, as Marp markdown; `slides/diagrams/` holds the mermaid sources |
 
 ## Things that cost a lot to rediscover
 
@@ -31,6 +32,36 @@ ordinary laptop — start fldigi, run `./src/cyberdeck.py`, nothing else needed.
   defaults to `zram+file` and keeps a `/var/swap` file on the card that
   `swapon --show` does not reveal; check `/sys/block/zram0/backing_dev` instead.
   Both are written by `tools/build_deck_image.sh`.
+- **Render the slides from the repository root, not from `slides/`.** Four
+  slides pull screenshots from `../docs/screens/`, which is outside the mount
+  if the container is given `slides/` as its root. Marp then prints a single
+  `Some of the local files are missing` warning and emits those slides blank —
+  there is nothing in the PDF to tell you which ones. The command is
+
+  ```
+  docker run --rm --init -v "$PWD":/home/marp/app -e MARP_USER="$(id -u):$(id -g)" \
+    marpteam/marp-cli slides/cyberdeck-talk.md --pdf --allow-local-files \
+    -o /home/marp/app/slides/cyberdeck-talk.pdf
+  ```
+
+- **Marp does not render mermaid, so diagrams are rendered to PNG first.**
+  Sources are in `slides/diagrams/` with a shared `theme.json` and `style.css`
+  that match the deck's typeface and line weights; the output lands in
+  `slides/img/`. Mount the host fonts or the container falls back to something
+  that is not Liberation Sans:
+
+  ```
+  docker run --rm -u "$(id -u):$(id -g)" -v "$PWD/slides":/data \
+    -v /usr/share/fonts:/usr/share/fonts:ro \
+    ghcr.io/mermaid-js/mermaid-cli/mermaid-cli \
+    -i /data/diagrams/modem-chain.mmd -o /data/img/modem-chain.png \
+    -c /data/diagrams/theme.json -C /data/diagrams/style.css -b white --size 2600 -s 2
+  ```
+
+  `mmdc` has no `-w`; the flag is `--size`. Give each node's sub-label an
+  explicit `<br/>` so every box comes out the same height — mermaid's own
+  wrapping leaves them ragged.
+
 - **The console font has no emoji.** Only glyphs already proven on the shipped
   panel are safe: `█ · ✓ ▸ ✗ ↑↓` and box drawing. Anything else renders as a
   blank or a replacement box, and you will not see it from here.

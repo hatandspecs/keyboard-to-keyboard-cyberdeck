@@ -81,7 +81,7 @@ A single-purpose HF text terminal for \$68
 
 ---
 
-# Every digital-mode program assumes a waterfall, a mouse, and forty windows
+# Every digital-mode program assumes a waterfall, a mouse, and a bunch of cluttered windows
 
 That is the right design for tuning and for contesting.
 
@@ -93,7 +93,7 @@ Opening a laptop to operate also feels like clocking back in.
 
 <!-- _class: evidence -->
 
-# So the screen shows the conversation, and nothing else
+# So the screen shows the conversation, and not much else
 
 ![](../docs/screens/conversation-matrix.png)
 
@@ -107,7 +107,7 @@ Opening a laptop to operate also feels like clocking back in.
 
 ![](img/first-rtty-qso-n3qe.jpg)
 
-<span class="caption">N3QE: "FB DON I HAVE YOU AS NUMBER 1." Typed on the Bluetooth keyboard in the foreground.</span>
+<span class="caption">N3QE: "FB DON I HAVE YOU AS NUMBER 1." </span>
 
 ---
 
@@ -119,13 +119,13 @@ Opening a laptop to operate also feels like clocking back in.
 
 Raspberry Pi 3A+ · Waveshare 5-inch DSI panel · 66 × 20 characters of text.
 
-It ran like this to begin with — the panel plugs into a ribbon cable, the standoffs hold it up, and nothing in the build is beyond a first-time solderer.
+It ran like this to begin with — the panel plugs into a ribbon cable, the standoffs hold it up, and nothing in the build is beyond a screwdriver.
 
 ---
 
 <!-- _class: evidence -->
 
-# Standoffs are a stand. They are not a case
+# A CRT-inspired case finishes the device
 
 <div class="pair">
 <figure><img src="img/shell-openscad-model.png"/><figcaption>drawn in OpenSCAD, around the real panel</figcaption></figure>
@@ -140,13 +140,10 @@ It ran like this to begin with — the panel plugs into a ribbon cable, the stan
 
 <!-- _class: panel -->
 
-# Printed, it leans back like the thing it is pretending to be
+# KD3CCP printed the case and it came out great
 
-It does two jobs. It **encloses the electronics** — the Pi, the back of the panel, and the ribbon cable between them, which was the most exposed thing on the bare build. And it is **a stable stand**, which four brass posts only approximated.
+It does two jobs. It **encloses the electronics** — the Pi, the back of the panel, and the ribbon cable between them, which was the most exposed thing on the bare build. And it is **a stable stand**.
 
-Vents down one side, a cutout for the cable, and the Pi still on the same standoffs — the shell goes **around** the existing build rather than replacing any of it.
-
-Nothing inside changed. It is the same deck that worked before, now in something I can pick up with one hand.
 
 **Twelve days** from the first contacts on this thing to a printed shell around it.
 
@@ -154,25 +151,24 @@ Nothing inside changed. It is the same deck that worked before, now in something
 
 <!-- _class: evidence -->
 
-# And it earns its place on the desk beside a radio twenty times its price
+# And it earns its place on the desk beside my radio
 
 ![](img/cased-deck-with-ftx1.jpg)
 
 <span class="caption">Calling CQ on 20 m BPSK31. The FTX-1 does the radio; the deck does the conversation.</span>
 
 ---
+<!-- _class: evidence -->
 
 # I did not write a modem, and that is the whole trick
 
 A PSK31 demodulator that beats fldigi's would be a multi-year project, and I would lose.
 
-```
-  radio ──USB──► fldigi (headless, on a virtual screen nobody sees)
-                    │
-                    │ XML-RPC on the loopback interface
-                    ▼
-                 terminal  ──►  the panel
-```
+![width:1150px](img/modem-chain.png)
+
+**XML-RPC** is one program calling functions inside another over HTTP. fldigi publishes a documented method list and keeps it stable across releases; the deck calls forty of them — `modem.set_by_name`, `main.set_frequency`, `text.add_tx`, `text.get_rx`. That makes it a supported client of fldigi, not a fork of it and not a screen-scrape.
+
+**The loopback interface** is `127.0.0.1`, the machine talking to itself. The calls never reach a network card, nothing is open to the LAN, and there is no port to secure.
 
 All of fldigi's signal processing. None of its interface.
 
@@ -180,7 +176,7 @@ All of fldigi's signal processing. None of its interface.
 
 <!-- _class: evidence -->
 
-# Every control is one keystroke away, without leaving the conversation
+# Every control is one keystroke away
 
 ![](../docs/screens/tuning.png)
 
@@ -200,7 +196,7 @@ All of fldigi's signal processing. None of its interface.
 
 <!-- _class: evidence -->
 
-# It keeps up with an RTTY sprint exchange, which is the fastest thing I ask of it
+# It keeps up with an RTTY sprint exchange
 
 ![](img/rtty-sprint-exchange-k4zw.jpg)
 
@@ -210,7 +206,7 @@ All of fldigi's signal processing. None of its interface.
 
 <!-- _class: evidence -->
 
-# The best test was explaining the deck to another operator, using the deck
+# Explaining the deck to another operator, using the deck
 
 ![](img/explaining-the-deck-on-the-air.jpg)
 
@@ -220,7 +216,7 @@ All of fldigi's signal processing. None of its interface.
 
 <!-- _class: evidence -->
 
-# The color schemes are the one piece of pure indulgence, and worth every minute
+# The color schemes are an indulgence, and worth every minute
 
 ![](img/color-schemes.png)
 
@@ -257,34 +253,15 @@ All of fldigi's signal processing. None of its interface.
 <span class="caption">Also Germany, JO41XW — two operators in mountain villages, four thousand miles apart, typing at each other.</span>
 
 ---
-
 <!-- _class: evidence -->
 
-# An AI coding assistant reads your whole repository, and that changes which projects are worth starting
+# AI helps with faster code and better documentation practices
 
-![width:880px](img/agent-loop.svg)
+![width:940px](img/doc-first-cycle.svg)
 
-Hobby time arrives as confetti: twenty minutes before dinner, an hour on a Sunday. What decides whether a project happens is not the work in it — it is how much progress fits inside one of those fragments. A text terminal for HF with 534 tests behind it was never going to happen otherwise.
+Hobby time arrives as confetti: twenty minutes before dinner, an hour on a Sunday. What decides whether a project happens is how much progress fits inside one fragment — a text terminal for HF with 534 tests behind it was never going to happen otherwise.
 
----
-
-<!-- _class: evidence -->
-
-# The gain is not just faster and better code — it is the practices the AI made affordable
-
-![width:1000px](img/doc-first-cycle.svg)
-
-<span class="caption">Interfaces, failure modes and what happens when a part is missing, all decided in the document before anything exists. 534 tests on this project, and they run with no radio attached — which is why it survived being put down for three weeks.</span>
-
----
-
-# Its best trick is telling me what I did not know to ask
-
-**Argue with it for an hour at two in the morning** without spending a friend's patience. In a solo hobby, that back-and-forth was the scarce ingredient.
-
-**Then turn it against your own design.** I write down how I think something should work, and ask for an analysis of alternatives — and specifically: *does this design imply there are tools, techniques or facts out there that I am not accounting for?*
-
-It is a retrieval system over what other people have already worked out. Use it as one.
+**Then turn it against your own design.** Write down how it should work, ask for an analysis of the alternatives, and ask the question worth more than any of them: *does this design imply there are tools, techniques or facts I am not accounting for?*
 
 ---
 
@@ -295,14 +272,6 @@ It is a retrieval system over what other people have already worked out. Use it 
 ![width:810px](img/vscode-workspace.png)
 
 <span class="caption">Documentation is markdown in the repository, beside the code. Everything advances in the same sitting, so nothing drifts. The blog is another repository in the same workspace; these slides are markdown in this one.</span>
-
----
-
-# The interesting part was never the code
-
-**The bugs that cost the most lived in the gap between the bench and the real panel**, where an assistant cannot see: a radio whose CAT command was one digit short, so the display tracked the dial while every band change failed silently; and `Ctrl-Z` shipping dead on the console, because the terminal the tests run under defines that key differently. Every test passed.
-
-**You do not need to start here.** Start with one annoyance in your own shack that you have stopped noticing because you have worked around it for a year.
 
 ---
 
